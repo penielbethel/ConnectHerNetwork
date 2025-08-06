@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>User Profile</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #fff;
+      padding: 20px;
+    }
+    body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+    .profile-container {
+      max-width: 600px;
+      margin: auto;
+      background: #222;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(255,255,255,0.05);
+    }
+    .profile-header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+ .profile-header img {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  object-fit: cover;
+  cursor: pointer;
+  padding: 10px; /* Space between avatar and border */
+  background: linear-gradient(135deg, #ff7eb3, #ff65a3, #9d114e); /* Pink gradient */
+  box-shadow: 0 0 8px rgba(255, 105, 180, 0.6); /* Soft glow effect */
+}
+
+    .profile-header h2 {
+      margin: 10px 0 0;
+      font-size: 24px;
+    }
+    .profile-header p {
+      color: #aaa;
+    }
+
+    form label {
+      display: block;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+
+    form input, form textarea {
+      width: 100%;
+      padding: 8px;
+      border-radius: 6px;
+      border: none;
+      background: #333;
+      color: white;
+      margin-top: 4px;
+    }
+
+    form textarea {
+      resize: vertical;
+    }
+
+    .form-actions {
+      margin-top: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .form-actions button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    .save-btn {
+      background-color: #e91e63;
+      color: white;
+    }
+
+    .logout-btn {
+      background-color: #f44336;
+      color: white;
+    }
+
+    #avatarPreview {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.9);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+
+    #avatarFrame {
+      position: relative;
+      border: 6px solid #fff;
+      border-radius: 20px;
+      box-shadow: 0 0 30px rgba(255, 255, 255, 0.4);
+      overflow: hidden;
+      max-width: 90vw;
+      max-height: 90vh;
+    }
+
+    #fullAvatar {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 15px;
+    }
+
+    #downloadAvatar {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      background: white;
+      border-radius: 50%;
+      padding: 8px 10px;
+      font-size: 20px;
+      color: #333;
+      text-decoration: none;
+      cursor: pointer;
+    }
+#userPostsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.post-thumb {
+  background: #1e1e1e;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  aspect-ratio: 1 / 1;
+  border: 3.5px solid #ff99cc; /* 💖 Add thick pink border */
+  transition: transform 0.2s ease;
+}
+
+.post-thumb:hover {
+  transform: scale(1.03); /* optional: slight hover zoom */
+}
+
+.post-thumb img,
+.post-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Smaller screen override */
+@media screen and (max-width: 480px) {
+  #userPostsGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+}
+
+#edit-profile-form label i {
+  margin-right: 6px;
+  width: 18px; /* Keep icons aligned */
+  text-align: center;
+}
+
+/* === New Styling for Arrangement === */
+form#edit-profile-form {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.input-row {
+  display: flex;
+  align-items: center;
+  background: #2a2a2a;
+  padding: 10px 14px;
+  border-radius: 10px;
+}
+
+.input-row i {
+  color: #ffb6c1;
+  margin-right: 12px;
+  min-width: 20px;
+  text-align: center;
+  font-size: 16px;
+}
+
+.input-row input,
+.input-row textarea {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: white;
+  font-size: 15px;
+  width: 100%;
+  padding: 4px 0;
+}
+
+.input-row textarea {
+  font-family: Arial, sans-serif;
+  resize: none;
+  overflow: hidden;
+  min-height: 250px; /* increase this to fit more text */
+  line-height: 1.5;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 15px;
+  height: auto;
+  text-align: justify;
+}
+  </style>
+</head>
+<body>
+  <div class="profile-container">
+
+<div class="profile-header">
+  <div id="actionArea" class="form-actions"></div>
+
+  <!-- Avatar wrapper with position relative -->
+  <div style="position: relative; display: inline-block;">
+    <img id="avatar" src="" alt="Avatar">
+    
+    <!-- Camera icon (hidden by default, shown for owner only) -->
+    <i id="cameraIcon" class="fa fa-camera" title="Change Avatar"
+       style="position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+              background: #000; color: white; padding: 6px; border-radius: 50%;
+              font-size: 16px; display: none; cursor: pointer; z-index: 2;">
+    </i>
+  </div>
+
+  <!-- Hidden avatar file input -->
+  <input type="file" id="profile-avatar" name="avatar" accept="image/*" style="display:none">
+
+  <h2 id="profile-name">User Name</h2>
+  <p id="profile-username">@username</p>
+  <p id="joined-date"></p>
+</div>
+
+
+<form id="edit-profile-form" enctype="multipart/form-data">
+
+  <div class="input-row">
+    <i class="fa-solid fa-envelope-circle-check"></i>
+    <input type="email" name="email" id="profile-email" placeholder="Email">
+  </div>
+
+  <div class="input-row">
+    <i class="fa-solid fa-location-dot"></i>
+    <input type="text" name="location" id="profile-location" placeholder="Location">
+  </div>
+
+  <div class="input-row">
+    <i class="fa-solid fa-globe"></i>
+    <input type="text" name="website" id="profile-website" placeholder="Website">
+  </div>
+
+  <div class="input-row">
+    <i class="fa-solid fa-building-user"></i>
+    <input type="text" name="workplace" id="profile-workplace" placeholder="Workplace">
+  </div>
+
+  <div class="input-row">
+    <i class="fa-solid fa-user-graduate"></i>
+    <input type="text" name="education" id="profile-education" placeholder="Education">
+  </div>
+
+  <div class="input-row">
+    <i class="fa-solid fa-id-badge"></i>
+    <textarea name="bio" id="profile-bio" placeholder="Bio"></textarea>
+  </div>
+
+  <div class="input-row">
+    <i class="fa-solid fa-cake-candles"></i>
+    <input type="date" name="dob" id="profile-dob" placeholder="Date of Birth">
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="save-btn">Save Changes</button>
+    <button type="button" class="logout-btn" id="logoutBtn">Logout</button>
+  </div>
+</form>
+
+   <h2 id="postHeader" style="margin-top: 30px; color: #ff99cc;"></h2>
+<div id="userPosts" style="margin-top: 10px;"></div>  
+  </div>
+
+
+  <!-- Avatar Preview -->
+  <div id="avatarPreview">
+    <div id="avatarFrame">
+      <img id="fullAvatar" src="" alt="Full Avatar">
+      <a id="downloadAvatar" download>⬇</a>
+    </div>
+  </div>
+  <script>
+
+    
+function fetchUserPosts(username, displayName) {
+  const postHeader = document.getElementById("postHeader");
+  const postContainer = document.getElementById("userPosts");
+  const isOwner = username === currentUser.username;
+
+  postHeader.textContent = isOwner ? "Your Posts" : `Posts by ${displayName}`;
+  postContainer.innerHTML = "<p>Loading...</p>";
+
+  fetch(`https://connecther.onrender.com/api/posts/user/${username}`)
+    .then(res => res.json())
+    .then(posts => {
+      if (!posts.length) {
+        postContainer.innerHTML = "<p style='color:#aaa;'>No posts found.</p>";
+        return;
+      }
+
+      postContainer.innerHTML = "";
+      const grid = document.createElement("div");
+      grid.id = "userPostsGrid";
+
+      posts.forEach(post => {
+        const thumb = document.createElement("div");
+        thumb.className = "post-thumb";
+        thumb.onclick = () => {
+          window.location.href = `dashboard.html?postId=${post._id}`;
+        };
+
+        if (post.media && post.media.length > 0) {
+          const m = post.media[0];
+
+if (m.type.startsWith("image/")) {
+  thumb.innerHTML = `<img src="${m.url}" alt="Post" style="width:100%;aspect-ratio:1/1;object-fit:cover;" onerror="this.style.display='none';">`;
+} else if (m.type.startsWith("video/")) {
+  thumb.innerHTML = `<video src="${m.url}" muted autoplay loop style="width:100%;aspect-ratio:1/1;object-fit:cover;" onerror="this.style.display='none';"></video>`;
+}
+
+
+        } else {
+          thumb.innerHTML = `<div style="color:#ccc;text-align:center;padding:15px;font-size:12px;">No Media</div>`;
+        }
+
+        grid.appendChild(thumb);
+      });
+
+      postContainer.appendChild(grid);
+    })
+    .catch(err => {
+      postContainer.innerHTML = "<p style='color:red;'>Error loading posts.</p>";
+      console.error("Post fetch error:", err);
+    });
+}
+
+    const urlParams = new URLSearchParams(window.location.search);
+  const viewedUsername = urlParams.get("user"); // e.g. profile.html?user=queenesther
+  const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+
+  if (!currentUser) {
+    alert("You must be logged in.");
+    window.location.href = "index.html";
+  }
+
+  const isOwner = !viewedUsername || viewedUsername === currentUser.username;
+
+  // Determine which profile data to show
+  let profileData;
+
+async function loadProfile() {
+  if (isOwner) {
+    profileData = currentUser;
+  } else {
+    profileData = await getUserFromStorage(viewedUsername);
+
+    if (!profileData) {
+      alert("User not found.");
+      window.location.href = "dashboard.html";
+      return;
+    }
+  }
+  renderProfile(profileData);
+
+  // ✅ Call fetchUserPosts here after profileData is ready
+  fetchUserPosts(
+    profileData.username,
+    profileData.name || `${profileData.firstName} ${profileData.surname}`
+  );
+}
+
+
+// LOAD PROFILES NEWMEK
+loadProfile();
+ 
+  // Populate profile header
+ function renderProfile(data) {
+  // Populate profile header
+  document.getElementById("avatar").src = data.avatar || "";
+  const fullName = data.name || `${data.firstName || ""} ${data.surname || ""}`.trim();
+  document.getElementById("profile-name").textContent = fullName || "Unknown";
+  document.getElementById("profile-username").textContent = `@${data.username}`;
+  document.getElementById("joined-date").textContent = `Joined: ${data.joined || "N/A"}`;
+
+  // Populate form fields
+  document.getElementById("profile-email").value = data.email || "";
+  document.getElementById("profile-location").value = data.location || "";
+  document.getElementById("profile-website").value = data.website || "";
+  document.getElementById("profile-workplace").value = data.workplace || "";
+  document.getElementById("profile-education").value = data.education || "";
+  document.getElementById("profile-bio").value = data.bio || "";
+  document.getElementById("profile-dob").value = data.dob || "";
+
+  // Now handle message button (after data is available)
+  const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+  const acceptedFriends = JSON.parse(localStorage.getItem("acceptedFriends") || "{}");
+  const isOwner = data.username === currentUser.username;
+  const isFriend = acceptedFriends[`${currentUser.username}-${data.username}`];
+
+  if (!isOwner && isFriend) {
+    const actionArea = document.getElementById("actionArea");
+    const messageBtn = document.createElement("button");
+    messageBtn.className = "save-btn";
+    messageBtn.textContent = "Send Message";
+    messageBtn.onclick = () => {
+      window.location.href = `conversation.html?user=${data.username}`;
+    };
+    actionArea.appendChild(messageBtn);
+  }
+}
+
+
+  const avatarImg = document.getElementById("avatar");
+  const previewOverlay = document.getElementById("avatarPreview");
+  const fullAvatar = document.getElementById("fullAvatar");
+  const downloadLink = document.getElementById("downloadAvatar");
+
+  // Only allow avatar preview for everyone
+  avatarImg.addEventListener("click", () => {
+    fullAvatar.src = avatarImg.src;
+    downloadLink.href = avatarImg.src;
+    downloadLink.setAttribute("download", `${profileData.username}-avatar.jpg`);
+    previewOverlay.style.display = "flex";
+  });
+
+  previewOverlay.addEventListener("click", (e) => {
+    if (e.target === previewOverlay || e.target === fullAvatar) {
+      previewOverlay.style.display = "none";
+    }
+  });
+
+
+  if (isOwner) {
+  // Show camera icon and enable avatar click for upload
+  const cameraIcon = document.getElementById("cameraIcon");
+  cameraIcon.style.display = "block";
+
+  cameraIcon.addEventListener("click", () => {
+    document.getElementById("profile-avatar").click();
+  });
+
+  // Also allow double-clicking avatar
+  avatarImg.addEventListener("dblclick", () => {
+    document.getElementById("profile-avatar").click();
+  });
+
+  // Handle avatar file selection NEWMEK
+  document.getElementById("profile-avatar").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+
+    if (file && file.type.startsWith("image/") && file.size <= 5 * 1024 * 1024) {
+document.getElementById("profile-avatar").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+
+  if (file && file.type.startsWith("image/") && file.size <= 10 * 1024 * 1024) {
+    const compressedBlob = await compressImage(file, 0.6); // 60% quality
+
+    // Show preview
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      avatarImg.src = event.target.result;
+      currentUser.avatar = event.target.result; // preview
+    };
+    reader.readAsDataURL(compressedBlob);
+
+    // Replace file input manually (for FormData later)
+    const dt = new DataTransfer();
+    dt.items.add(new File([compressedBlob], file.name, { type: file.type }));
+    e.target.files = dt.files;
+  } else {
+    alert("Please select a valid image (under 10MB).");
+    e.target.value = "";
+  }
+});
+
+// BIO TEXT AREA
+const bioInput = document.getElementById("profile-bio");
+
+  function autoResizeTextarea(el) {
+    el.style.height = "auto"; // Reset height
+    el.style.height = el.scrollHeight + "px"; // Adjust to fit content
+  }
+
+  bioInput.addEventListener("input", function () {
+    autoResizeTextarea(this);
+  });
+
+  // Optional: initialize on page load if textarea already has value
+  window.addEventListener("load", () => {
+    autoResizeTextarea(bioInput);
+  });
+
+
+// IMAGE COMPRESSION
+function compressImage(file, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const canvas = document.createElement("canvas");
+    const reader = new FileReader();
+
+    reader.readAsDataURL(file);
+    reader.onload = (e) => {
+      img.src = e.target.result;
+    };
+
+    img.onload = () => {
+      const maxSize = 800;
+      let { width, height } = img;
+
+      // Scale down if too large
+      if (width > height && width > maxSize) {
+        height = height * (maxSize / width);
+        width = maxSize;
+      } else if (height > maxSize) {
+        width = width * (maxSize / height);
+        height = maxSize;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          resolve(blob);
+        },
+        file.type === "image/png" ? "image/png" : "image/jpeg",
+        quality
+      );
+    };
+
+    img.onerror = () => reject(new Error("Image load error"));
+  });
+}
+    } else {
+      alert("Please select a valid image under 5MB.");
+      e.target.value = ""; // reset input
+    }
+  });
+
+  // Submit profile changes
+  document.getElementById("edit-profile-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const form = e.target;
+    const formData = new FormData();
+
+    formData.append("username", currentUser.username);
+    formData.append("firstName", currentUser.firstName || "");
+    formData.append("surname", currentUser.surname || "");
+    formData.append("name", currentUser.name || "");
+    formData.append("joined", currentUser.joined || "");
+    formData.append("email", form.email.value);
+    formData.append("location", form.location.value);
+    formData.append("website", form.website.value);
+    formData.append("workplace", form.workplace.value);
+    formData.append("education", form.education.value);
+    formData.append("bio", form.bio.value);
+    formData.append("dob", form.dob.value);
+
+    // Avatar file
+  const avatarFile = document.getElementById("profile-avatar").files[0];
+
+if (avatarFile) {
+  // Upload avatar separately to /api/upload
+  const uploadForm = new FormData();
+  uploadForm.append("avatar", avatarFile);
+  const uploadRes = await fetch("https://connecther.onrender.com/api/upload", {
+    method: "POST",
+    body: uploadForm
+  });
+
+  const uploadData = await uploadRes.json();
+
+  if (uploadRes.ok && uploadData.success && uploadData.files.length > 0) {
+    const avatarUrl = uploadData.files[0].url; // e.g. "/uploads/compressed-xyz.jpg"
+    formData.append("avatar", avatarUrl);
+  } else {
+    alert("Failed to upload avatar.");
+    return;
+  }
+}
+
+
+    try {
+  const res = await fetch(`https://connecther.onrender.com/api/auth/update`, {
+    method: "PUT",
+    body: formData
+  });
+
+  const data = await res.json();
+
+  if (res.ok && data.user) {
+    // Save user to localStorage
+    localStorage.setItem("currentUser", JSON.stringify(data.user));
+
+    // Update allUsers cache
+    let allUsers = JSON.parse(localStorage.getItem("allUsers") || "[]");
+    allUsers = allUsers.map(u =>
+      u.username === data.user.username ? data.user : u
+    );
+
+    // Ensure name field is built
+    if (!data.user.name && data.user.firstName && data.user.surname) {
+      data.user.name = `${data.user.firstName} ${data.user.surname}`;
+    }
+
+    localStorage.setItem("allUsers", JSON.stringify(allUsers));
+
+    // ✅ Rerender profile with new avatar
+    renderProfile(data.user);
+
+    // ✅ Force avatar image update (important)
+    document.getElementById("avatar").src = data.user.avatar;
+
+    // ✅ Optional: Also update avatar in full preview overlay (if visible)
+    const fullAvatar = document.getElementById("fullAvatar");
+    if (fullAvatar) {
+      fullAvatar.src = data.user.avatar;
+    }
+
+    alert("Profile updated successfully.");
+  } else {
+    alert(data.message || "Failed to update profile.");
+  }
+} catch (err) {
+  console.error("❌ Profile update error:", err);
+  alert("Error connecting to server.");
+}
+
+  });
+
+  // Logout
+  document.getElementById("logoutBtn").addEventListener("click", () => {
+    localStorage.removeItem("username");
+    localStorage.removeItem("currentUser");
+    window.location.href = "index.html";
+  });
+}
+ 
+  
+  
+  
+  else {
+  // Lock profile form for visitors
+    const inputs = document.querySelectorAll("form input, form textarea");
+    inputs.forEach(input => input.disabled = true);
+    document.querySelector(".save-btn").style.display = "none";
+    document.querySelector(".logout-btn").style.display = "none";
+    avatarImg.style.cursor = "default";
+  }
+
+  // Helper: get other user data from allUsers cache
+async function getUserFromStorage(username) {
+  // Get users already saved in localStorage, please remove/add next line later
+localStorage.removeItem("allUsers");
+
+  const allUsers = JSON.parse(localStorage.getItem("allUsers") || "[]");
+
+  // Try to find user locally
+  const found = allUsers.find(u => u.username === username);
+  if (found) return found;
+
+  // If not found locally, fetch from backend
+  try {
+    const res = await fetch(`https://connecther.onrender.com/api/users/${username}`);
+    const data = await res.json();
+
+if (res.ok && data.user) {
+  // ✅ Ensure 'joined' is present
+  if (!data.user.joined) {
+    data.user.joined = new Date().toISOString().split("T")[0];
+  }
+
+  allUsers.push(data.user);
+  localStorage.setItem("allUsers", JSON.stringify(allUsers));
+  return data.user;
+}
+
+  } catch (err) {
+    console.error("Error fetching user from backend:", err);
+  }
+
+  return null; // If still not found
+}
+  </script>
+  <script src="theme.js" defer></script>
+  
+</body>
+</html>

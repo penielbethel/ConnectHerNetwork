@@ -1,0 +1,40 @@
+:root {
+  --bg: #0e0e0e;
+  --text: #ffcce6;
+  --card: #1a1a1a;
+  --input-bg: #222;
+  --icon-color: #ffb6c1;
+}
+.light-theme {
+  --bg: #ffffff;
+  --text: #222222;
+}
+
+/* Optional: apply theme to cards, inputs, etc */
+.card, .profile-container {
+  background-color: var(--card);
+}
+
+input, textarea {
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+i {
+  color: var(--icon-color);
+}
+
+:root {
+  --bg: #0e0e0e;
+  --text: #ffcce6;
+}
+
+.light-theme {
+  --bg: #ffffff;
+  --text: #ffffff;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+}

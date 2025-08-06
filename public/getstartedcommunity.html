@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create a New Community</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+   body {
+  background-color: #121212;
+  color: #fff;
+  padding: 10px;
+  max-width: 480px;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* center vertically */
+  align-items: center;     /* center horizontally */
+  min-height: 100vh;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.button-container {
+  width: 100%;
+  max-width: 400px;
+  margin-top: 20px;
+}
+
+.get-started-btn {
+  background-color: #ff4081;
+  color: white;
+  border: none;
+  border-radius: 25px;
+  padding: 15px 20px;
+  width: 100%;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+    .container {
+      padding: 20px 10px;
+    }
+
+    .illustration {
+      width: 180px;
+      margin: 50px auto 20px;
+    }
+
+    h2 {
+      font-size: 20px;
+      margin-bottom: 10px;
+      color: #ff4081; /* dark pink */
+    }
+
+    p {
+      font-size: 14px;
+      color: #e0e0e0;
+      padding: 0 20px;
+    }
+
+    @media screen and (max-width: 600px) {
+      .illustration {
+        width: 140px;
+        margin-top: 30px;
+      }
+
+      h2 {
+        font-size: 18px;
+      }
+
+      p {
+        font-size: 13px;
+      }
+    }
+  </style>
+
+</head>
+<body>
+  <div class="content-wrapper">
+  <div class="container">
+    <img src="https://cdn-icons-png.flaticon.com/512/9068/9068756.png" alt="Create community" class="illustration">
+    <h2>Create a new community</h2>
+    </div>
+
+    
+<p style="color: #ff6fa8;">
+  Bring together a neighborhood, school or more. Create topic-based
+  groups for members, and easily send them admin announcements.
+</p>
+
+  </div>
+  <div class="button-container">
+    <button class="get-started-btn" onclick="window.location.href='/createcommunity.html'">Get started</button>
+  </div>
+  <script src="theme.js" defer></script>
+  
+</body>
+</html>
