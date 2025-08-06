@@ -4,7 +4,7 @@ const Notification = require("../models/Notification");
 const User = require("../models/User");
 
 // ✅ Firebase Admin SDK setup
-const admin = require('../firebase');
+//const admin = require('../firebase');//
 
 
 router.use(express.json());
