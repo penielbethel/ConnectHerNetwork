@@ -197,11 +197,6 @@ body {
       margin-bottom: 10px;
     }
 
-    .post-caption {
-  white-space: pre-wrap;
-  line-height: 1.5;
-}
-
     .post-actions {
       display: flex;
       justify-content: space-between;
@@ -1103,11 +1098,10 @@ if (targetPostId && post._id === targetPostId) {
       </div>
 
       <div class="post-content">
-${post.caption ? `
-  <p class="post-caption" style="text-align: justify; white-space: pre-wrap;" data-full="${post.caption}">
-    ${truncateWords(post.caption, 60).replace(/\n/g, '<br>')} <span class="toggle-caption" style="color: #4FC3F7; cursor: pointer;">Read more</span>
-  </p>` : ""}
-
+        ${post.caption ? `
+          <p class="post-caption" style="text-align: justify;" data-full="${post.caption}">
+            ${truncateWords(post.caption, 60)} <span class="toggle-caption" style="color: #4FC3F7; cursor: pointer;">Read more</span>
+          </p>` : ""}
         ${mediaHtml}
       </div>
 
@@ -1151,7 +1145,7 @@ document.addEventListener("click", function (e) {
       p.innerHTML = truncateWords(fullText, 60) + ' <span class="toggle-caption" style="color: #4FC3F7; cursor: pointer;">Read more</span>';
       p.setAttribute("data-expanded", "false");
     } else {
-      p.innerHTML = fullText.replace(/\n/g, "<br>") + ' <span class="toggle-caption" style="color: #F48FB1; cursor: pointer;">Read less</span>';
+      p.innerHTML = fullText + ' <span class="toggle-caption" style="color: #F48FB1; cursor: pointer;">Read less</span>';
       p.setAttribute("data-expanded", "true");
     }
   }
