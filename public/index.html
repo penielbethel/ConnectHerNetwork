@@ -439,7 +439,7 @@ body {
 }
 
     try {
-      const res = await fetch('https://connecther.onrender.com/api/auth/register', {
+      const res = await fetch('https://connecther.network/api/auth/register', {
         method: 'POST',
         body: formData
       });
@@ -500,7 +500,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
   if (otp) {
     // 🟡 Second phase: OTP verification
     try {
-      const res = await fetch('https://connecther.onrender.com/api/auth/verify-otp', {
+      const res = await fetch('https://connecther.network/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: tempUserId, otpCode: otp })
@@ -558,7 +558,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
   } else {
     // 🔵 First phase: username/password login
     try {
-      const res = await fetch('https://connecther.onrender.com/api/auth/login', {
+      const res = await fetch('https://connecther.network/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: input, password })
@@ -616,7 +616,7 @@ async function requestResetCode() {
   if (!email) return alert("Please enter your email.");
 
   try {
-    const res = await fetch('https://connecther.onrender.com/api/auth/forgot-password', {
+    const res = await fetch('https://connecther.network/api/auth/forgot-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email })
@@ -645,7 +645,7 @@ async function resetPassword() {
   if (!email || !code || !newPassword) return alert("All fields are required.");
 
   try {
-    const res = await fetch('https://connecther.onrender.com/api/auth/reset-password', {
+    const res = await fetch('https://connecther.network/api/auth/reset-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, code, newPassword })

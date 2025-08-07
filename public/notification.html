@@ -166,7 +166,7 @@ if (!currentUser) {
 const requestList = document.getElementById("requestList");
 
 // ✅ Load normal friend requests
-fetch(`https://connecther.onrender.com/friend-requests/${currentUser.username}`)
+fetch(`https://connecther.network/friend-requests/${currentUser.username}`)
   .then(res => res.json())
   .then(requests => {
     if (!Array.isArray(requests) || requests.length === 0) {
@@ -175,7 +175,7 @@ fetch(`https://connecther.onrender.com/friend-requests/${currentUser.username}`)
       requests.forEach(username => {
         
         
-      fetch(`https://connecther.onrender.com/api/users/${username}`)
+      fetch(`https://connecther.network/api/users/${username}`)
   .then(res => res.json())
   .then(data => {
     console.log("User response:", data); // ✅ Add this
@@ -205,7 +205,7 @@ fetch(`https://connecther.onrender.com/friend-requests/${currentUser.username}`)
     }
 
     // ✅ Then load pending community invites
-    fetch(`https://connecther.onrender.com/api/community-invites/${currentUser.username}`)
+    fetch(`https://connecther.network/api/community-invites/${currentUser.username}`)
       .then(res => res.json())
       .then(data => {
         if (data.success && data.invites.length) {
@@ -238,7 +238,7 @@ fetch(`https://connecther.onrender.com/friend-requests/${currentUser.username}`)
 
 // ✅ Handle friend accept/decline
 function acceptRequest(username) {
-  fetch('https://connecther.onrender.com/friend-accept', {
+  fetch('https://connecther.network/friend-accept', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -258,7 +258,7 @@ function acceptRequest(username) {
 }
 
 function declineRequest(username) {
-  fetch('https://connecther.onrender.com/friend-decline', {
+  fetch('https://connecther.network/friend-decline', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ from: username, to: currentUser.username })
@@ -276,7 +276,7 @@ function declineRequest(username) {
 
 // ✅ Handle community invite accept/decline
 function acceptCommunityInvite(inviteId) {
-  fetch(`https://connecther.onrender.com/api/community-invites/${inviteId}/accept`, {
+  fetch(`https://connecther.network/api/community-invites/${inviteId}/accept`, {
     method: "POST"
   })
   .then(res => res.json())
@@ -295,7 +295,7 @@ function acceptCommunityInvite(inviteId) {
 }
 
 function declineCommunityInvite(inviteId) {
-  fetch(`https://connecther.onrender.com/api/community-invites/${inviteId}/decline`, {
+  fetch(`https://connecther.network/api/community-invites/${inviteId}/decline`, {
     method: "POST"
   })
   .then(res => res.json())
@@ -333,7 +333,7 @@ callList.appendChild(bulkControls);
 const allLogCheckboxes = [];
 
 // ✅ Fetch Personal Call Logs
-fetch(`https://connecther.onrender.com/api/calls/${currentUser.username}`)
+fetch(`https://connecther.network/api/calls/${currentUser.username}`)
   .then(res => res.json())
   .then(logs => {
     if (logs.length) {
@@ -343,7 +343,7 @@ fetch(`https://connecther.onrender.com/api/calls/${currentUser.username}`)
     logs.forEach(log => {
       const otherUser = log.caller === currentUser.username ? log.receiver : log.caller;
 
-      fetch(`https://connecther.onrender.com/api/users/user/${otherUser}`)
+      fetch(`https://connecther.network/api/users/user/${otherUser}`)
         .then(res => res.json())
         .then(userData => {
           const item = document.createElement("div");
@@ -383,7 +383,7 @@ fetch(`https://connecther.onrender.com/api/calls/${currentUser.username}`)
   });
 
 // ✅ Fetch Group Call Notifications
-fetch(`https://connecther.onrender.com/api/notifications/group-call/${currentUser.username}`)
+fetch(`https://connecther.network/api/notifications/group-call/${currentUser.username}`)
   .then(res => res.json())
   .then(notifications => {
     if (notifications.length) {
@@ -423,7 +423,7 @@ fetch(`https://connecther.onrender.com/api/notifications/group-call/${currentUse
 
 // ✅ Single delete handler for personal calls
 function deleteCall(id) {
-  fetch(`https://connecther.onrender.com/api/calls/${id}`, {
+  fetch(`https://connecther.network/api/calls/${id}`, {
     method: "DELETE"
   })
   .then(res => res.json())
@@ -443,7 +443,7 @@ function deleteCall(id) {
 
 // ✅ Shared delete function (already used by group call)
 function deleteNotification(id) {
-  fetch(`https://connecther.onrender.com/api/notifications/${id}`, {
+  fetch(`https://connecther.network/api/notifications/${id}`, {
     method: "DELETE"
   })
   .then(res => res.json())
@@ -503,7 +503,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (notificationIds.length) {
         deletions.push(
-          fetch("https://connecther.onrender.com/api/notifications/bulk-delete", {
+          fetch("https://connecther.network/api/notifications/bulk-delete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ids: notificationIds })
@@ -513,7 +513,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (personalCallIds.length) {
         deletions.push(
-          fetch("https://connecther.onrender.com/api/calls/bulk-delete", {
+          fetch("https://connecther.network/api/calls/bulk-delete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ids: personalCallIds })
@@ -596,7 +596,7 @@ document.addEventListener("DOMContentLoaded", () => {
 const likesTab = document.getElementById("likes");
 likesTab.innerHTML = "<p class='status'>Loading...</p>";
 
-fetch(`https://connecther.onrender.com/api/notifications/likes-comments/${currentUser.username}`)
+fetch(`https://connecther.network/api/notifications/likes-comments/${currentUser.username}`)
   .then(res => res.json())
   .then(notifications => {
     if (!notifications.length) {
@@ -612,7 +612,7 @@ item.className = "request clickable";
 
 item.onclick = () => {
   // ✅ 1. Delete notification
-  fetch(`https://connecther.onrender.com/api/notifications/${notif._id}`, {
+  fetch(`https://connecther.network/api/notifications/${notif._id}`, {
     method: "DELETE"
   });
 
@@ -644,7 +644,7 @@ likesTab.appendChild(item);
 
   
 // ✅ Add Socket.IO real-time notification handler
-const socket = io("https://connecther.onrender.com");
+const socket = io("https://connecther.network");
 
 if (currentUser?.username) {
   // ✅ CLEAR new notification indicator when user enters this page
@@ -701,7 +701,7 @@ if (currentUser?.username) {
           // ✅ Save to backend
           const currentUser = JSON.parse(localStorage.getItem('currentUser'));
           if (currentUser && currentUser.username) {
-            await fetch("https://connecther.onrender.com/api/save-fcm-token", {
+            await fetch("https://connecther.network/api/save-fcm-token", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ username: currentUser.username, token })

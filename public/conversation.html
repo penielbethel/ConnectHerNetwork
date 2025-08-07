@@ -789,7 +789,7 @@
 <audio id="ringtone" src="connectring.mp3" loop preload="auto"></audio>
 
 
-<script src="https://connecther.onrender.com/socket.io/socket.io.js"></script>
+<script src="https://connecther.network/socket.io/socket.io.js"></script>
 <script>
   window.addEventListener('DOMContentLoaded', async () => {
     try {
@@ -842,7 +842,7 @@ const username = urlParams.get("user"); // friend's username
 const currentUser = JSON.parse(localStorage.getItem("currentUser"));
 
 // 📡 Connect Socket.IO with current username in query
-const API = "https://connecther.onrender.com";
+const API = "https://connecther.network";
 const socket = io(API, {
   query: { username: currentUser.username }
 });socket.emit("register", currentUser.username);

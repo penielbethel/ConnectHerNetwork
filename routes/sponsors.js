@@ -210,7 +210,7 @@ router.put("/:sponsorId/posts/:postId", verifyTokenAndRole(["admin", "superadmin
 
     if (req.body.caption) post.caption = req.body.caption;
     if (req.body.jobLink) post.jobLink = req.body.jobLink;
-    if (req.file) post.media = `https://connecther.onrender.com/uploads/${req.file.filename}`;
+    if (req.file) post.media = `https://connecther.network/uploads/${req.file.filename}`;
 
     await sponsor.save();
     res.json({ message: "Post updated", post });

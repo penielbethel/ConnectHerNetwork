@@ -89,7 +89,7 @@ let communityId = null;
 
 // 🚀 Load community info via invite or direct link
 if (inviteId) {
-  fetch(`https://connecther.onrender.com/api/community-invites/invite/${inviteId}`)
+  fetch(`https://connecther.network/api/community-invites/invite/${inviteId}`)
     .then(res => res.json())
     .then(data => {
       if (!data.success || !data.invite) throw new Error("Invalid invite");
@@ -115,7 +115,7 @@ if (inviteId) {
     });
 } else if (communityIdParam) {
   communityId = communityIdParam;
-  fetch(`https://connecther.onrender.com/api/communities/${communityId}`)
+  fetch(`https://connecther.network/api/communities/${communityId}`)
     .then(res => res.json())
     .then(data => {
       if (!data.success || !data.community) throw new Error("Community not found");
@@ -148,7 +148,7 @@ joinBtn.addEventListener("click", () => {
   joinBtn.disabled = true;
   joinBtn.textContent = "Joining...";
 
-  fetch(`https://connecther.onrender.com/api/communities/${communityId}/join`, {
+  fetch(`https://connecther.network/api/communities/${communityId}/join`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username })

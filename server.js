@@ -48,11 +48,11 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // 🛠️ Middlewares
 app.use(cors({
   origin: [
-    "http://localhost:3000",
+    "http://https://connecther.network",
     "http://localhost",
     "https://localhost",            // ✅ Add this
     "capacitor://localhost",
-    "https://connecther.onrender.com"
+    "https://connecther.network"
   ],
   credentials: true
 }));

@@ -180,7 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function loadCommunities(username) {
-  fetch(`https://connecther.onrender.com/api/communities/user/${encodeURIComponent(username)}`)
+  fetch(`https://connecther.network/api/communities/user/${encodeURIComponent(username)}`)
     .then(res => {
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       return res.json();

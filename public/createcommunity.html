@@ -244,7 +244,7 @@ avatarInput.addEventListener('change', async function () {
   formData.append("files", file);
 
   try {
-    const res = await fetch("https://connecther.onrender.com/api/upload", {
+    const res = await fetch("https://connecther.network/api/upload", {
       method: "POST",
       body: formData
     });
@@ -284,7 +284,7 @@ avatarInput.addEventListener('change', async function () {
     if (!name) return alert("Please enter a community name.");
     if (!username) return alert("You must be logged in to create a community.");
 
-    fetch("https://connecther.onrender.com/api/communities/create", {
+    fetch("https://connecther.network/api/communities/create", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
