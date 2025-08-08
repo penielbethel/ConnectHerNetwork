@@ -1,6 +1,7 @@
 // firebase.js (in project root)
 const admin = require('firebase-admin');
-//require('dotenv').config();//
+//COMMENT NEXT LINE ON COMMIT AND UNCOMMIT ON BUILD//
+require('dotenv').config();
 // ✅ Build the service account object from environment variables
 const serviceAccount = {
   type: process.env.FIREBASE_TYPE,
