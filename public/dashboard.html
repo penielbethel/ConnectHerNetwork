@@ -197,6 +197,11 @@ body {
       margin-bottom: 10px;
     }
 
+    .post-caption {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
     .post-actions {
       display: flex;
       justify-content: space-between;
@@ -666,6 +671,14 @@ body {
       <button onclick="submitPost()">Post</button>
     </div>
   </div>
+  <!-- Edit Post Modal -->
+<div class="modal" id="editPostModal">
+  <div class="modal-content">
+    <h3>Edit Caption</h3>
+    <textarea id="editCaptionText" rows="5" placeholder="Update your caption..." style="width: 100%; background-color: #2c2c2c; color: white; border: none; padding: 10px; border-radius: 10px;"></textarea>
+    <button onclick="saveEditedPost()" style="margin-top: 10px; padding: 10px 20px; background-color: #ff4081; border: none; border-radius: 5px; color: white; cursor: pointer;">Save Changes</button>
+  </div>
+</div>
 
   <div class="feed" id="feed"></div>
 
@@ -1096,12 +1109,18 @@ if (targetPostId && post._id === targetPostId) {
           </div>
         </div>` : ""}
       </div>
-
       <div class="post-content">
-        ${post.caption ? `
-          <p class="post-caption" style="text-align: justify;" data-full="${post.caption}">
-            ${truncateWords(post.caption, 60)} <span class="toggle-caption" style="color: #4FC3F7; cursor: pointer;">Read more</span>
-          </p>` : ""}
+${post.caption ? `
+<div class="post-caption" 
+     data-raw="${post.caption.replace(/"/g, '&quot;')}"
+     data-full="${formatCaptionWithParagraphs(post.caption).replace(/"/g, '&quot;')}"
+     data-expanded="false"
+     style="text-align: justify;">
+  ${formatCaptionWithParagraphs(truncateWords(post.caption, 60))} 
+  <span class="toggle-caption" style="color: #4FC3F7; cursor: pointer;">Read more</span>
+</div>
+  ` : ""}
+  
         ${mediaHtml}
       </div>
 
@@ -1137,45 +1156,68 @@ if (targetPostId && post._id === targetPostId) {
 
 document.addEventListener("click", function (e) {
   if (e.target.classList.contains("toggle-caption")) {
-    const p = e.target.closest(".post-caption");
-    const fullText = p.getAttribute("data-full");
-    const isExpanded = p.getAttribute("data-expanded") === "true";
+    const captionDiv = e.target.closest(".post-caption");
+    const rawText = captionDiv.getAttribute("data-raw");
+    const fullHTML = captionDiv.getAttribute("data-full");
+    const isExpanded = captionDiv.getAttribute("data-expanded") === "true";
 
     if (isExpanded) {
-      p.innerHTML = truncateWords(fullText, 60) + ' <span class="toggle-caption" style="color: #4FC3F7; cursor: pointer;">Read more</span>';
-      p.setAttribute("data-expanded", "false");
+      // COLLAPSE back to preview
+      captionDiv.innerHTML =
+        formatCaptionWithParagraphs(truncateWords(rawText, 60)) +
+        ' <span class="toggle-caption" style="color: #4FC3F7; cursor: pointer;">Read more</span>';
+      captionDiv.setAttribute("data-expanded", "false");
     } else {
-      p.innerHTML = fullText + ' <span class="toggle-caption" style="color: #F48FB1; cursor: pointer;">Read less</span>';
-      p.setAttribute("data-expanded", "true");
+      // EXPAND to full
+      captionDiv.innerHTML =
+        fullHTML +
+        ' <span class="toggle-caption" style="color: #4FC3F7; cursor: pointer;">Read less</span>';
+      captionDiv.setAttribute("data-expanded", "true");
     }
   }
 });
 
 
+let editingPostIndex = null;
 
 function editPost(index) {
   const post = dummyPosts[index];
-  const newCaption = prompt("Edit your caption:", post.caption);
+  const modal = document.getElementById("editPostModal");
+  const textarea = document.getElementById("editCaptionText");
 
-  if (newCaption !== null && newCaption.trim() !== "") {
-    post.caption = newCaption.trim();
+  editingPostIndex = index;
+  textarea.value = post.caption || "";
+  modal.style.display = "flex";
+}
+function saveEditedPost() {
+  const newCaption = document.getElementById("editCaptionText").value.trim();
+  const modal = document.getElementById("editPostModal");
 
-    fetch(`https://connecther.network/api/posts/${post._id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ caption: post.caption })
-    })
+  if (newCaption === "") {
+    alert("Caption cannot be empty.");
+    return;
+  }
+
+  const index = editingPostIndex;
+  const post = dummyPosts[index];
+
+  fetch(`http://localhost:3000/api/posts/${post._id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ caption: newCaption })
+  })
     .then(res => res.json())
     .then(updated => {
       dummyPosts[index] = updated;
       document.getElementById("feed").innerHTML = "";
       dummyPosts.forEach((p, i) => renderPost(p, i));
+      modal.style.display = "none";
+      editingPostIndex = null;
     })
     .catch(err => {
       alert("Error updating post.");
       console.error(err);
     });
-  }
 }
 
 function deletePost(index) {
@@ -1984,7 +2026,21 @@ socket.on("newMessage", (msg) => {
     window.location.href = "community.html";
   }
 
+function truncateWords(text, wordLimit) {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= wordLimit) return text;
+  return words.slice(0, wordLimit).join(" ");
+}
 
+function formatCaptionWithParagraphs(text) {
+  const safeText = text
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return safeText
+    .split(/\n{2,}/)
+    .map(paragraph => `<p>${paragraph.replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
 
 
   </script>
