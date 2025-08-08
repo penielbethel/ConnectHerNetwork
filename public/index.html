@@ -693,18 +693,27 @@ let currentIndex = 0;
 function handleFieldInput(index) {
   const current = signupFields[index];
   const input = current.querySelector("input, select, .date-input-wrapper");
-  
+
   if (!input) return;
 
   const targetInput = input.querySelector("input, select") || input;
+
   targetInput.addEventListener("input", () => {
-    if (targetInput.value.trim() !== "" && signupFields[index + 1]) {
-      signupFields[index + 1].classList.add("visible");
-      currentIndex++;
-      handleFieldInput(currentIndex);
+    if (targetInput.value.trim() !== "") {
+      if (targetInput.name === "password") {
+        // 🚀 After password, reveal all remaining steps
+        for (let i = index + 1; i < signupFields.length; i++) {
+          signupFields[i].classList.add("visible");
+        }
+      } else if (signupFields[index + 1]) {
+        signupFields[index + 1].classList.add("visible");
+        currentIndex++;
+        handleFieldInput(currentIndex);
+      }
     }
   });
 }
+
 
 // Start listening once First Name is filled
 document.getElementById("firstName").addEventListener("input", function () {
