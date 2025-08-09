@@ -5,7 +5,7 @@ const User = require("../models/User");
 
 // ✅ Firebase Admin SDK setup - //COMMENT NEXT LINE ON COMMIT AND UNCOMMIT ON BUILD//
 
-const admin = require('../firebase');
+//const admin = require('../firebase');//
 
 router.use(express.json());
 
