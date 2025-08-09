@@ -5,6 +5,7 @@
   <title>ConnectHer - Home Feed</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="/pull-to-refresh.css">
   <style>
     * {
       margin: 0;
@@ -1717,11 +1718,22 @@ if (currentUser?.username && !window.hasSocketRegistered) {
     loadSuggestions(); // 👈 Re-fetch suggestions
   });
 
-  socket.on("new-notification", (notif) => {
-    if (notif.type === "like" || notif.type === "comment") {
-      alert(notif.content); // ✅ Replace with toast later
-    }
-  });
+ socket.on("new-notification", (notif) => {
+  console.log("🔔 Real-time notification:", notif);
+
+  // ✅ Always show badge/dot
+  const notifDot = document.getElementById("notifDot");
+  if (notifDot) {
+    notifDot.style.display = "block";
+    localStorage.setItem("hasNewNotif", "true");
+  }
+
+  // ✅ Optional: show toast or alert based on type
+  if (notif.type === "like" || notif.type === "comment") {
+    // Replace this with your toast UI later
+    alert(`${notif.title || "New Activity"}: ${notif.body || notif.content || ""}`);
+  }
+});
 
  // ===============================================
 // ✅ Group Call Listener for Debug
@@ -2089,7 +2101,7 @@ function formatCaptionWithParagraphs(text) {
   </div>
 </div>
 <script src="theme.js" defer></script>
-
+<script src="/pull-to-refresh.js"></script>
 <script>
   localStorage.setItem("activePage", "dashboard.html");
   function openChatPage() {

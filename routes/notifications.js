@@ -3,9 +3,9 @@ const router = express.Router();
 const Notification = require("../models/Notification");
 const User = require("../models/User");
 
-// ✅ Firebase Admin SDK setup
-//const admin = require('../firebase');//
+// ✅ Firebase Admin SDK setup - //COMMENT NEXT LINE ON COMMIT AND UNCOMMIT ON BUILD//
 
+const admin = require('../firebase');
 
 router.use(express.json());
 
@@ -131,7 +131,19 @@ router.post("/send", async (req, res) => {
     });
     await newNotif.save();
 
-    // Push notification
+    // 🔹 Socket.IO emit for real-time badge updates
+    const io = req.app.get('io');
+    if (io) {
+      io.to(toUsername).emit('new-notification', {
+        _id: newNotif._id,
+        title,
+        body,
+        type,
+        createdAt: newNotif.createdAt
+      });
+    }
+
+    // 🔹 FCM push notification
     const user = await User.findOne({ username: toUsername });
     if (!user?.fcmToken) {
       return res.status(200).json({ success: true, message: "Notification saved, no token to push." });
@@ -139,7 +151,13 @@ router.post("/send", async (req, res) => {
 
     const message = {
       token: user.fcmToken,
-      notification: { title, body }
+      notification: { title, body },
+      data: {
+        type,
+        forAll: String(forAll),
+        createdAt: newNotif.createdAt.toISOString(),
+        url: "/notifications"
+      }
     };
 
     const response = await admin.messaging().send(message);
