@@ -1200,7 +1200,7 @@ function saveEditedPost() {
   const index = editingPostIndex;
   const post = dummyPosts[index];
 
-  fetch(`http://localhost:3000/api/posts/${post._id}`, {
+  fetch(`https://connecther.network/api/posts/${post._id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caption: newCaption })
