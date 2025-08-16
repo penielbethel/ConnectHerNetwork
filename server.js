@@ -49,14 +49,17 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(cors({
   origin: [
     "http://localhost",
-    "https://localhost",            
+    "https://localhost",
     "capacitor://localhost",
     "http://localhost:8080",
+    "http://127.0.0.1",
     "https://connecther.network"
   ],
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
 }));
+
 
 
 
