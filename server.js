@@ -48,14 +48,16 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // 🛠️ Middlewares
 app.use(cors({
   origin: [
-    "http://https://connecther.network",
     "http://localhost",
-    "https://localhost",            // ✅ Add this
+    "https://localhost",            
     "capacitor://localhost",
+    "http://localhost:8080",
     "https://connecther.network"
   ],
+  methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
+
 
 
 app.use(express.json({ limit: '100mb' }));
