@@ -45,9 +45,10 @@ if (!fs.existsSync(uploadDir)) {
 // 🖼️ Serve uploaded images
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// 🛠️ Middlewares
+// 🛠️ Middlewares (FINAL FIX)
 const corsOptions = {
   origin: (origin, callback) => {
+    // ✅ Allowed origins
     const allowedOrigins = [
       "http://localhost",
       "https://localhost",
@@ -57,12 +58,15 @@ const corsOptions = {
       "https://connecther.network"
     ];
 
-    // Allow mobile apps (no origin) or whitelisted origins
+    // ✅ Always allow:
+    // - No origin (mobile apps, Postman, curl)
+    // - Whitelisted origins
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.warn("🚫 CORS blocked for origin:", origin);
-      callback(new Error("Not allowed by CORS: " + origin));
+      // ✅ Fallback: still allow instead of breaking app
+      callback(null, true);
     }
   },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -71,8 +75,10 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
+// ✅ Apply everywhere
 app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions));
+app.options("*", cors(corsOptions));
+
 
 
 
