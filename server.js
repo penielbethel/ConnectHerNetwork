@@ -73,12 +73,7 @@ const corsOptions = {
 
 // ✅ Apply globally
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
-
-
-
-
-
+app.options("/*", cors(corsOptions));
 
 
 app.use(express.json({ limit: '100mb' }));
