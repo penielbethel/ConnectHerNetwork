@@ -5,7 +5,7 @@ const User = require("../models/User");
 
 // ✅ Firebase Admin SDK setup - //COMMENT NEXT LINE ON COMMIT AND UNCOMMIT ON BUILD//
 
-//const admin = require('../firebase');//
+const admin = require('../firebase');
 
 router.use(express.json());
 
@@ -132,9 +132,9 @@ router.post("/send", async (req, res) => {
     await newNotif.save();
 
     // 🔹 Socket.IO emit for real-time badge updates
-    const io = req.app.get('io');
+    const io = req.app.get("io");
     if (io) {
-      io.to(toUsername).emit('new-notification', {
+      io.to(toUsername).emit("new-notification", {
         _id: newNotif._id,
         title,
         body,
@@ -146,27 +146,60 @@ router.post("/send", async (req, res) => {
     // 🔹 FCM push notification
     const user = await User.findOne({ username: toUsername });
     if (!user?.fcmToken) {
-      return res.status(200).json({ success: true, message: "Notification saved, no token to push." });
+      return res.status(200).json({
+        success: true,
+        message: "Notification saved, no token to push."
+      });
     }
 
     const message = {
       token: user.fcmToken,
-      notification: { title, body },
+      notification: {
+        title,
+        body,
+        sound: "notify"
+      },
+      android: {
+        notification: {
+          channelId: "alerts", // ⚡ must match MainActivity.java
+          sound: "notify",     // ⚡ matches res/raw/notify.mp3
+          priority: "high",
+          visibility: "public",
+          vibrateTimingsMillis: [0, 500, 500, 500],   // 🔔 vibration pattern
+          notificationPriority: "PRIORITY_MAX",
+          fullScreenIntent: true   // ⚡ wake screen
+        }
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: "default"
+          }
+        }
+      },
       data: {
         type,
         forAll: String(forAll),
         createdAt: newNotif.createdAt.toISOString(),
-        url: "/notifications"
+        url: "/dashboard.html" // ⚡ always route user back here
       }
     };
 
     const response = await admin.messaging().send(message);
 
-    res.json({ success: true, messageId: response, notification: newNotif });
+    res.json({
+      success: true,
+      messageId: response,
+      notification: newNotif
+    });
   } catch (err) {
     console.error("❌ Error sending push notification:", err);
-    res.status(500).json({ success: false, message: "Push/send failed." });
+    res.status(500).json({
+      success: false,
+      message: "Push/send failed."
+    });
   }
 });
+
 
 module.exports = router;
