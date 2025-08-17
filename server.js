@@ -46,19 +46,34 @@ if (!fs.existsSync(uploadDir)) {
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // 🛠️ Middlewares
-app.use(cors({
-  origin: [
-    "http://localhost",
-    "https://localhost",
-    "capacitor://localhost",
-    "http://localhost:8080",
-    "http://127.0.0.1",
-    "https://connecther.network"
-  ],
+const corsOptions = {
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      "http://localhost",
+      "https://localhost",
+      "capacitor://localhost",
+      "http://localhost:8080",
+      "http://127.0.0.1",
+      "https://connecther.network"
+    ];
+
+    // Allow mobile apps (no origin) or whitelisted origins
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn("🚫 CORS blocked for origin:", origin);
+      callback(new Error("Not allowed by CORS: " + origin));
+    }
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true
-}));
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // Handle preflight for all routes
+
 
 
 
