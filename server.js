@@ -77,7 +77,7 @@ const corsOptions = {
 
 // ✅ Apply everywhere
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 
 
