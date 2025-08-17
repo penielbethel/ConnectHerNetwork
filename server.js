@@ -8,6 +8,36 @@ const fs = require("fs");
 require("dotenv").config();
 require('events').EventEmitter.defaultMaxListeners = 30; 
 const app = express();
+
+// 🛠️ CORS Middleware
+const corsOptions = {
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      "http://localhost",
+      "http://localhost:8080",
+      "http://127.0.0.1",
+      "https://localhost",
+      "capacitor://localhost",
+      "https://connecther.network"
+    ];
+
+    if (!origin || allowedOrigins.includes(origin) || origin.startsWith("http://localhost")) {
+      callback(null, true);
+    } else {
+      console.warn("🚫 CORS blocked for origin:", origin);
+      callback(new Error("Not allowed by CORS: " + origin));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+// ✅ Apply globally
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
+
+
 const statsRoutes = require("./routes/stats");
 app.use("/api", statsRoutes);
 const notificationRoutes = require("./routes/notifications");
@@ -44,38 +74,6 @@ if (!fs.existsSync(uploadDir)) {
 
 // 🖼️ Serve uploaded images
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-// 🛠️ CORS Middleware
-const corsOptions = {
-  origin: (origin, callback) => {
-    const allowedOrigins = [
-      "http://localhost",
-      "http://localhost:8080",
-      "http://127.0.0.1",
-      "https://localhost",
-      "capacitor://localhost",
-      "https://connecther.network"
-    ];
-
-    if (!origin || allowedOrigins.includes(origin) || origin.startsWith("http://localhost")) {
-      callback(null, true);
-    } else {
-      console.warn("🚫 CORS blocked for origin:", origin);
-      callback(new Error("Not allowed by CORS: " + origin));
-    }
-  },
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
-  optionsSuccessStatus: 200
-};
-
-// ✅ Apply globally
-app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions));   // <-- FIX for Express v5
-
-
-
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
