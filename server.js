@@ -50,14 +50,13 @@ const corsOptions = {
   origin: (origin, callback) => {
     const allowedOrigins = [
       "http://localhost",
-      "https://localhost",
-      "capacitor://localhost",
       "http://localhost:8080",
       "http://127.0.0.1",
+      "https://localhost",
+      "capacitor://localhost",
       "https://connecther.network"
     ];
 
-    // ✅ Allow mobile apps (no origin) or whitelisted origins
     if (!origin || allowedOrigins.includes(origin) || origin.startsWith("http://localhost")) {
       callback(null, true);
     } else {
@@ -73,7 +72,8 @@ const corsOptions = {
 
 // ✅ Apply globally
 app.use(cors(corsOptions));
-app.options("/*", cors(corsOptions));
+app.options(/.*/, cors(corsOptions));   // <-- FIX for Express v5
+
 
 
 app.use(express.json({ limit: '100mb' }));
