@@ -2,9 +2,7 @@ const express = require("express");
 const router = express.Router();
 const Notification = require("../models/Notification");
 const User = require("../models/User");
-
-// Firebase Admin SDK
-const admin = require('../firebase');
+const admin = require("../firebase"); // Firebase Admin SDK
 
 router.use(express.json());
 
@@ -86,7 +84,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 /**
- * ✅ Save FCM token for a user (supports multiple devices)
+ * ✅ Save FCM token(s) for a user (multi-device ready)
  */
 router.post("/save-token", async (req, res) => {
   const { username, token } = req.body;
@@ -106,15 +104,15 @@ router.post("/save-token", async (req, res) => {
       await user.save();
     }
 
-    res.json({ success: true, message: "FCM token saved successfully." });
+    res.json({ success: true, message: "FCM token saved." });
   } catch (err) {
     console.error("❌ Error saving FCM token:", err);
-    res.status(500).json({ success: false, message: "Failed to save FCM token." });
+    res.status(500).json({ success: false });
   }
 });
 
 /**
- * ✅ Send push notification & save to DB
+ * ✅ Send push notification & save to DB (multi-device)
  */
 router.post("/send", async (req, res) => {
   const { toUsername, title, body, type = "alert", forAll = false } = req.body;
@@ -134,7 +132,7 @@ router.post("/send", async (req, res) => {
     });
     await newNotif.save();
 
-    // Socket.IO real-time badge update
+    // 🔹 Socket.IO emit for real-time badge updates
     const io = req.app.get("io");
     if (io) {
       io.to(toUsername).emit("new-notification", {
@@ -146,16 +144,19 @@ router.post("/send", async (req, res) => {
       });
     }
 
-    // FCM push notification for all user tokens
+    // 🔹 FCM push notification
     const user = await User.findOne({ username: toUsername });
+
     if (!user?.fcmTokens || user.fcmTokens.length === 0) {
       return res.status(200).json({
         success: true,
-        message: "Notification saved, no FCM tokens to push."
+        message: "Notification saved, no FCM tokens to push.",
+        notification: newNotif
       });
     }
 
-    const messagePayload = {
+    const messages = user.fcmTokens.map(token => ({
+      token,
       notification: { title, body, sound: "notify" },
       android: {
         notification: {
@@ -168,35 +169,31 @@ router.post("/send", async (req, res) => {
           fullScreenIntent: true
         }
       },
-      apns: { payload: { aps: { sound: "default" } } },
+      apns: {
+        payload: { aps: { sound: "default" } }
+      },
       data: {
         type,
         forAll: String(forAll),
         createdAt: newNotif.createdAt.toISOString(),
         url: "/dashboard.html"
       }
-    };
+    }));
 
-    // Send to each token
-    const responses = [];
-    for (const token of user.fcmTokens) {
-      try {
-        const resp = await admin.messaging().send({ ...messagePayload, token });
-        responses.push({ token, messageId: resp });
-      } catch (err) {
-        console.warn(`⚠️ Failed to send to token ${token}:`, err.message);
-      }
-    }
+    // Send all messages in parallel
+    const response = await Promise.allSettled(messages.map(msg => admin.messaging().send(msg)));
 
     res.json({
       success: true,
-      notification: newNotif,
-      pushResponses: responses
+      fcmResults: response,
+      notification: newNotif
     });
-
   } catch (err) {
     console.error("❌ Error sending push notification:", err);
-    res.status(500).json({ success: false, message: "Push/send failed." });
+    res.status(500).json({
+      success: false,
+      message: "Push/send failed."
+    });
   }
 });
 
