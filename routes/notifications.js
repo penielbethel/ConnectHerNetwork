@@ -3,8 +3,7 @@ const router = express.Router();
 const Notification = require("../models/Notification");
 const User = require("../models/User");
 
-// ✅ Firebase Admin SDK setup - //COMMENT NEXT LINE ON COMMIT AND UNCOMMIT ON BUILD//
-
+// Firebase Admin SDK
 const admin = require('../firebase');
 
 router.use(express.json());
@@ -87,7 +86,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 /**
- * ✅ Save FCM token for a user
+ * ✅ Save FCM token for a user (supports multiple devices)
  */
 router.post("/save-token", async (req, res) => {
   const { username, token } = req.body;
@@ -100,13 +99,17 @@ router.post("/save-token", async (req, res) => {
     const user = await User.findOne({ username });
     if (!user) return res.status(404).json({ message: "User not found." });
 
-    user.fcmToken = token;
-    await user.save();
+    if (!user.fcmTokens) user.fcmTokens = [];
 
-    res.json({ success: true, message: "FCM token saved." });
+    if (!user.fcmTokens.includes(token)) {
+      user.fcmTokens.push(token);
+      await user.save();
+    }
+
+    res.json({ success: true, message: "FCM token saved successfully." });
   } catch (err) {
     console.error("❌ Error saving FCM token:", err);
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, message: "Failed to save FCM token." });
   }
 });
 
@@ -131,7 +134,7 @@ router.post("/send", async (req, res) => {
     });
     await newNotif.save();
 
-    // 🔹 Socket.IO emit for real-time badge updates
+    // Socket.IO real-time badge update
     const io = req.app.get("io");
     if (io) {
       io.to(toUsername).emit("new-notification", {
@@ -143,63 +146,58 @@ router.post("/send", async (req, res) => {
       });
     }
 
-    // 🔹 FCM push notification
+    // FCM push notification for all user tokens
     const user = await User.findOne({ username: toUsername });
-    if (!user?.fcmToken) {
+    if (!user?.fcmTokens || user.fcmTokens.length === 0) {
       return res.status(200).json({
         success: true,
-        message: "Notification saved, no token to push."
+        message: "Notification saved, no FCM tokens to push."
       });
     }
 
-    const message = {
-      token: user.fcmToken,
-      notification: {
-        title,
-        body,
-        sound: "notify"
-      },
+    const messagePayload = {
+      notification: { title, body, sound: "notify" },
       android: {
         notification: {
-          channelId: "alerts", // ⚡ must match MainActivity.java
-          sound: "notify",     // ⚡ matches res/raw/notify.mp3
+          channelId: "alerts",
+          sound: "notify",
           priority: "high",
           visibility: "public",
-          vibrateTimingsMillis: [0, 500, 500, 500],   // 🔔 vibration pattern
+          vibrateTimingsMillis: [0, 500, 500, 500],
           notificationPriority: "PRIORITY_MAX",
-          fullScreenIntent: true   // ⚡ wake screen
+          fullScreenIntent: true
         }
       },
-      apns: {
-        payload: {
-          aps: {
-            sound: "default"
-          }
-        }
-      },
+      apns: { payload: { aps: { sound: "default" } } },
       data: {
         type,
         forAll: String(forAll),
         createdAt: newNotif.createdAt.toISOString(),
-        url: "/dashboard.html" // ⚡ always route user back here
+        url: "/dashboard.html"
       }
     };
 
-    const response = await admin.messaging().send(message);
+    // Send to each token
+    const responses = [];
+    for (const token of user.fcmTokens) {
+      try {
+        const resp = await admin.messaging().send({ ...messagePayload, token });
+        responses.push({ token, messageId: resp });
+      } catch (err) {
+        console.warn(`⚠️ Failed to send to token ${token}:`, err.message);
+      }
+    }
 
     res.json({
       success: true,
-      messageId: response,
-      notification: newNotif
+      notification: newNotif,
+      pushResponses: responses
     });
+
   } catch (err) {
     console.error("❌ Error sending push notification:", err);
-    res.status(500).json({
-      success: false,
-      message: "Push/send failed."
-    });
+    res.status(500).json({ success: false, message: "Push/send failed." });
   }
 });
-
 
 module.exports = router;
