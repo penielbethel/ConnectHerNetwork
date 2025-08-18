@@ -92,20 +92,24 @@
   </div>
 
 
-  <script>
-  // 🛡️ SuperAdmin Page Protection
+ <script>
   const currentUser = JSON.parse(localStorage.getItem("currentUser"));
   const token = localStorage.getItem("token");
 
+  // 🔹 API base URL: Web uses relative, APK uses live server
+  const API_BASE = Capacitor.isNativePlatform()
+    ? "https://connecther.network/api" // live server for APK
+    : "/api"; // relative for Web
+
   if (!currentUser || currentUser.role !== "superadmin" || !token) {
     alert("⛔ Access denied. SuperAdmin only.");
-    window.location.replace("dashboard.html"); // or "Sign Up Page.html"
+    window.location.replace("dashboard.html");
   }
 
   // ✅ Fetch Admin Invite Token
   async function generateToken() {
     const role = document.getElementById("role").value;
-    const res = await fetch("/api/admin/generate-invite", {
+    const res = await fetch(`${API_BASE}/admin/generate-invite`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -128,11 +132,9 @@
   // ✅ Promote a user to Admin
   async function promoteUser() {
     const username = document.getElementById("promoteUsername").value;
-    const res = await fetch(`/api/admin/promote/${username}`, {
+    const res = await fetch(`${API_BASE}/admin/promote/${username}`, {
       method: "POST",
-      headers: {
-        "Authorization": "Bearer " + token
-      }
+      headers: { "Authorization": "Bearer " + token }
     });
 
     const data = await res.json();
@@ -144,10 +146,8 @@
 
   // ✅ List all users
   async function fetchUsers() {
-    const res = await fetch("/api/admin/users", {
-      headers: {
-        "Authorization": "Bearer " + token
-      }
+    const res = await fetch(`${API_BASE}/admin/users`, {
+      headers: { "Authorization": "Bearer " + token }
     });
 
     const data = await res.json();
@@ -172,23 +172,21 @@
   fetchUsers();
 
   // 🔻 Demote an Admin to User
-async function demoteUser() {
-  const username = document.getElementById("demoteUsername").value;
-  const res = await fetch(`/api/admin/demote/${username}`, {
-    method: "POST",
-    headers: {
-      "Authorization": "Bearer " + token
-    }
-  });
+  async function demoteUser() {
+    const username = document.getElementById("demoteUsername").value;
+    const res = await fetch(`${API_BASE}/admin/demote/${username}`, {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token }
+    });
 
-  const data = await res.json();
-  const msgBox = document.getElementById("demoteMsg");
-  msgBox.style.display = "block";
-  msgBox.innerText = data.message || "Failed to demote user.";
-  fetchUsers(); // refresh user list
-}
+    const data = await res.json();
+    const msgBox = document.getElementById("demoteMsg");
+    msgBox.style.display = "block";
+    msgBox.innerText = data.message || "Failed to demote user.";
+    fetchUsers(); // refresh user list
+  }
 </script>
-<script src="theme.js" defer></script>
 
+<script src="theme.js" defer></script>
 </body>
 </html>
