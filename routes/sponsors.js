@@ -140,53 +140,64 @@ try {
     },
   });
 
+  // ✅ Check if transporter is ready
+  await transporter.verify();
+  console.log("✅ Mail server ready to send emails");
+
   const BATCH_SIZE = 50;
 
   for (let i = 0; i < users.length; i += BATCH_SIZE) {
     const batch = users.slice(i, i + BATCH_SIZE);
 
     await Promise.allSettled(
-      batch.map((u) =>
-        transporter.sendMail({
-          from: `"ConnectHer Network" <${process.env.EMAIL_USERNAME}>`,
-          to: u.email,
-          subject: `📢 New Sponsorship from ${sponsor.companyName}`,
-          html: `
-            <div style="font-family: Arial, sans-serif; line-height:1.6; padding:10px; max-width:600px; margin:auto; border:1px solid #eee; border-radius:8px;">
-              <h2 style="color:#e91e63;">New Sponsorship Alert</h2>
-              <p>Hello <strong>${u.firstName || u.username || "User"}</strong>,</p>
-              <p><strong>${sponsor.companyName}</strong> just posted a new sponsorship opportunity.</p>
+      batch.map(async (u) => {
+        try {
+          let info = await transporter.sendMail({
+            from: `"ConnectHer Network" <${process.env.EMAIL_USERNAME}>`,
+            to: u.email,
+            subject: `📢 New Sponsorship from ${sponsor.companyName}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; line-height:1.6; padding:10px; max-width:600px; margin:auto; border:1px solid #eee; border-radius:8px;">
+                <h2 style="color:#e91e63;">New Sponsorship Alert</h2>
+                <p>Hello <strong>${u.firstName || u.username || "User"}</strong>,</p>
+                <p><strong>${sponsor.companyName}</strong> just posted a new sponsorship opportunity.</p>
 
-              ${sponsor.logo ? `<img src="${sponsor.logo}" alt="Sponsor Logo" style="width:80px; border-radius:50%; margin:10px 0;" />` : ""}
+                ${sponsor.logo ? `<img src="${sponsor.logo}" alt="Sponsor Logo" style="width:80px; border-radius:50%; margin:10px 0;" />` : ""}
 
-              <p style="font-size:15px; color:#333;">${caption || ""}</p>
+                <p style="font-size:15px; color:#333;">${caption || ""}</p>
 
-              ${
-                media
-                  ? `<div style="margin:15px 0;">
-                       <img src="${media}" alt="Sponsor Media" style="width:100%; max-width:400px; border-radius:8px;" />
-                     </div>`
-                  : ""
-              }
+                ${
+                  media
+                    ? `<div style="margin:15px 0;">
+                         <img src="${media}" alt="Sponsor Media" style="width:100%; max-width:400px; border-radius:8px;" />
+                       </div>`
+                    : ""
+                }
 
-              <p>
-                <a href="${jobLink || "#"}" target="_blank" style="display:inline-block; background:#e91e63; color:#fff; padding:10px 15px; text-decoration:none; border-radius:5px;">
-                  View Opportunity
-                </a>
-              </p>
+                <p>
+                  <a href="${jobLink || "#"}" target="_blank" style="display:inline-block; background:#e91e63; color:#fff; padding:10px 15px; text-decoration:none; border-radius:5px;">
+                    View Opportunity
+                  </a>
+                </p>
 
-              <p style="margin-top:20px;">Thank you,<br><strong>ConnectHer Network</strong></p>
-            </div>
-          `,
-        })
-      )
+                <p style="margin-top:20px;">Thank you,<br><strong>ConnectHer Network</strong></p>
+              </div>
+            `,
+          });
+
+          console.log(`📧 Sent to ${u.email}: ${info.messageId}`);
+        } catch (err) {
+          console.error(`❌ Failed to send to ${u.email}:`, err.message);
+        }
+      })
     );
 
-    console.log(`✅ Email batch ${Math.floor(i / BATCH_SIZE) + 1} sent`);
+    console.log(`✅ Batch ${Math.floor(i / BATCH_SIZE) + 1} finished`);
   }
 } catch (err) {
-  console.warn("Email send failed:", err.message);
+  console.error("❌ Email block error:", err);
 }
+
 
 
     res.status(200).json({ message: "Post added, notification & emails sent", sponsor });
