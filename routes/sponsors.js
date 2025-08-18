@@ -126,28 +126,68 @@ router.put("/:id/post", verifyTokenAndRole(["admin","superadmin"]), upload.singl
       forAll: true
     });
 
-    // Emails
-    try {
-      const users = await User.find({}, "email username");
-      const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.EMAIL_USERNAME, pass: process.env.EMAIL_PASSWORD } });
-      const BATCH_SIZE = 50;
+   // Emails
+try {
+  const users = await User.find({}, "email firstName surname username");
 
-      for (let i=0; i<users.length; i+=BATCH_SIZE) {
-        const batch = users.slice(i, i+BATCH_SIZE);
-        await Promise.allSettled(batch.map(u => transporter.sendMail({
-          from: process.env.EMAIL_USERNAME,
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false, // TLS
+    auth: {
+      user: process.env.EMAIL_USERNAME,
+      pass: process.env.EMAIL_PASSWORD,
+    },
+  });
+
+  const BATCH_SIZE = 50;
+
+  for (let i = 0; i < users.length; i += BATCH_SIZE) {
+    const batch = users.slice(i, i + BATCH_SIZE);
+
+    await Promise.allSettled(
+      batch.map((u) =>
+        transporter.sendMail({
+          from: `"ConnectHer Network" <${process.env.EMAIL_USERNAME}>`,
           to: u.email,
-          subject: `New Sponsorship from ${sponsor.companyName}`,
-          html: `<p>Hello ${u.username || "User"},</p>
-                 <p><strong>${sponsor.companyName}</strong> posted a new opportunity:</p>
-                 <p>${caption || ""}</p>
-                 ${media ? `<img src="${media}" style="width:100%;max-width:400px;border-radius:8px;" />` : ""}
-                 <p><a href="${jobLink || "#"}" target="_blank">View Opportunity</a></p>
-                 <p>Thank you!</p>`
-        })));
-        console.log(`✅ Email batch ${Math.floor(i/BATCH_SIZE)+1} sent`);
-      }
-    } catch (err) { console.warn("Email send failed:", err.message); }
+          subject: `📢 New Sponsorship from ${sponsor.companyName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; line-height:1.6; padding:10px; max-width:600px; margin:auto; border:1px solid #eee; border-radius:8px;">
+              <h2 style="color:#e91e63;">New Sponsorship Alert</h2>
+              <p>Hello <strong>${u.firstName || u.username || "User"}</strong>,</p>
+              <p><strong>${sponsor.companyName}</strong> just posted a new sponsorship opportunity.</p>
+
+              ${sponsor.logo ? `<img src="${sponsor.logo}" alt="Sponsor Logo" style="width:80px; border-radius:50%; margin:10px 0;" />` : ""}
+
+              <p style="font-size:15px; color:#333;">${caption || ""}</p>
+
+              ${
+                media
+                  ? `<div style="margin:15px 0;">
+                       <img src="${media}" alt="Sponsor Media" style="width:100%; max-width:400px; border-radius:8px;" />
+                     </div>`
+                  : ""
+              }
+
+              <p>
+                <a href="${jobLink || "#"}" target="_blank" style="display:inline-block; background:#e91e63; color:#fff; padding:10px 15px; text-decoration:none; border-radius:5px;">
+                  View Opportunity
+                </a>
+              </p>
+
+              <p style="margin-top:20px;">Thank you,<br><strong>ConnectHer Network</strong></p>
+            </div>
+          `,
+        })
+      )
+    );
+
+    console.log(`✅ Email batch ${Math.floor(i / BATCH_SIZE) + 1} sent`);
+  }
+} catch (err) {
+  console.warn("Email send failed:", err.message);
+}
+
 
     res.status(200).json({ message: "Post added, notification & emails sent", sponsor });
 
