@@ -210,25 +210,37 @@ router.put("/:sponsorId/posts/:postId", verifyTokenAndRole(["admin","superadmin"
  * Delete a post
  * DELETE /api/sponsors/:sponsorId/posts/:postId
  * ------------------------ */
-router.delete("/:sponsorId/posts/:postId", verifyTokenAndRole(["admin","superadmin"]), async (req,res)=>{
+router.delete("/:sponsorId/posts/:postId", verifyTokenAndRole(["admin", "superadmin"]), async (req, res) => {
   try {
     const { sponsorId, postId } = req.params;
+
     const sponsor = await Sponsor.findById(sponsorId);
     if (!sponsor) return res.status(404).json({ message: "Sponsor not found" });
 
     const post = sponsor.posts.id(postId);
     if (!post) return res.status(404).json({ message: "Post not found" });
 
-    if (post.mediaPublicId) await deleteFromCloudinary(post.mediaPublicId);
-    post.remove();
+    // Delete media from Cloudinary if exists
+    if (post.mediaPublicId) {
+      try {
+        await deleteFromCloudinary(post.mediaPublicId);
+      } catch (err) {
+        console.warn("⚠️ Failed to delete media from Cloudinary:", err.message);
+      }
+    }
+
+    // ✅ Correct way to remove subdocument
+    sponsor.posts.pull(post._id);
     sponsor.postCount = sponsor.posts.length;
     await sponsor.save();
-    res.json({ message: "Post deleted successfully" });
+
+    res.json({ message: "✅ Post deleted successfully" });
   } catch (err) {
-    console.error("Delete Post Error:", err);
+    console.error("❌ Delete Sponsor Post Error:", err);
     res.status(500).json({ message: "Failed to delete post", error: err.message });
   }
 });
+
 
 /** ------------------------
  * Delete a sponsor
