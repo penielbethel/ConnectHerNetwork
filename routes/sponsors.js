@@ -20,6 +20,21 @@ const User = require("../models/User"); // if sending to specific users
 const multerStorage = multer.memoryStorage();
 const upload = multer({ storage: multerStorage });
 
+// ✅ STEP 2: NEWMEK
+const cors = require("cors");
+router.use(cors({
+  origin: [
+    "http://localhost",
+    "https://localhost",
+    "capacitor://localhost",
+    "http://localhost:8080",
+    "http://127.0.0.1",
+    "https://connecther.network"
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+}));
 
 /**
  * ✅ POST /api/sponsors/register
@@ -77,11 +92,8 @@ router.post(
 );
 
 
-/**
- * ✅ GET /api/sponsors
- * Get all sponsors
- */
-router.get("/", verifyTokenAndRole(["user","admin", "superadmin"]), async (req, res) => {
+// ✅ Allow both App (no token) and Web (tokened users)
+router.get("/", async (req, res) => {
   try {
     const sponsors = await Sponsor.find().sort({ createdAt: -1 });
     res.json(sponsors);
@@ -90,6 +102,7 @@ router.get("/", verifyTokenAndRole(["user","admin", "superadmin"]), async (req, 
     res.status(500).json({ message: "Failed to load sponsors" });
   }
 });
+
 
 
 /**
@@ -137,7 +150,7 @@ router.put(
               });
           });
         } else {
-          fs.writeFileSync(outputPath, req.file.buffer); // fallback
+          fs.writeFileSync(outputPath, req.file.buffer);
         }
 
         const result = await uploadToCloudinary(outputPath, "uploads/sponsor-posts");
@@ -174,7 +187,48 @@ router.put(
         forAll: true
       });
 
-      res.status(200).json({ message: "Post added and notification sent", sponsor });
+      // ✅ Send professional, rich emails to all users
+      const users = await User.find({}, "email username");
+
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: process.env.EMAIL_USERNAME,
+          pass: process.env.EMAIL_PASSWORD
+        }
+      });
+
+      const BATCH_SIZE = 50;
+
+      for (let i = 0; i < users.length; i += BATCH_SIZE) {
+        const batch = users.slice(i, i + BATCH_SIZE);
+
+        const emailPromises = batch.map(user => {
+          const mailOptions = {
+            from: `"ConnectHer Network" <${process.env.EMAIL_USERNAME}>`,
+            to: user.email,
+            subject: `New Sponsor Opportunity: ${sponsor.companyName}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px; background: #f9f9f9;">
+                <h2 style="color:#b31574;">Hello ${user.username || "User"},</h2>
+                <p style="font-size: 16px; color: #333;">
+                  <strong>${sponsor.companyName}</strong> has just posted a new sponsorship opportunity on ConnectHer Network.
+                </p>
+                ${media ? `<img src="${media}" alt="${sponsor.companyName}" style="width:100%; max-width:500px; border-radius:10px; margin:10px 0;">` : ""}
+                <p style="font-size: 14px; color: #555;">${caption}</p>
+                <a href="${jobLink || "#"}" style="display:inline-block; margin-top:10px; background:#b31574; color:#fff; padding:10px 15px; text-decoration:none; border-radius:5px;">View Opportunity</a>
+                <p style="font-size:12px; color:#888; margin-top:15px;">Thank you for being part of ConnectHer Network.</p>
+              </div>
+            `
+          };
+          return transporter.sendMail(mailOptions);
+        });
+
+        await Promise.allSettled(emailPromises);
+        console.log(`✅ Batch ${Math.floor(i / BATCH_SIZE) + 1} emails sent`);
+      }
+
+      res.status(200).json({ message: "Post added, notification created, emails sent", sponsor });
 
     } catch (err) {
       console.error("Post for Sponsor Error:", err);
@@ -182,6 +236,7 @@ router.put(
     }
   }
 );
+
 
 
 
