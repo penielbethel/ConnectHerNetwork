@@ -105,10 +105,7 @@ router.get("/", async (req, res) => {
 
 
 
-/**
- * ✅ PUT /api/sponsors/:id/post
- post to a sponsor and send notification to users
- */
+// PUT /api/sponsors/:id/post - Add post and notify users
 router.put(
   "/:id/post",
   verifyTokenAndRole(["admin", "superadmin"]),
@@ -120,43 +117,47 @@ router.put(
       let media = null;
       let mediaPublicId = null;
 
-      // ✅ Compress + Upload to Cloudinary
+      // Compress + Upload to Cloudinary
       if (req.file) {
-        const ext = path.extname(req.file.originalname).toLowerCase();
-        const isImage = req.file.mimetype.startsWith("image/");
-        const isVideo = req.file.mimetype.startsWith("video/");
-        const outputName = `compressed-${Date.now()}-${req.file.originalname}`;
-        const outputPath = path.join("uploads", outputName);
+        try {
+          const ext = path.extname(req.file.originalname).toLowerCase();
+          const isImage = req.file.mimetype.startsWith("image/");
+          const isVideo = req.file.mimetype.startsWith("video/");
+          const outputName = `compressed-${Date.now()}-${req.file.originalname}`;
+          const outputPath = path.join("uploads", outputName);
 
-        if (isImage) {
-          await sharp(req.file.buffer)
-            .resize({ width: 600 })
-            .jpeg({ quality: 60 })
-            .toFile(outputPath);
-        } else if (isVideo) {
-          const tempInputPath = path.join("uploads", `temp-${Date.now()}.mp4`);
-          fs.writeFileSync(tempInputPath, req.file.buffer);
-          await new Promise((resolve, reject) => {
-            ffmpeg(tempInputPath)
-              .outputOptions("-crf 28")
-              .save(outputPath)
-              .on("end", () => {
-                fs.unlinkSync(tempInputPath);
-                resolve();
-              })
-              .on("error", (err) => {
-                fs.unlinkSync(tempInputPath);
-                reject(err);
-              });
-          });
-        } else {
-          fs.writeFileSync(outputPath, req.file.buffer);
+          if (isImage) {
+            await sharp(req.file.buffer)
+              .resize({ width: 600 })
+              .jpeg({ quality: 60 })
+              .toFile(outputPath);
+          } else if (isVideo) {
+            const tempInputPath = path.join("uploads", `temp-${Date.now()}.mp4`);
+            fs.writeFileSync(tempInputPath, req.file.buffer);
+            await new Promise((resolve, reject) => {
+              ffmpeg(tempInputPath)
+                .outputOptions("-crf 28")
+                .save(outputPath)
+                .on("end", () => {
+                  fs.unlinkSync(tempInputPath);
+                  resolve();
+                })
+                .on("error", (err) => {
+                  fs.unlinkSync(tempInputPath);
+                  reject(err);
+                });
+            });
+          } else {
+            fs.writeFileSync(outputPath, req.file.buffer);
+          }
+
+          const result = await uploadToCloudinary(outputPath, "uploads/sponsor-posts");
+          media = result.url;
+          mediaPublicId = result.public_id;
+          fs.unlinkSync(outputPath);
+        } catch (err) {
+          console.error("⚠️ Media upload failed:", err);
         }
-
-        const result = await uploadToCloudinary(outputPath, "uploads/sponsor-posts");
-        media = result.url;
-        mediaPublicId = result.public_id;
-        fs.unlinkSync(outputPath);
       }
 
       const sponsor = await Sponsor.findById(req.params.id);
@@ -168,15 +169,15 @@ router.put(
         media,
         mediaPublicId,
         views: 0,
-        createdAt: new Date()
+        clicks: 0,
+        createdAt: new Date(),
       };
 
       sponsor.posts.push(post);
       sponsor.postCount = sponsor.posts.length;
-
       await sponsor.save();
 
-      // ✅ Create a notification for users
+      // Create a notification
       await Notification.create({
         type: "sponsor",
         title: "New Sponsorship Alert",
@@ -184,58 +185,84 @@ router.put(
         sponsorId: sponsor._id,
         postId: post._id,
         createdAt: new Date(),
-        forAll: true
+        forAll: true,
       });
 
-      // ✅ Send professional, rich emails to all users
-      const users = await User.find({}, "email username");
-
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.EMAIL_USERNAME,
-          pass: process.env.EMAIL_PASSWORD
-        }
-      });
-
-      const BATCH_SIZE = 50;
-
-      for (let i = 0; i < users.length; i += BATCH_SIZE) {
-        const batch = users.slice(i, i + BATCH_SIZE);
-
-        const emailPromises = batch.map(user => {
-          const mailOptions = {
-            from: `"ConnectHer Network" <${process.env.EMAIL_USERNAME}>`,
-            to: user.email,
-            subject: `New Sponsor Opportunity: ${sponsor.companyName}`,
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px; background: #f9f9f9;">
-                <h2 style="color:#b31574;">Hello ${user.username || "User"},</h2>
-                <p style="font-size: 16px; color: #333;">
-                  <strong>${sponsor.companyName}</strong> has just posted a new sponsorship opportunity on ConnectHer Network.
-                </p>
-                ${media ? `<img src="${media}" alt="${sponsor.companyName}" style="width:100%; max-width:500px; border-radius:10px; margin:10px 0;">` : ""}
-                <p style="font-size: 14px; color: #555;">${caption}</p>
-                <a href="${jobLink || "#"}" style="display:inline-block; margin-top:10px; background:#b31574; color:#fff; padding:10px 15px; text-decoration:none; border-radius:5px;">View Opportunity</a>
-                <p style="font-size:12px; color:#888; margin-top:15px;">Thank you for being part of ConnectHer Network.</p>
-              </div>
-            `
-          };
-          return transporter.sendMail(mailOptions);
+      // Send emails to all users (wrapped in try/catch)
+      try {
+        const users = await User.find({}, "email username");
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: process.env.EMAIL_USERNAME,
+            pass: process.env.EMAIL_PASSWORD,
+          }
         });
 
-        await Promise.allSettled(emailPromises);
-        console.log(`✅ Batch ${Math.floor(i / BATCH_SIZE) + 1} emails sent`);
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < users.length; i += BATCH_SIZE) {
+          const batch = users.slice(i, i + BATCH_SIZE);
+          const emailPromises = batch.map(user => {
+            const mailOptions = {
+              from: process.env.EMAIL_USERNAME,
+              to: user.email,
+              subject: `New Sponsorship from ${sponsor.companyName}`,
+              html: `
+                <p>Hello ${user.username || "User"},</p>
+                <p><strong>${sponsor.companyName}</strong> just posted a new sponsorship opportunity:</p>
+                <p>${caption || ""}</p>
+                ${media ? `<img src="${media}" alt="Sponsor Media" style="width:100%;max-width:400px;border-radius:8px;" />` : ""}
+                <p><a href="${jobLink || "#"}" target="_blank">View Opportunity</a></p>
+                <p>Thank you for using ConnectHer Network!</p>
+              `
+            };
+            return transporter.sendMail(mailOptions);
+          });
+          await Promise.allSettled(emailPromises);
+          console.log(`✅ Batch ${Math.floor(i / BATCH_SIZE) + 1} of emails sent`);
+        }
+      } catch (err) {
+        console.error("⚠️ Failed to send emails:", err);
       }
 
-      res.status(200).json({ message: "Post added, notification created, emails sent", sponsor });
+      res.status(200).json({ message: "Post added, notification created, emails sent (if possible)", sponsor });
 
     } catch (err) {
-      console.error("Post for Sponsor Error:", err);
-      res.status(500).json({ message: "Failed to add post" });
+      console.error("❌ Post for Sponsor Error:", err);
+      res.status(500).json({ message: "Failed to add post", error: err.message });
     }
   }
 );
+
+// DELETE /api/sponsors/:sponsorId/posts/:postId
+router.delete("/:sponsorId/posts/:postId", verifyTokenAndRole(["admin", "superadmin"]), async (req, res) => {
+  try {
+    const { sponsorId, postId } = req.params;
+
+    const sponsor = await Sponsor.findById(sponsorId);
+    if (!sponsor) return res.status(404).json({ message: "Sponsor not found" });
+
+    const post = sponsor.posts.id(postId);
+    if (!post) return res.status(404).json({ message: "Post not found" });
+
+    if (post.mediaPublicId) {
+      try {
+        await deleteFromCloudinary(post.mediaPublicId);
+      } catch (err) {
+        console.warn("⚠️ Failed to delete media from Cloudinary:", err.message);
+      }
+    }
+
+    post.remove();
+    sponsor.postCount = sponsor.posts.length;
+    await sponsor.save();
+
+    res.json({ message: "✅ Post deleted successfully" });
+  } catch (err) {
+    console.error("❌ Delete Sponsor Post Error:", err);
+    res.status(500).json({ message: "Failed to delete post", error: err.message });
+  }
+});
 
 
 
@@ -298,42 +325,6 @@ const compressVideo = async (buffer, outputPath) => {
       });
   });
 };
-
-// DELETE /api/sponsors/:sponsorId/posts/:postId
-router.delete("/:sponsorId/posts/:postId", verifyTokenAndRole(["admin", "superadmin"]), async (req, res) => {
-  try {
-    const { sponsorId, postId } = req.params;
-
-    const sponsor = await Sponsor.findById(sponsorId);
-    if (!sponsor) return res.status(404).json({ message: "Sponsor not found" });
-
-    // Find the post
-    const post = sponsor.posts.id(postId);
-    if (!post) return res.status(404).json({ message: "Post not found" });
-
-    // ✅ Delete media from Cloudinary if it exists
-    if (post.mediaPublicId) {
-      try {
-        await deleteFromCloudinary(post.mediaPublicId);
-      } catch (err) {
-        console.warn("⚠️ Failed to delete media from Cloudinary:", err.message);
-        // We still proceed to delete the post from DB
-      }
-    }
-
-    // ✅ Remove the post from the sponsor's posts array
-    post.remove(); // Mongoose subdocument method
-    sponsor.postCount = sponsor.posts.length;
-
-    await sponsor.save();
-
-    res.json({ message: "✅ Post deleted successfully" });
-  } catch (err) {
-    console.error("❌ Delete Sponsor Post Error:", err);
-    res.status(500).json({ message: "Failed to delete post", error: err.message });
-  }
-});
-
 
 
 // GET /api/sponsors/:sponsorId/posts/:postId/view
