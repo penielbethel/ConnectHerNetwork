@@ -158,9 +158,9 @@ try {
             subject: `📢 New Sponsorship from ${sponsor.companyName}`,
             html: `
               <div style="font-family: Arial, sans-serif; line-height:1.6; padding:10px; max-width:600px; margin:auto; border:1px solid #eee; border-radius:8px;">
-                <h2 style="color:#e91e63;">New Sponsorship Alert</h2>
+                <h2 style="color:#e91e63;">New Sponsorship Alert from ConnectHer Mobile App</h2>
                 <p>Hello <strong>${u.firstName || u.username || "User"}</strong>,</p>
-                <p><strong>${sponsor.companyName}</strong> just posted a new sponsorship opportunity.</p>
+                <p><strong>${sponsor.companyName}</strong> just posted a new sponsorship opportunity facilitated by ConnectHer Network.</p>
 
                 ${sponsor.logo ? `<img src="${sponsor.logo}" alt="Sponsor Logo" style="width:80px; border-radius:50%; margin:10px 0;" />` : ""}
 
@@ -180,7 +180,7 @@ try {
                   </a>
                 </p>
 
-                <p style="margin-top:20px;">Thank you,<br><strong>ConnectHer Network</strong></p>
+                <p style="margin-top:20px;">Please Login to the App to Enjoy this Benefit,<br><strong>Thank you, ConnectHer Network</strong></p>
               </div>
             `,
           });
@@ -197,6 +197,7 @@ try {
 } catch (err) {
   console.error("❌ Email block error:", err);
 }
+
 
 
 
