@@ -3,6 +3,7 @@
   "appName": "ConnectHer Network",
   "webDir": "public",
   "server": {
-    "androidScheme": "https"
+    "url": "https://connecther.network",
+    "cleartext": false
   }
 }
