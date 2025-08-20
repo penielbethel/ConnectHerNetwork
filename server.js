@@ -311,14 +311,17 @@ app.post('/api/messages', async (req, res) => {
         notification: {
           title: `New message from ${sender}`,
           body: text || "Sent you an audio message",
-          sound: "notify"      // uses your raw/notify.mp3
+          sound: "default"      // uses your raw/notify.mp3
         },
         android: {
-          priority: "high",
-          notification: {
-            channel_id: "alerts",
-            sound: "notify",
-            default_vibrate_timings: true
+    priority: "high",
+    notification: {
+      channel_id: "alerts",
+      sound: "default",
+      vibrate_timings_millis: [0, 500, 500, 1000, 500, 2000],
+      visibility: "public",
+      notification_priority: "PRIORITY_MAX",
+      default_light_settings: true
           }
         },
         token: recipientUser.fcmToken
@@ -651,14 +654,17 @@ socket.on("disconnect", async () => {
             notification: {
               title: "Missed Group Call",
               body: `You missed a call in "${communityId}"`,
-              sound: "notify"
+              sound: "default"
             },
             android: {
-              priority: "high",
-              notification: {
-                channel_id: "alerts",
-                sound: "notify",
-                default_vibrate_timings: true
+    priority: "high",
+    notification: {
+      channel_id: "alerts",
+      sound: "default",
+      vibrate_timings_millis: [0, 500, 500, 1000, 500, 2000],
+      visibility: "public",
+      notification_priority: "PRIORITY_MAX",
+      default_light_settings: true
               }
             },
             token: user.fcmToken
@@ -741,14 +747,17 @@ socket.on("start-call", async ({ from, to, type = "audio", name, avatar }) => {
       notification: {
         title: `Incoming ${type} call from ${from}`,
         body: "Tap to join the call",
-        sound: "notify"           // plays your raw/notify.mp3
+        sound: "default"  
       },
       android: {
-        priority: "high",
-        notification: {
-          channel_id: "alerts",  // must match your MainActivity channel
-          sound: "notify",
-          default_vibrate_timings: true
+    priority: "high",
+    notification: {
+      channel_id: "alerts",
+      sound: "default",
+      vibrate_timings_millis: [0, 500, 500, 1000, 500, 2000],
+      visibility: "public",
+      notification_priority: "PRIORITY_MAX",
+      default_light_settings: true
         }
       },
       token: targetUser.fcmToken
