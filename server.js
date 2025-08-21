@@ -727,59 +727,47 @@ socket.on("check-call-alive", ({ communityId }) => {
 
 
 // ===============================================
-// 🔒 PRIVATE CALL SIGNALING BLOCK (Audio & Video)
+// 🔒 PRIVATE CALL SIGNALING BLOCK (Audio & Video) NEWMEK
 // ===============================================
-const CallLog = require("./models/CallLog");
-
-// ✅ Caller starts a private call
 socket.on("start-call", async ({ from, to, type = "audio", name, avatar }) => {
   console.log(`📞 Private call request from ${from} to ${to} [${type}]`);
 
-  try {
-    // ✅ Save call attempt in DB
-    await CallLog.create({
-      caller: from,
-      receiver: to,
-      status: "initiated",
-      duration: 0,
-      type
-    });
+  // ✅ Socket.IO delivery to recipient if online
+  io.to(to).emit("incomingCall", {
+    from,
+    name: name || from,
+    avatar: avatar || "default.jpg",
+    type
+  });
 
-    // ✅ Socket.IO delivery
-    io.to(to).emit("incomingCall", {
-      from,
-      name: name || from,
-      avatar: avatar || "default.jpg",
-      type
-    });
-
-    // ✅ FCM Notification
-    const targetUser = await User.findOne({ username: to });
-    if (targetUser?.fcmToken) {
-      const fcmPayload = {
-        notification: {
-          title: `Incoming ${type} call from ${from}`,
-          body: "Tap to join the call",
-          sound: "default"
-        },
-        android: {
-          priority: "high",
-          notification: {
-            channel_id: "alerts",
-            sound: "default",
-            vibrate_timings_millis: [0, 500, 500, 1000, 500, 2000],
-            visibility: "public",
-            notification_priority: "PRIORITY_MAX",
-            default_light_settings: true
-          }
-        },
-        token: targetUser.fcmToken
-      };
+  // ✅ FCM Notification for offline users
+  const targetUser = await User.findOne({ username: to });
+  if (targetUser?.fcmToken) {
+    const fcmPayload = {
+      notification: {
+        title: `Incoming ${type} call from ${from}`,
+        body: "Tap to join the call",
+        sound: "default"  
+      },
+      android: {
+    priority: "high",
+    notification: {
+      channel_id: "alerts",
+      sound: "default",
+      vibrate_timings_millis: [0, 500, 500, 1000, 500, 2000],
+      visibility: "public",
+      notification_priority: "PRIORITY_MAX",
+      default_light_settings: true
+        }
+      },
+      token: targetUser.fcmToken
+    };
+    try {
       await admin.messaging().send(fcmPayload);
       console.log(`📲 FCM sent to ${to} for incoming ${type} call`);
+    } catch (err) {
+      console.error(`❌ FCM error for ${to}:`, err);
     }
-  } catch (err) {
-    console.error("❌ Error handling start-call:", err);
   }
 });
 
@@ -790,21 +778,9 @@ socket.on("accept-call", ({ from, to }) => {
 });
 
 // ❌ When receiver declines the call
-socket.on("decline-call", async ({ from, to }) => {
+socket.on("decline-call", ({ from, to }) => {
   console.log(`❌ ${to} declined the call from ${from}`);
   io.to(from).emit("private-end-call", { from: to, reason: "declined" });
-
-  try {
-    await CallLog.create({
-      caller: from,
-      receiver: to,
-      status: "declined",
-      duration: 0,
-      type: "audio"
-    });
-  } catch (err) {
-    console.error("❌ Failed to log declined call:", err);
-  }
 });
 
 // 🎥 WebRTC Offer
@@ -825,49 +801,10 @@ socket.on("private-ice-candidate", ({ from, to, candidate }) => {
 });
 
 // 🚫 Call Ended by one party
-socket.on("private-end-call", async ({ from, to, reason = "ended" }) => {
+socket.on("private-end-call", ({ from, to, reason = "ended" }) => {
   console.log(`📴 ${from} ended the call with ${to} (reason: ${reason})`);
   io.to(to).emit("private-end-call", { from, reason });
-
-  try {
-    await CallLog.create({
-      caller: from,
-      receiver: to,
-      status: reason,
-      duration: 0,
-      type: "audio"
-    });
-  } catch (err) {
-    console.error("❌ Failed to log ended call:", err);
-  }
 });
-
-
-// 📴 Handle missed private calls (when callee disconnects before answering)
-socket.on("disconnect", async () => {
-  try {
-    if (socket.username) {
-      // Find any active private call this socket was supposed to receive
-      // (You may adapt this depending on how you track active calls)
-      // Here we assume if user disconnected during an initiated call, it's missed
-      const username = socket.username;
-
-      // Example: log a missed call (receiver didn’t answer)
-      await CallLog.create({
-        caller: "system",
-        receiver: username,
-        status: "missed",
-        duration: 0,
-        type: "audio"
-      });
-
-      console.log(`📴 Logged missed private call for ${username}`);
-    }
-  } catch (err) {
-    console.error("❌ Failed to log missed private call:", err);
-  }
-});
-
 
 
 });
