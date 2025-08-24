@@ -315,18 +315,19 @@ router.delete("/:id", verifyTokenAndRole(["admin","superadmin"]), async (req,res
 });
 
 /** ------------------------
- * Get all posts for a sponsor
+ * Get all posts for a sponsor (PUBLIC)
  * GET /api/sponsors/:id/posts
  * ------------------------ */
-router.get("/:id/posts", verifyTokenAndRole(["user","admin","superadmin"]), async(req,res)=>{
-  try{
+router.get("/:id/posts", async (req, res) => {
+  try {
     const sponsor = await Sponsor.findById(req.params.id);
-    if(!sponsor) return res.status(404).json({ message: "Sponsor not found" });
+    if (!sponsor) return res.status(404).json({ message: "Sponsor not found" });
     res.json(sponsor.posts || []);
-  }catch(err){
-    console.error("Fetch Sponsor Posts Error:",err);
+  } catch (err) {
+    console.error("Fetch Sponsor Posts Error:", err);
     res.status(500).json({ message: "Failed to fetch posts", error: err.message });
   }
 });
+
 
 module.exports = router;
