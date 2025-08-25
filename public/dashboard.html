@@ -664,13 +664,23 @@ body {
 <div style="overflow-x: auto; white-space: nowrap; padding: 10px; scroll-behavior: smooth;" id="suggestionContainer" class="suggestion-scrollbar"></div>
 
   <div class="modal" id="createPostModal">
-    <div class="modal-content">
-      <h3>Create Post</h3>
-      <textarea id="captionText" rows="3" placeholder="What's on your mind?"></textarea>
-      <input type="file" id="mediaFiles" multiple accept=".jpg,.png,.mp4,.pdf">
-      <button onclick="submitPost()">Post</button>
+  <div class="modal-content">
+    <h3>Create Post</h3>
+    <textarea id="captionText" rows="3" placeholder="What's on your mind?"></textarea>
+    <input type="file" id="mediaFiles" multiple accept=".jpg,.png,.mp4,.pdf">
+
+    <!-- ✅ Progress Bar -->
+    <div id="uploadProgress" style="display:none; margin-top:10px; width:100%; background:#ddd; border-radius:5px;">
+      <div id="progressBar" style="width:0%; height:20px; background:#4caf50; color:white; text-align:center; border-radius:5px;">
+        0%
+      </div>
     </div>
+
+    <button onclick="submitPost()">Post</button>
   </div>
+</div>
+
+  
   <!-- Edit Post Modal -->
 <div class="modal" id="editPostModal">
   <div class="modal-content">
@@ -841,6 +851,38 @@ function parseMentions(text) {
 
 
     
+// ✅ Helper function for file upload with progress
+function uploadFilesWithProgress(formData) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "https://connecther.network/api/upload", true);
+
+    // Progress handler
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        const progressBar = document.getElementById("progressBar");
+        const progressBox = document.getElementById("uploadProgress");
+
+        progressBox.style.display = "block";
+        progressBar.style.width = percent + "%";
+        progressBar.textContent = percent + "%";
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        resolve(JSON.parse(xhr.responseText));
+      } else {
+        reject("Upload failed");
+      }
+    };
+
+    xhr.onerror = () => reject("Network error");
+    xhr.send(formData);
+  });
+}
+
 async function submitPost() {
   const caption = document.getElementById("captionText").value.trim();
   const files = document.getElementById("mediaFiles").files;
@@ -863,7 +905,7 @@ async function submitPost() {
 
   let mediaFiles = [];
 
-  // ✅ Only upload if files exist
+  // ✅ Upload files only if selected
   if (files.length > 0) {
     const formData = new FormData();
     for (let i = 0; i < files.length; i++) {
@@ -871,12 +913,7 @@ async function submitPost() {
     }
 
     try {
-      const uploadRes = await fetch("https://connecther.network/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      const uploadData = await uploadRes.json();
+      const uploadData = await uploadFilesWithProgress(formData);
 
       if (!uploadData.success) {
         alert("Media upload failed.");
@@ -905,9 +942,7 @@ async function submitPost() {
   try {
     const postRes = await fetch("https://connecther.network/api/posts", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(postBody),
     });
 
@@ -920,9 +955,10 @@ async function submitPost() {
     dummyPosts.unshift(savedPost);
     renderPost(savedPost, 0, true);
 
-    // Reset form
+    // Reset form + progress bar
     document.getElementById("captionText").value = "";
     document.getElementById("mediaFiles").value = "";
+    document.getElementById("uploadProgress").style.display = "none";
     closeModal();
     alert("Posted Successfully");
 
@@ -931,6 +967,7 @@ async function submitPost() {
     alert("Error submitting post.");
   }
 }
+
 
 
 
