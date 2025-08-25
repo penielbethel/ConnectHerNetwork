@@ -861,36 +861,48 @@ async function submitPost() {
     return;
   }
 
-  const formData = new FormData();
-  for (let i = 0; i < files.length; i++) {
-    formData.append("files", files[i]); // use "files" for /api/upload
-  }
+  let mediaFiles = [];
 
-  try {
-    // First upload media to get compressed URLs
-    const uploadRes = await fetch("https://connecther.network/api/upload", {
-      method: "POST",
-      body: formData,
-    });
-
-    const uploadData = await uploadRes.json();
-
-    if (!uploadData.success) {
-      alert("Media upload failed.");
-      return;
+  // ✅ Only upload if files exist
+  if (files.length > 0) {
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append("files", files[i]);
     }
 
-    // Now submit the actual post with compressed media URLs
-    const postBody = {
-      username: currentUser.username,
-      caption,
-      media: uploadData.files.map(file => ({
+    try {
+      const uploadRes = await fetch("https://connecther.network/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const uploadData = await uploadRes.json();
+
+      if (!uploadData.success) {
+        alert("Media upload failed.");
+        return;
+      }
+
+      mediaFiles = uploadData.files.map(file => ({
         url: file.url,
         type: file.type,
-        name: "compressed-" + file.name  // You can choose how to tag it
-      }))
-    };
+        name: "compressed-" + file.name
+      }));
+    } catch (err) {
+      console.error(err);
+      alert("Error uploading media.");
+      return;
+    }
+  }
 
+  // ✅ Post body works with or without media
+  const postBody = {
+    username: currentUser.username,
+    caption,
+    media: mediaFiles
+  };
+
+  try {
     const postRes = await fetch("https://connecther.network/api/posts", {
       method: "POST",
       headers: {
@@ -920,6 +932,10 @@ async function submitPost() {
   }
 }
 
+
+
+
+    
 function formatTimeAgo(isoTime) {
   // ⛔ Check if time is missing or null
   if (!isoTime) return "Some time ago";
