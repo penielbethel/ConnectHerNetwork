@@ -510,6 +510,19 @@
   </div>
 </div>
 
+<!-- Transfer (Upload/Download) status -->
+<div id="transferStatus" style="display:none; margin-top:8px; width:100%; background:#2a2a2a; border-radius:10px; padding:8px; gap:10px; align-items:center;">
+  <div style="display:flex; align-items:center; gap:10px;">
+    <span id="transferLabel" style="font-size:12px;color:#ccc;">Uploading…</span>
+    <span id="transferPct" style="font-size:12px;color:#fff;">0%</span>
+    <button id="transferCancel" style="margin-left:auto;background:#444;border:none;color:#fff;padding:6px 10px;border-radius:8px;cursor:pointer;">Cancel</button>
+  </div>
+  <div style="height:8px;background:#444;border-radius:6px;overflow:hidden;margin-top:6px;">
+    <div id="transferBar" style="height:8px;width:0%;background:#25d366;"></div>
+  </div>
+</div>
+
+
 <div id="file-preview" style="margin-top: 10px;"></div>
 <!-- Invite Modal -->
 <div id="inviteModal" style="
@@ -639,7 +652,10 @@ const currentUser = JSON.parse(localStorage.getItem("currentUser")) || {
 let currentCommunity = null;
 const communityId = localStorage.getItem("currentCommunityId");
 const currentUsername = localStorage.getItem("username");
-const socket = io(); // ✅ Connect to Socket.IO server
+const IS_NATIVE = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+const BASE_URL = IS_NATIVE ? 'https://connecther.network' : window.location.origin;
+const socket = io(BASE_URL, { transports: ['websocket'], withCredentials: true });
+window.socket = socket; // ✅ Connect to Socket.IO server
 let typingTimeout;
 const input = document.getElementById("chat-input");
 
@@ -738,7 +754,7 @@ function renderCommunityInfo() {
 
 // ✅ Invite modal
 function openInviteModal() {
-  const link = `${window.location.origin}/accept.html?id=${currentCommunity._id}`;
+  const link = `${BASE_URL}/accept.html?id=${currentCommunity._id}`;
   document.getElementById('groupLink').value = link;
   document.getElementById('inviteModal').style.display = 'flex';
 }
@@ -1052,31 +1068,21 @@ function handleFile(event) {
 
 async function sendMessage() {
   const input = document.getElementById('chat-input');
-  const text = input.value.trim();
+  const text = (input.value || '').trim();
   const captions = document.querySelectorAll('.caption-input');
   const chatArea = document.getElementById('chat-area');
 
   if (!text && selectedFiles.length === 0) return;
 
-  const msgId = `msg-${Date.now()}`;
   const timestamp = Date.now();
-
-  // ✅ Upload files to backend (compressed)
   let mediaFiles = [];
 
-  if (selectedFiles.length > 0) {
-    const formData = new FormData();
-    selectedFiles.forEach(file => formData.append('files', file));
-
-    try {
-      const uploadRes = await fetch('https://connecther.network/api/upload', {
-        method: 'POST',
-        body: formData
-      });
-
-      const uploadData = await uploadRes.json();
-
-      if (uploadData.success && Array.isArray(uploadData.files)) {
+  try {
+    // 1) Upload with progress (if any files)
+    if (selectedFiles.length > 0) {
+      const uploadData = await uploadFilesWithProgress(selectedFiles);
+      // Map uploaded results + captions
+      if (uploadData && uploadData.success && Array.isArray(uploadData.files)) {
         mediaFiles = uploadData.files.map((file, index) => ({
           name: file.name || `File ${index + 1}`,
           type: file.type || selectedFiles[index]?.type || 'application/octet-stream',
@@ -1084,64 +1090,61 @@ async function sendMessage() {
           caption: captions[index]?.value || ''
         }));
       } else {
-        alert('❌ File upload failed: ' + (uploadData.message || 'Unknown error'));
-        return;
+        throw new Error(uploadData?.message || 'Upload failed');
       }
-    } catch (err) {
-      console.error("❌ Upload error:", err);
-      alert("Upload failed. Please try again.");
+    }
+
+    // 2) Save message
+    const message = {
+      sender: {
+        name: currentUser.name,
+        username: currentUser.username,
+        avatar: currentUser.avatar
+      },
+      text,
+      media: mediaFiles,
+      replyTo: replyingMessageId || "",
+      time: timestamp
+    };
+
+    const formData = new FormData();
+    formData.append("sender", JSON.stringify(message.sender));
+    formData.append("text", message.text);
+    formData.append("replyTo", message.replyTo);
+    formData.append("time", message.time);
+    formData.append("media", JSON.stringify(mediaFiles));
+
+    const res = await fetch(`https://connecther.network/api/communities/${currentCommunity._id}/messages`, {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to save message');
+
+    // Success UI cleanup
+    hideTransfer(false); // hide if it was showing for upload
+    renderMessage(data.message); // keeps your existing rendering flow
+    input.value = '';
+    selectedFiles = [];
+    document.getElementById('file-preview').innerHTML = '';
+    document.getElementById('reply-preview').style.display = 'none';
+    chatArea.scrollTop = chatArea.scrollHeight;
+
+  } catch (err) {
+    if (err && err.canceled) {
+      // User canceled upload
+      hideTransfer(true);
       return;
     }
+    console.error('❌ sendMessage error:', err);
+    hideTransfer(false);
+    alert(err.message || 'Something went wrong.');
   }
-
-  // ✅ Build message object
-  const message = {
-    sender: {
-      name: currentUser.name,
-      username: currentUser.username,
-      avatar: currentUser.avatar
-    },
-    text,
-    media: mediaFiles,
-    replyTo: replyingMessageId || "", //NEWMEK
-    time: timestamp
-  };
-
-  // ✅ Save to backend
-const formData = new FormData();
-formData.append("sender", JSON.stringify(message.sender));
-formData.append("text", message.text);
-formData.append("replyTo", message.replyTo);
-formData.append("time", message.time);
-formData.append("media", JSON.stringify(mediaFiles)); // ✅ Important fix
-
-fetch(`https://connecther.network/api/communities/${currentCommunity._id}/messages`, {
-  method: "POST",
-  body: formData
-})
-.then(res => res.json())
-.then(data => {
-  if (!data.success) {
-    console.error("❌ Failed to save message:", data.message);
-    return;
-  }
-
-  // ✅ Add it using renderMessage() to get full consistent rendering (including media)
-  renderMessage(data.message);
-
-  // ✅ Reset form
-  input.value = '';
-  selectedFiles = [];
-  replyTo = null;
-  document.getElementById('file-preview').innerHTML = '';
-  document.getElementById('reply-preview').style.display = 'none';
-  chatArea.scrollTop = chatArea.scrollHeight;
-})
-
-.catch(err => {
-  console.error("❌ Network error:", err);
-}); }
+}
  
+
+
 let longPressTimeout;
 function startLongPress(msgId) {
   longPressTimeout = setTimeout(() => {
@@ -1976,7 +1979,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Avoid duplicate connections
   if (!window.rejoinSocket) {
-    window.rejoinSocket = io("https://connecther.network", { transports: ["websocket"] });
+    window.rejoinSocket = io(BASE_URL, { transports: ['websocket'] });
   }
   const rejoinSocket = window.rejoinSocket;
 
@@ -2144,35 +2147,75 @@ document.addEventListener("click", function (e) {
 
 
 //MEDIA DOWNLOAD NEWMEK
-  async function handleDownload(url, filename) {
-    if (window.Capacitor && Capacitor.isNativePlatform) {
-      try {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const base64Data = reader.result.split(',')[1];
-          await Capacitor.Plugins.Filesystem.writeFile({
-            path: filename,
-            data: base64Data,
-            directory: 'DOCUMENTS',
-          });
-          alert('✅ File saved.');
-        };
-        reader.readAsDataURL(blob);
-      } catch (e) {
-        alert('❌ Download failed: ' + e.message);
+async function handleDownload(url, filename) {
+  try {
+    showTransfer('download', 'Downloading…');
+    const controller = new AbortController();
+    activeDownloadController = controller;
+
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const contentLength = parseInt(res.headers.get('Content-Length') || '0', 10);
+    const reader = res.body.getReader();
+    const chunks = [];
+    let received = 0;
+
+    // Stream + progress
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      if (contentLength > 0) {
+        updateTransfer((received / contentLength) * 100, 'Downloading…');
+      } else {
+        // Unknown size — show a gentle ramp
+        const pseudo = Math.min(95, Math.floor(received / 100000)); // ~0→95%
+        updateTransfer(pseudo, 'Downloading…');
       }
+    }
+
+    const blob = new Blob(chunks);
+    // Platform-specific save
+    if (window.Capacitor && Capacitor.isNativePlatform) {
+      // Convert to base64 for Capacitor Filesystem
+      const b64 = await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onloadend = () => resolve(fr.result.split(',')[1]);
+        fr.onerror = reject;
+        fr.readAsDataURL(blob);
+      });
+      await Capacitor.Plugins.Filesystem.writeFile({
+        path: filename,
+        data: b64,
+        directory: 'DOCUMENTS',
+      });
+      alert('✅ File saved.');
     } else {
+      // Browser: trigger download
       const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.target = '_blank';
+      a.href = URL.createObjectURL(blob);
+      a.download = filename || 'download';
       document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
+      setTimeout(() => {
+        URL.revokeObjectURL(a.href);
+        a.remove();
+      }, 0);
     }
+
+    hideTransfer(false);
+  } catch (err) {
+    if (err && (err.name === 'AbortError' || err.canceled)) {
+      hideTransfer(true);
+      return;
+    }
+    console.error('❌ Download failed:', err);
+    hideTransfer(false);
+    alert('❌ Download failed: ' + (err.message || 'Unknown error'));
   }
+}
 
 
 
@@ -2229,7 +2272,100 @@ document.addEventListener("click", function (e) {
 </div>
 
 <script src="theme.js" defer></script>
+<script>
+let activeUploadXhr = null;
+let activeDownloadController = null;
+let transferKind = null; // 'upload' | 'download'
 
+function showTransfer(kind, label = "Working…") {
+  transferKind = kind;
+  document.getElementById('transferStatus').style.display = 'block';
+  document.getElementById('transferLabel').textContent = label;
+  document.getElementById('transferPct').textContent = '0%';
+  document.getElementById('transferBar').style.width = '0%';
+  const cancelBtn = document.getElementById('transferCancel');
+  cancelBtn.onclick = () => {
+    if (transferKind === 'upload' && activeUploadXhr) {
+      activeUploadXhr.abort();
+    }
+    if (transferKind === 'download' && activeDownloadController) {
+      activeDownloadController.abort();
+    }
+    hideTransfer(true);
+  };
+}
+
+function updateTransfer(percent, label) {
+  if (label) document.getElementById('transferLabel').textContent = label;
+  const pct = Math.max(0, Math.min(100, Math.floor(percent)));
+  document.getElementById('transferPct').textContent = pct + '%';
+  document.getElementById('transferBar').style.width = pct + '%';
+}
+
+function hideTransfer(wasCanceled = false) {
+  document.getElementById('transferStatus').style.display = 'none';
+  document.getElementById('transferPct').textContent = '0%';
+  document.getElementById('transferBar').style.width = '0%';
+  transferKind = null;
+  activeUploadXhr = null;
+  activeDownloadController = null;
+  if (wasCanceled) {
+    // Clear selected files & preview if we canceled an upload
+    if (typeof selectedFiles !== 'undefined') {
+      selectedFiles = [];
+    }
+    const preview = document.getElementById('file-preview');
+    if (preview) preview.innerHTML = '';
+  }
+}
+
+// Upload with progress (XHR so we get upload progress events)
+function uploadFilesWithProgress(files) {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    files.forEach(f => formData.append('files', f));
+    const xhr = new XMLHttpRequest();
+    activeUploadXhr = xhr;
+
+    xhr.open('POST', 'https://connecther.network/api/upload', true);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const percent = (e.loaded / e.total) * 100;
+        updateTransfer(percent, 'Uploading…');
+      }
+    };
+
+    xhr.onload = () => {
+      try {
+        const res = JSON.parse(xhr.responseText || '{}');
+        if (xhr.status >= 200 && xhr.status < 300 && res.success) {
+          resolve(res);
+        } else {
+          reject(new Error(res.message || 'Upload failed'));
+        }
+      } catch (err) {
+        reject(err);
+      } finally {
+        activeUploadXhr = null;
+      }
+    };
+
+    xhr.onerror = () => {
+      activeUploadXhr = null;
+      reject(new Error('Network error during upload'));
+    };
+
+    xhr.onabort = () => {
+      activeUploadXhr = null;
+      reject({ canceled: true });
+    };
+
+    showTransfer('upload', 'Uploading…');
+    xhr.send(formData);
+  });
+}
+</script>
 </body>
 </html>
 
