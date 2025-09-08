@@ -136,23 +136,6 @@ router.post("/login", express.json(), async (req, res) => {
       return res.status(404).json({ message: "User not found." });
     }
 
-    // Check if user has direct login enabled - bypass password/OTP
-    if (user.directLoginEnabled) {
-      const token = jwt.sign(
-        { id: user._id, username: user.username, role: user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: "3d" }
-      );
-
-      const { password: pwd, ...userWithoutPassword } = user._doc;
-
-      return res.status(200).json({
-        message: "Direct login successful!",
-        token,
-        user: userWithoutPassword
-      });
-    }
-
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
       return res.status(400).json({ message: "Invalid password." });
@@ -413,75 +396,6 @@ router.post("/reset-password", express.json(), async (req, res) => {
   await user.save();
 
   res.status(200).json({ message: "Password reset successful." });
-});
-
-// 🔐 DIRECT LOGIN (for special users)
-router.post("/direct-login", express.json(), async (req, res) => {
-  try {
-    const { username } = req.body;
-
-    if (!username) {
-      return res.status(400).json({ message: "Username is required." });
-    }
-
-    const user = await User.findOne({ username });
-    if (!user) {
-      return res.status(404).json({ message: "User not found." });
-    }
-
-    // Check if user has direct login enabled
-    if (!user.directLoginEnabled) {
-      return res.status(403).json({ message: "Direct login not enabled for this user." });
-    }
-
-    // Generate JWT token
-    const token = jwt.sign(
-      { id: user._id, username: user.username, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "3d" }
-    );
-
-    const { password: pwd, ...userWithoutPassword } = user._doc;
-
-    res.status(200).json({
-      message: "Direct login successful!",
-      token,
-      user: userWithoutPassword
-    });
-
-  } catch (err) {
-    console.error("❌ Direct login error:", err);
-    res.status(500).json({ message: "Error during direct login." });
-  }
-});
-
-// 🔐 ADMIN: Toggle Direct Login for Users
-router.post("/admin/toggle-direct-login", express.json(), async (req, res) => {
-  try {
-    const { username, enabled } = req.body;
-
-    if (!username || enabled === undefined) {
-      return res.status(400).json({ message: "Username and enabled status are required." });
-    }
-
-    const user = await User.findOne({ username });
-    if (!user) {
-      return res.status(404).json({ message: "User not found." });
-    }
-
-    user.directLoginEnabled = enabled;
-    await user.save();
-
-    res.status(200).json({
-      message: `Direct login ${enabled ? 'enabled' : 'disabled'} for user: ${username}`,
-      username,
-      directLoginEnabled: user.directLoginEnabled
-    });
-
-  } catch (err) {
-    console.error("❌ Toggle direct login error:", err);
-    res.status(500).json({ message: "Error toggling direct login." });
-  }
 });
 
 // ✅ Save FCM Token for Push Notifications NEWMEK
