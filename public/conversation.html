@@ -5,6 +5,7 @@
   <title>ConnectHer Conversation</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="theme.css">
+  
   <style>
     * {
       margin: 0;
@@ -639,21 +640,15 @@
 
   <div class="conversation-header">
     <div class="conversation-header-left">
-  <a href="profile.html?user=${username}">
-    <img src="${user.avatar}" alt="${user.fullName}">
-  </a>
-  <a href="profile.html?user=${username}" class="name">${user.fullName}</a>
-  <div id="friendStatus" style="font-size: 14px; color: #ccc;">Checking status...</div>
+<!-- I filled this with JS -->
 </div>
     <i class="fa fa-search" onclick="openSearchModal()" title="Search Chat" style="cursor: pointer; font-size: 18px; color: white;"></i>
     <div class="voice-call" onclick="startVoiceCall()">
       <i class="fa fa-phone"></i>
     </div>
-
     <div class="video-call" onclick="startVideoCall()" style="color: #ff4081; font-size: 20px; cursor: pointer;">
   <i class="fa fa-video"></i>
 </div>
-
     <div class="global-options">
   <i class="fa fa-ellipsis-v" onclick="toggleGlobalMenu()"></i>
   <div id="globalOptionsMenu" class="options-menu" style="right: 0; left: auto;">
@@ -758,7 +753,7 @@
 <!-- Incoming Call Modal NEWMEK-->
 <div id="incomingCallModal">
   <div class="modal-box">
-    <img id="callerAvatar" src="default.jpg" alt="Caller Avatar" />
+    <img id="callerAvatar" src="fa-pa.png" alt="Caller Avatar" />
     <h3 id="callerName">Someone is calling...</h3>
     <button class="accept-btn" onclick="acceptCall()">✅ Accept</button>
     <button class="decline-btn" onclick="declineCall()">❌ Decline</button>
@@ -790,6 +785,7 @@
 
 
 <script src="https://connecther.network/socket.io/socket.io.js"></script>
+
 <script>
   window.addEventListener('DOMContentLoaded', async () => {
     try {
@@ -812,7 +808,6 @@
 
 <script>
 localStorage.setItem("activePage", "conversation.html");
-
 const emojiPanel = document.getElementById("emojiPanel");
 const messageInput = document.getElementById("messageInput");
 const messageContainer = document.getElementById("messageContainer");
@@ -886,19 +881,46 @@ fetch(`${API}/api/users/user/${username}`)
     const fullName = user.name;
     const myName = `${currentUser.firstName || ""} ${currentUser.surname || ""}`.trim();
 
-const headerLeft = document.querySelector(".conversation-header-left");
-headerLeft.innerHTML = `
-  <a href="profile.html?user=${username}">
-    <img src="${user.avatar}" alt="${fullName}">
-  </a>
-  <a href="profile.html?user=${username}" class="name">${fullName}</a>
-`;
-const statusDiv = document.createElement("div");
-statusDiv.id = "friendStatus";
-statusDiv.style.fontSize = "14px";
-statusDiv.style.color = "#ccc";
-statusDiv.textContent = "Checking status...";
-headerLeft.appendChild(statusDiv);
+    const headerLeft = document.querySelector(".conversation-header-left");
+    headerLeft.innerHTML = ""; // clear old content
+
+    // profile link
+    const profileLink = document.createElement("a");
+    profileLink.href = `profile.html?user=${username}`;
+
+    // avatar image (safe loader)
+const avatarEl = document.createElement("img");
+avatarEl.className = "chat-avatar";
+avatarEl.setAttribute("alt", user.fullName || "avatar");
+avatarEl.setAttribute("data-fallback", FALLBACK_AVATAR);
+
+setAvatarSafely(avatarEl, normalizeUrl(user.avatar));
+
+profileLink.appendChild(avatarEl);
+
+    // ✅ safe loader
+    setAvatarSafely(avatarEl, normalizeUrl(user.avatar));
+
+    profileLink.appendChild(avatarEl);
+
+    // name link
+    const nameLink = document.createElement("a");
+    nameLink.href = `profile.html?user=${username}`;
+    nameLink.className = "name";
+    nameLink.textContent = fullName || username;
+
+    // status div
+    const statusDiv = document.createElement("div");
+    statusDiv.id = "friendStatus";
+    statusDiv.style.fontSize = "14px";
+    statusDiv.style.color = "#ccc";
+    statusDiv.textContent = "Checking status...";
+
+    // append all
+    headerLeft.appendChild(profileLink);
+    headerLeft.appendChild(nameLink);
+    headerLeft.appendChild(statusDiv);
+  
 
     // ✅ Typing indicator listener — added after user is fetched
     socket.on("typing", ({ from }) => {
@@ -1031,38 +1053,90 @@ function handleDownload(url, filename) {
 }
 
 //DOWNLOAD MEDIA NEWMEK
-  async function downloadMediaFile(url, filename) {
-    try {
-      const Filesystem = Capacitor.Plugins.Filesystem;
+async function downloadMediaFile(url, filename) {
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", url, true);
+    xhr.responseType = "blob";
 
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const base64Data = await convertBlobToBase64(blob);
+    // Show progress overlay
+    document.getElementById("progressOverlay").style.display = "flex";
 
-      const saved = await Filesystem.writeFile({
-        path: filename,
-        data: base64Data,
-        directory: "DOCUMENTS", // ← FIXED THIS LINE
-      });
+    // Track download progress
+    xhr.onprogress = function (event) {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        updateProgress(percent);
+      }
+    };
 
-      alert("✅ File saved to: " + saved.uri);
-    } catch (e) {
-      console.error("❌ Download failed:", e);
-      alert("❌ Failed to download file: " + e.message);
-    }
+    xhr.onload = async function () {
+      document.getElementById("progressOverlay").style.display = "none";
+      if (xhr.status === 200) {
+        try {
+          const blob = xhr.response;
+          const base64Data = await convertBlobToBase64(blob);
+          const Filesystem = Capacitor.Plugins.Filesystem;
+
+          const saved = await Filesystem.writeFile({
+            path: filename,
+            data: base64Data,
+            directory: "DOCUMENTS", // keep same save dir
+          });
+
+          alert("✅ File saved to: " + saved.uri);
+        } catch (err) {
+          console.error("❌ Failed to save file:", err);
+          alert("❌ Failed to save file: " + err.message);
+        }
+      } else {
+        alert("❌ Download failed");
+      }
+    };
+
+    xhr.onerror = function () {
+      document.getElementById("progressOverlay").style.display = "none";
+      alert("❌ Download error");
+    };
+
+    // Save xhr globally for Cancel button
+    window.currentTransfer = xhr;
+    xhr.send();
+  } catch (e) {
+    console.error("❌ Download failed:", e);
+    alert("❌ Failed to download file: " + e.message);
   }
+}
 
-  function convertBlobToBase64(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+function convertBlobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+//Cancel Media Upload or Download
+function updateProgress(percent) {
+  const circle = document.getElementById("progressPath");
+  const text = document.getElementById("progressText");
+  const dasharray = `${percent},100`;
+  circle.setAttribute("stroke-dasharray", dasharray);
+  text.textContent = percent + "%";
+}
+
+function cancelTransfer() {
+  if (window.currentTransfer) {
+    window.currentTransfer.abort();
+    window.currentTransfer = null;
+    document.getElementById("progressOverlay").style.display = "none";
+    alert("❌ Transfer cancelled");
   }
+}
 
 
 
@@ -1168,26 +1242,79 @@ document.getElementById("mediaInput").addEventListener("change", function () {
     formData.append("media", file); // ✅ This must match multer field name
   });
 
-  fetch(`${API}/api/messages`, {
-    method: "POST",
-    body: formData
-  })
-    .then(res => res.json())
-    .then(data => {
-      if (data.success) {
-        const msg = data.message;
-        const isMine = msg.sender === currentUser.username;
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", `${API}/api/messages`);
 
-        // Build media HTML content
-        let content = "";
-        content = buildMediaContent(msg.media);
+  // Show progress overlay
+  document.getElementById("progressOverlay").style.display = "flex";
 
-        // Emit to socket
-        socket.emit("newMessage", msg);
+  // Track progress
+  xhr.upload.onprogress = function (event) {
+    if (event.lengthComputable) {
+      const percent = Math.round((event.loaded / event.total) * 100);
+      updateProgress(percent);
+    }
+  };
+
+  xhr.onload = function () {
+    document.getElementById("progressOverlay").style.display = "none";
+    if (xhr.status === 200) {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (data.success) {
+          const msg = data.message;
+          const isMine = msg.sender === currentUser.username;
+
+          // Build media HTML content
+          let content = "";
+          content = buildMediaContent(msg.media);
+
+          // Emit to socket
+          socket.emit("newMessage", msg);
+        }
+      } catch (err) {
+        console.error("❌ Failed to parse upload response", err);
       }
-    })
-    .catch(err => console.error("Failed to send media files", err));
+    } else {
+      alert("❌ Upload failed");
+    }
+  };
+
+  xhr.onerror = function () {
+    document.getElementById("progressOverlay").style.display = "none";
+    alert("❌ Upload error");
+  };
+
+  // Save xhr globally so Cancel button can abort
+  window.currentTransfer = xhr;
+  xhr.send(formData);
 });
+
+
+//BEFORE MESSAGE IS ADDED NEWMEK
+const API_BASE = "https://connecther.network";
+const FALLBACK_AVATAR = "fa-pa.png"; // must be in same folder as conversation.html
+
+function normalizeUrl(url) {
+  if (!url) return "";
+  if (url.startsWith("data:")) return url;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/")) return API_BASE + url;
+  return API_BASE + "/" + url;
+}
+
+function setAvatarSafely(el, actualUrl) {
+  const fallback = el.dataset.fallback || FALLBACK_AVATAR;
+  if (el.src !== fallback) el.src = fallback;
+
+  if (!actualUrl || actualUrl === "null" || actualUrl === "undefined") return;
+
+  const probe = new Image();
+  probe.onload = () => { el.src = actualUrl; };
+  probe.onerror = () => { el.src = fallback; };
+  probe.src = actualUrl;
+}
+
 
 
 // ADD MESSAGE
@@ -1247,18 +1374,32 @@ if (reply && replyFrom && replyToId) {
   `;
 }
 
-  msgDiv.innerHTML = `
-    <img src="${sender === currentUser.username ? currentUser.avatar : user.avatar}" class="avatar">
-    <div class="bubble">
-      ${replyHtml}
-      ${content}
-      <span class="meta">
-        <span class="options"><i class="fa fa-ellipsis-v"></i></span>
-        <span class="timestamp">${time}</span>
-        <span class="status read"><i class="fa fa-check-double"></i></span>
-      </span>
-    </div>
-  `;
+// avatar
+const avatarEl = document.createElement("img");
+avatarEl.className = "avatar";
+avatarEl.setAttribute("data-fallback", "fa-pa.png");
+
+// decide whose avatar to show
+const avatarUrl = sender === currentUser.username ? currentUser.avatar : user.avatar;
+setAvatarSafely(avatarEl, normalizeUrl(avatarUrl));
+
+// bubble
+const bubbleEl = document.createElement("div");
+bubbleEl.className = "bubble";
+bubbleEl.innerHTML = `
+  ${replyHtml}
+  ${content}
+  <span class="meta">
+    <span class="options"><i class="fa fa-ellipsis-v"></i></span>
+    <span class="timestamp">${time}</span>
+    <span class="status read"><i class="fa fa-check-double"></i></span>
+  </span>
+`;
+
+// build message
+msgDiv.appendChild(avatarEl);
+msgDiv.appendChild(bubbleEl);
+
 
   messageContainer.appendChild(msgDiv);
   const bubble = msgDiv.querySelector(".bubble");
@@ -1896,7 +2037,7 @@ async function startCall(type = "audio") {
       from: currentUser.username,
       to: username,
       name: currentUser.name || currentUser.username,
-      avatar: currentUser.avatar || "default.jpg",
+      avatar: currentUser.avatar || "fa-pa.png",
       type
     });
 
@@ -2287,7 +2428,7 @@ socket.on("incomingCall", async ({ from, name, avatar, type = "audio" }) => {
     window.currentCallType = type;
 
     // Use caller info from event or fallback to API
-    let caller = { name: name || from, avatar: avatar || "default.jpg" };
+    let caller = { name: name || from, avatar: avatar || "fa-pa.png" };
     if (!name || !avatar) {
       try {
         const res = await fetch(`${API}/api/users/user/${from}`);
@@ -2300,7 +2441,7 @@ socket.on("incomingCall", async ({ from, name, avatar, type = "audio" }) => {
     // Update incoming call modal UI
     const avatarEl = document.getElementById("callerAvatar");
     const nameEl = document.getElementById("callerName");
-    if (avatarEl) avatarEl.src = caller.avatar || "default.jpg";
+    if (avatarEl) avatarEl.src = caller.avatar || "fa-pa.png";
     if (nameEl) nameEl.textContent = `${caller.name || from} is calling...`;
 
     const incomingModal = document.getElementById("incomingCallModal");
@@ -2826,8 +2967,82 @@ function autoExpand(textarea) {
 
 </script>
 <script src="theme.js" defer></script>
-
 <script src="permissions.js"></script>
+
+<!-- Upload/Download Progress Overlay -->
+<div id="progressOverlay">
+  <div class="progress-circle">
+    <svg viewBox="0 0 36 36">
+      <path class="bg" d="M18 2.0845
+        a 15.9155 15.9155 0 0 1 0 31.831
+        a 15.9155 15.9155 0 0 1 0 -31.831"/>
+      <path id="progressPath" class="progress" stroke-dasharray="0,100" d="M18 2.0845
+        a 15.9155 15.9155 0 0 1 0 31.831
+        a 15.9155 15.9155 0 0 1 0 -31.831"/>
+    </svg>
+    <div id="progressText">0%</div>
+  </div>
+  <button onclick="cancelTransfer()" class="progress-cancel">Cancel</button>
+</div>
+
+<style>
+/* Hidden by default */
+#progressOverlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 99999;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+/* Circle progress style */
+.progress-circle {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+.progress-circle svg {
+  transform: rotate(-90deg);
+  width: 100%;
+  height: 100%;
+}
+.progress-circle path.bg {
+  fill: none;
+  stroke: #444;
+  stroke-width: 3.8;
+}
+.progress-circle path.progress {
+  fill: none;
+  stroke: #ff4081;
+  stroke-width: 3.8;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.3s ease;
+}
+.progress-circle #progressText {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  font-weight: bold;
+  color: white;
+}
+
+/* Cancel button */
+.progress-cancel {
+  margin-top: 20px;
+  padding: 8px 15px;
+  border: none;
+  border-radius: 6px;
+  background: #ff4081;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+</style>
+
 
 </body>
 </html>

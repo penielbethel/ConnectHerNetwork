@@ -8,6 +8,35 @@ const fs = require("fs");
 require("dotenv").config();
 require('events').EventEmitter.defaultMaxListeners = 30; 
 const app = express();
+
+// 🛠️ CORS Middleware
+const corsOptions = {
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      "http://localhost",
+      "http://localhost:8080",
+      "http://127.0.0.1",
+      "https://localhost",
+      "capacitor://localhost",
+      "https://connecther.network"
+    ];
+
+    if (!origin || allowedOrigins.includes(origin) || origin.startsWith("http://localhost")) {
+      callback(null, true);
+    } else {
+      console.warn("🚫 CORS blocked for origin:", origin);
+      callback(new Error("Not allowed by CORS: " + origin));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+// ✅ Apply globally
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
+
 const statsRoutes = require("./routes/stats");
 app.use("/api", statsRoutes);
 const notificationRoutes = require("./routes/notifications");
@@ -44,20 +73,6 @@ if (!fs.existsSync(uploadDir)) {
 
 // 🖼️ Serve uploaded images
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-// 🛠️ Middlewares
-app.use(cors({
-  origin: [
-    "http://https://connecther.network",
-    "http://localhost",
-    "https://localhost",            // ✅ Add this
-    "capacitor://localhost",
-    "https://connecther.network"
-  ],
-  credentials: true
-}));
-
-
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
@@ -284,18 +299,43 @@ app.post('/api/messages', async (req, res) => {
   try {
     const newMsg = await Message.create({ sender, recipient, text, audio });
 
-    // ✅ After saving message, emit to room via Socket.IO
-  const roomId = [sender, recipient].sort().join("_");
-// Send to conversation.html users
-io.to(roomId).emit("newMessage", newMsg);
-// Send to recipient directly (for dashboard.html badge)
-io.to(recipient).emit("newMessage", newMsg);
+    // ✅ Socket.IO real-time delivery
+    const roomId = [sender, recipient].sort().join("_");
+    io.to(roomId).emit("newMessage", newMsg);
+    io.to(recipient).emit("newMessage", newMsg);
+
+    // ✅ FCM Notification
+    const recipientUser = await User.findOne({ username: recipient });
+    if (recipientUser?.fcmToken) {
+      const fcmPayload = {
+        notification: {
+          title: `New message from ${sender}`,
+          body: text || "Sent you an audio message",
+          sound: "default"      // uses your raw/notify.mp3
+        },
+        android: {
+    priority: "high",
+    notification: {
+      channel_id: "alerts",
+      sound: "default",
+      vibrate_timings_millis: [0, 500, 500, 1000, 500, 2000],
+      visibility: "public",
+      notification_priority: "PRIORITY_MAX",
+      default_light_settings: true
+          }
+        },
+        token: recipientUser.fcmToken
+      };
+      await admin.messaging().send(fcmPayload);
+    }
+
     res.json({ success: true, message: newMsg });
   } catch (err) {
     console.error("❌ Error sending message:", err);
     res.status(500).json({ success: false });
   }
 });
+
 
 // ✅ Clear chat for current user only
 app.post("/api/messages/clear", async (req, res) => {
@@ -596,6 +636,7 @@ socket.on("disconnect", async () => {
       socket.to(callRoom).emit("group-call-left", { username });
 
       if (!socket.data?.joinedGroupCall) {
+        // ✅ Save missed call to DB
         await Notification.create({
           to: username,
           from: "system",
@@ -605,6 +646,31 @@ socket.on("disconnect", async () => {
           content: `You missed a group call in "${communityId}"`,
         });
         console.log(`📴 Logged missed call for ${username}`);
+
+        // ✅ Send FCM notification
+        const user = await User.findOne({ username });
+        if (user?.fcmToken) {
+          const fcmPayload = {
+            notification: {
+              title: "Missed Group Call",
+              body: `You missed a call in "${communityId}"`,
+              sound: "default"
+            },
+            android: {
+    priority: "high",
+    notification: {
+      channel_id: "alerts",
+      sound: "default",
+      vibrate_timings_millis: [0, 500, 500, 1000, 500, 2000],
+      visibility: "public",
+      notification_priority: "PRIORITY_MAX",
+      default_light_settings: true
+              }
+            },
+            token: user.fcmToken
+          };
+          await admin.messaging().send(fcmPayload);
+        }
       }
 
       setTimeout(() => {
@@ -620,6 +686,7 @@ socket.on("disconnect", async () => {
     console.error("❌ Error in disconnect cleanup:", err);
   }
 });
+
 
 // ✅ WebRTC SIGNALING: Offer/Answer/ICE
 socket.on("offer", ({ to, from, sdp }) => {
@@ -662,16 +729,46 @@ socket.on("check-call-alive", ({ communityId }) => {
 // ===============================================
 // 🔒 PRIVATE CALL SIGNALING BLOCK (Audio & Video) NEWMEK
 // ===============================================
-socket.on("start-call", ({ from, to, type = "audio", name, avatar }) => {
+socket.on("start-call", async ({ from, to, type = "audio", name, avatar }) => {
   console.log(`📞 Private call request from ${from} to ${to} [${type}]`);
 
-  // Send incoming call event to the receiver
+  // ✅ Socket.IO delivery to recipient if online
   io.to(to).emit("incomingCall", {
     from,
     name: name || from,
     avatar: avatar || "default.jpg",
     type
   });
+
+  // ✅ FCM Notification for offline users
+  const targetUser = await User.findOne({ username: to });
+  if (targetUser?.fcmToken) {
+    const fcmPayload = {
+      notification: {
+        title: `Incoming ${type} call from ${from}`,
+        body: "Tap to join the call",
+        sound: "default"  
+      },
+      android: {
+    priority: "high",
+    notification: {
+      channel_id: "alerts",
+      sound: "default",
+      vibrate_timings_millis: [0, 500, 500, 1000, 500, 2000],
+      visibility: "public",
+      notification_priority: "PRIORITY_MAX",
+      default_light_settings: true
+        }
+      },
+      token: targetUser.fcmToken
+    };
+    try {
+      await admin.messaging().send(fcmPayload);
+      console.log(`📲 FCM sent to ${to} for incoming ${type} call`);
+    } catch (err) {
+      console.error(`❌ FCM error for ${to}:`, err);
+    }
+  }
 });
 
 // ✅ When receiver accepts the call
@@ -708,14 +805,6 @@ socket.on("private-end-call", ({ from, to, reason = "ended" }) => {
   console.log(`📴 ${from} ended the call with ${to} (reason: ${reason})`);
   io.to(to).emit("private-end-call", { from, reason });
 });
-
-
-
-
-
-
-
-
 
 
 });
