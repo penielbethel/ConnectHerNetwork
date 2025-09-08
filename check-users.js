@@ -20,11 +20,15 @@ async function checkAndCreateUsers() {
         console.log(`✅ User '${username}' exists`);
         
         // Enable direct login for existing user
-        await User.updateOne(
-          { username },
-          { directLogin: true }
-        );
-        console.log(`🔓 Direct login enabled for '${username}'`);
+        if (!existingUser.directLoginEnabled) {
+          await User.updateOne(
+            { username },
+            { directLoginEnabled: true }
+          );
+          console.log(`🔓 Direct login enabled for '${username}'`);
+        } else {
+          console.log(`🔓 Direct login already enabled for user '${username}'`);
+        }
         
       } else {
         console.log(`❌ User '${username}' does not exist`);
@@ -40,7 +44,7 @@ async function checkAndCreateUsers() {
           location: 'Unknown',
           avatar: 'https://via.placeholder.com/150', // Default avatar
           gender: 'Female',
-          directLogin: true
+          directLoginEnabled: true
         });
         
         await newUser.save();

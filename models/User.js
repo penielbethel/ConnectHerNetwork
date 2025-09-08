@@ -32,7 +32,10 @@ const userSchema = new mongoose.Schema({
 
   // 🔐 OTP fields for login
   otpCode: { type: String },
-  otpExpires: { type: Date }
+  otpExpires: { type: Date },
+
+  // 🔐 Direct login field
+  directLoginEnabled: { type: Boolean, default: false }
 
 }, {
   timestamps: true
