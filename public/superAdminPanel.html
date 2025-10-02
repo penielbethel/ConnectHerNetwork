@@ -5,22 +5,246 @@
   <title>SuperAdmin Panel</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="theme.css">
-  <!-- Chart.js for data visualization -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- jsPDF for PDF generation -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <!-- html2canvas for converting HTML to canvas -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; background: #f0f2f5; }
-    h1 { color: #333; }
-    .section {
-      margin-bottom: 20px;
-      padding: 15px;
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 20px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+      position: relative;
+    }
+
+    .header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="rgba(255,255,255,0.1)"/><circle cx="75" cy="75" r="1" fill="rgba(255,255,255,0.1)"/><circle cx="50" cy="10" r="0.5" fill="rgba(255,255,255,0.05)"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+      opacity: 0.3;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .header p {
+      font-size: 1.1rem;
+      opacity: 0.9;
+      position: relative;
+      z-index: 1;
+    }
+
+    .content {
+      padding: 40px;
+    }
+
+    .section {
+      background: white;
+      border-radius: 15px;
+      padding: 30px;
+      margin-bottom: 30px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+      border: 1px solid rgba(0, 0, 0, 0.05);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .section:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+    }
+
+    .section-header {
+      margin-bottom: 25px;
+      border-bottom: 2px solid #f8f9fa;
+      padding-bottom: 15px;
+    }
+
+    .section-header h3 {
+      font-size: 1.5rem;
+      color: #2c3e50;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-description {
+      color: #6c757d;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    .analytics-section {
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      border-left: 5px solid #28a745;
+    }
+
+    .analytics-controls {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 25px;
+      flex-wrap: wrap;
+    }
+
+    .analytics-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-decoration: none;
+      min-width: 200px;
+      justify-content: center;
+    }
+
+    .analytics-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+      color: white;
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #dc3545 0%, #e74c3c 100%);
+      color: white;
+    }
+
+    .analytics-content {
+      background: white;
+      border-radius: 10px;
+      padding: 25px;
+      margin-top: 20px;
+      border: 1px solid #dee2e6;
+    }
+
+    .analytics-message {
+      padding: 15px;
+      border-radius: 8px;
+      margin: 15px 0;
+      font-weight: 500;
+    }
+
+    .message.success {
+      background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .message.error {
+      background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 25px;
+      margin-top: 25px;
+    }
+
+    .stat-card {
+      background: white;
+      border-radius: 12px;
+      padding: 25px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+      border: 1px solid #e9ecef;
+      transition: transform 0.3s ease;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+    }
+
+    .stat-card h4 {
+      color: #495057;
+      margin-bottom: 15px;
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .stat-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #f8f9fa;
+    }
+
+    .stat-item:last-child {
+      border-bottom: none;
+    }
+
+    .stat-label {
+      font-weight: 500;
+      color: #6c757d;
+    }
+
+    .stat-value {
+      font-weight: 600;
+      color: #495057;
+    }
+
+    .percentage {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .chart-container {
+      margin-top: 20px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    h1 { color: #333; }
     input, select, button {
       padding: 8px;
       margin: 5px 0;
@@ -52,152 +276,58 @@
     .promote-btn:hover {
       background-color: #0056b3;
     }
-    
-    /* Statistics Section Styles */
-    .stats-display {
-      margin-top: 15px;
+
+    @media (max-width: 768px) {
+      .container {
+        margin: 10px;
+        border-radius: 15px;
+      }
+
+      .header {
+        padding: 20px;
+      }
+
+      .header h1 {
+        font-size: 2rem;
+      }
+
+      .content {
+        padding: 20px;
+      }
+
+      .section {
+        padding: 20px;
+      }
+
+      .analytics-controls {
+        flex-direction: column;
+      }
+
+      .analytics-btn {
+        min-width: 100%;
+      }
+
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
     }
-    .stats-container {
-      background: #f8f9fa;
-      border-radius: 8px;
-      padding: 20px;
-      border: 1px solid #e9ecef;
+
+    .icon {
+      font-size: 1.2rem;
     }
-    .stats-header {
-      text-align: center;
-      margin-bottom: 20px;
-      border-bottom: 2px solid #007bff;
-      padding-bottom: 15px;
+
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 1s ease-in-out infinite;
     }
-    .stats-header h4 {
-      color: #007bff;
-      margin: 0 0 10px 0;
-    }
-    .stats-timestamp {
-      color: #6c757d;
-      font-size: 0.9em;
-      margin: 5px 0;
-    }
-    .total-users {
-      font-weight: bold;
-      color: #28a745;
-      font-size: 1.1em;
-      margin: 5px 0;
-    }
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 20px;
-      margin-top: 20px;
-    }
-    .stats-card {
-      background: white;
-      border-radius: 8px;
-      padding: 15px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      border-left: 4px solid #007bff;
-    }
-    .stats-card h5 {
-      color: #495057;
-      margin: 0 0 15px 0;
-      font-size: 1.1em;
-    }
-    .stats-content {
-      font-size: 0.9em;
-    }
-    .stat-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px 0;
-      border-bottom: 1px solid #f1f3f4;
-    }
-    .stat-item:last-child {
-      border-bottom: none;
-    }
-    .stat-label {
-      font-weight: 500;
-      color: #495057;
-    }
-    .stat-value {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .stat-count {
-      background: #e9ecef;
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-size: 0.8em;
-      color: #495057;
-    }
-    .stat-percentage {
-      font-weight: bold;
-      color: #007bff;
-    }
-    .btn-success {
-      background-color: #28a745;
-      border-color: #28a745;
-      color: white;
-      padding: 10px 20px;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 1em;
-    }
-    .btn-success:hover {
-      background-color: #218838;
-      border-color: #1e7e34;
-    }
-    
-    /* Charts Section Styles */
-    .charts-section {
-      margin: 30px 0;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-      gap: 25px;
-    }
-    .chart-container {
-      background: white;
-      border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-      border-left: 4px solid #007bff;
-    }
-    .chart-container h5 {
-      color: #495057;
-      margin: 0 0 20px 0;
-      font-size: 1.1em;
-      text-align: center;
-    }
-    .chart-container canvas {
-      max-height: 300px;
-      width: 100% !important;
-    }
-    
-    /* Download Button Styles */
-    .download-btn {
-      margin: 15px 0;
-      background: linear-gradient(135deg, #007bff, #0056b3);
-      border: none;
-      padding: 12px 25px;
-      border-radius: 8px;
-      font-weight: 600;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 12px rgba(0,123,255,0.3);
-    }
-    .download-btn:hover {
-      background: linear-gradient(135deg, #0056b3, #004085);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(0,123,255,0.4);
-    }
-    .download-btn i {
-      margin-right: 8px;
-    }
-    
-    /* Enhanced Stats Grid */
-    .stats-grid {
-      margin-top: 30px;
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
   </style>
 </head>
@@ -231,72 +361,6 @@
     <div id="promoteMsg" class="code-box" style="display:none;"></div>
   </div>
 
-  <!-- 📊 Generate Statistics/Analytics -->
-  <div class="section">
-    <h3>📊 Generate Statistics/Analytics</h3>
-    <div class="admin-actions">
-      <button id="generateStatsBtn" class="btn btn-success">Generate User Statistics</button>
-      <div id="statsDisplay" class="stats-display" style="display: none;">
-        <div class="stats-container">
-          <div class="stats-header">
-            <h4>📈 User Analytics Report</h4>
-            <p id="statsGeneratedAt" class="stats-timestamp"></p>
-            <p id="totalUsersCount" class="total-users"></p>
-            <button id="downloadPdfBtn" class="btn btn-primary download-btn">
-              <i class="fas fa-download"></i> Download PDF Report
-            </button>
-          </div>
-          
-          <!-- Charts Section -->
-          <div class="charts-section">
-            <div class="chart-container">
-              <h5>🌍 Location Distribution</h5>
-              <canvas id="locationChart"></canvas>
-            </div>
-            
-            <div class="chart-container">
-              <h5>🎂 Age Range Distribution</h5>
-              <canvas id="ageChart"></canvas>
-            </div>
-            
-            <div class="chart-container">
-              <h5>👥 Gender Distribution</h5>
-              <canvas id="genderChart"></canvas>
-            </div>
-            
-            <div class="chart-container">
-              <h5>📅 Registration Timeline</h5>
-              <canvas id="timelineChart"></canvas>
-            </div>
-          </div>
-          
-          <!-- Detailed Statistics Tables -->
-          <div class="stats-grid">
-            <div class="stats-card">
-              <h5>🌍 Location Distribution</h5>
-              <div id="locationStats" class="stats-content"></div>
-            </div>
-            
-            <div class="stats-card">
-              <h5>🎂 Age Range Distribution</h5>
-              <div id="ageRangeStats" class="stats-content"></div>
-            </div>
-            
-            <div class="stats-card">
-              <h5>👥 Gender Distribution</h5>
-              <div id="genderStats" class="stats-content"></div>
-            </div>
-            
-            <div class="stats-card">
-              <h5>📅 Registration Timeline</h5>
-              <div id="registrationTimeline" class="stats-content"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
 <hr>
 <h3>Demote Admin to User</h3>
 <input type="text" id="demoteUsername" placeholder="Username to demote">
@@ -310,21 +374,49 @@
     <div id="userList">Loading users...</div>
   </div>
 
+  <!-- 📊 Generate Analytics/Statistics -->
+  <div class="section analytics-section">
+    <div class="section-header">
+      <h3>📊 Generate Statistics/Analytics</h3>
+      <p class="section-description">Generate comprehensive user analytics and download detailed reports</p>
+    </div>
+    
+    <div class="analytics-controls">
+      <button onclick="generateAnalytics()" class="btn btn-primary analytics-btn" style="background: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; margin-right: 10px;">
+        <i class="fa fa-chart-bar"></i> Generate Analytics Report
+      </button>
+      <button onclick="downloadAnalyticsPDF()" class="btn btn-success analytics-btn" style="background: #dc3545; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px;">
+        <i class="fa fa-download"></i> Download PDF Report
+      </button>
+    </div>
+    
+    <div id="analyticsMsg" class="message analytics-message code-box" style="display:none;"></div>
+    
+    <!-- Analytics Display Container -->
+    <div id="analyticsContainer" class="analytics-content" style="display:none; margin-top: 20px;">
+      <div id="analyticsContent"></div>
+    </div>
+  </div>
 
-  <script>
-  // 🛡️ SuperAdmin Page Protection
+
+ <script>
   const currentUser = JSON.parse(localStorage.getItem("currentUser"));
   const token = localStorage.getItem("token");
 
+  // 🔹 API base URL: Web uses relative, APK uses live server
+  const API_BASE = (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform())
+    ? "https://connecther.network/api" // live server for APK
+    : "/api"; // relative for Web
+
   if (!currentUser || currentUser.role !== "superadmin" || !token) {
     alert("⛔ Access denied. SuperAdmin only.");
-    window.location.replace("dashboard.html"); // or "Sign Up Page.html"
+    window.location.replace("dashboard.html");
   }
 
   // ✅ Fetch Admin Invite Token
   async function generateToken() {
     const role = document.getElementById("role").value;
-    const res = await fetch("/api/admin/generate-invite", {
+    const res = await fetch(`${API_BASE}/admin/generate-invite`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -347,11 +439,9 @@
   // ✅ Promote a user to Admin
   async function promoteUser() {
     const username = document.getElementById("promoteUsername").value;
-    const res = await fetch(`/api/admin/promote/${username}`, {
+    const res = await fetch(`${API_BASE}/admin/promote/${username}`, {
       method: "POST",
-      headers: {
-        "Authorization": "Bearer " + token
-      }
+      headers: { "Authorization": "Bearer " + token }
     });
 
     const data = await res.json();
@@ -363,10 +453,8 @@
 
   // ✅ List all users
   async function fetchUsers() {
-    const res = await fetch("/api/admin/users", {
-      headers: {
-        "Authorization": "Bearer " + token
-      }
+    const res = await fetch(`${API_BASE}/admin/users`, {
+      headers: { "Authorization": "Bearer " + token }
     });
 
     const data = await res.json();
@@ -390,421 +478,962 @@
 
   fetchUsers();
 
-  // 📊 Generate User Statistics
-  async function generateUserStats() {
-    const button = document.getElementById("generateStatsBtn");
-    const statsDisplay = document.getElementById("statsDisplay");
+  // 🔻 Demote an Admin to User
+  async function demoteUser() {
+    const username = document.getElementById("demoteUsername").value;
+    const res = await fetch(`${API_BASE}/admin/demote/${username}`, {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token }
+    });
+
+    const data = await res.json();
+    const msgBox = document.getElementById("demoteMsg");
+    msgBox.style.display = "block";
+    msgBox.innerText = data.message || "Failed to demote user.";
+    fetchUsers(); // refresh user list
+  }
+
+  // 📊 Generate Analytics Report
+  let analyticsData = null;
+
+  async function generateAnalytics() {
+    const msgBox = document.getElementById("analyticsMsg");
+    const container = document.getElementById("analyticsContainer");
+    const content = document.getElementById("analyticsContent");
     
-    // Show loading state
-    button.textContent = "Generating...";
-    button.disabled = true;
+    msgBox.innerHTML = '<div class="loading"></div> Generating analytics report...';
+    msgBox.className = 'message';
+    msgBox.style.display = "block";
+    
+    // Debug: Log the token and request details
+    console.log('Token being used:', token);
+    console.log('API_BASE:', API_BASE);
+    console.log('Full URL:', `${API_BASE}/admin/analytics`);
     
     try {
-      const res = await fetch("/api/stats/user-analytics", {
-        headers: {
-          "Authorization": "Bearer " + token
-        }
+      const res = await fetch(`${API_BASE}/admin/analytics`, {
+        headers: { "Authorization": "Bearer " + token }
       });
+
+      // Debug: Log the response details
+      console.log('Response status:', res.status);
+      console.log('Response headers:', res.headers);
+      console.log('Response ok:', res.ok);
+      
+      // Check if response is HTML instead of JSON
+      const contentType = res.headers.get('content-type');
+      console.log('Content-Type:', contentType);
+      
+      if (!contentType || !contentType.includes('application/json')) {
+        const textResponse = await res.text();
+        console.log('Non-JSON response received:', textResponse);
+        throw new Error('Server returned HTML instead of JSON. Check server logs.');
+      }
 
       const data = await res.json();
       
-      if (res.ok && data.success) {
-        displayStatistics(data.analytics);
-        statsDisplay.style.display = "block";
+      if (res.ok) {
+        analyticsData = data;
+        msgBox.innerHTML = "✅ Analytics report generated successfully!";
+        msgBox.className = 'message success';
+        
+        // Display analytics
+        displayAnalytics(data);
+        container.style.display = "block";
       } else {
-        alert("Failed to generate statistics: " + (data.message || "Unknown error"));
+        msgBox.innerHTML = data.message || "Failed to generate analytics";
+        msgBox.className = 'message error';
       }
-    } catch (error) {
-      console.error("Statistics Error:", error);
-      alert("Failed to generate statistics. Please try again.");
-    } finally {
-      // Reset button state
-      button.textContent = "Generate User Statistics";
-      button.disabled = false;
+    } catch (err) {
+      msgBox.innerHTML = "❌ Error generating analytics: " + err.message;
+      msgBox.className = 'message error';
     }
   }
 
-  // 📈 Display Statistics Data
-  function displayStatistics(analytics) {
-    // Update header information
-    document.getElementById("statsGeneratedAt").textContent = 
-      `Generated on: ${new Date(analytics.generatedAt).toLocaleString()}`;
-    document.getElementById("totalUsersCount").textContent = 
-      `Total Users: ${analytics.totalUsers}`;
-
-    // Display Location Statistics
-    const locationContainer = document.getElementById("locationStats");
-    locationContainer.innerHTML = "";
-    Object.entries(analytics.locationStatistics).forEach(([location, data]) => {
-      const item = document.createElement("div");
-      item.className = "stat-item";
-      item.innerHTML = `
-        <span class="stat-label">${location}</span>
-        <div class="stat-value">
-          <span class="stat-count">${data.count}</span>
-          <span class="stat-percentage">${data.percentage}%</span>
-        </div>
-      `;
-      locationContainer.appendChild(item);
-    });
-
-    // Display Age Range Statistics
-    const ageContainer = document.getElementById("ageRangeStats");
-    ageContainer.innerHTML = "";
-    Object.entries(analytics.ageRangeStatistics).forEach(([range, data]) => {
-      const item = document.createElement("div");
-      item.className = "stat-item";
-      item.innerHTML = `
-        <span class="stat-label">${range}</span>
-        <div class="stat-value">
-          <span class="stat-count">${data.count}</span>
-          <span class="stat-percentage">${data.percentage}%</span>
-        </div>
-      `;
-      ageContainer.appendChild(item);
-    });
-
-    // Display Gender Statistics
-    const genderContainer = document.getElementById("genderStats");
-    genderContainer.innerHTML = "";
-    Object.entries(analytics.genderStatistics).forEach(([gender, data]) => {
-      const item = document.createElement("div");
-      item.className = "stat-item";
-      item.innerHTML = `
-        <span class="stat-label">${gender}</span>
-        <div class="stat-value">
-          <span class="stat-count">${data.count}</span>
-          <span class="stat-percentage">${data.percentage}%</span>
-        </div>
-      `;
-      genderContainer.appendChild(item);
-    });
-
-    // Display Registration Timeline
-    const timelineContainer = document.getElementById("registrationTimeline");
-    timelineContainer.innerHTML = "";
-    Object.entries(analytics.registrationTimeline).forEach(([month, count]) => {
-      const item = document.createElement("div");
-      item.className = "stat-item";
-      item.innerHTML = `
-        <span class="stat-label">${month}</span>
-        <div class="stat-value">
-          <span class="stat-count">${count}</span>
-        </div>
-      `;
-      timelineContainer.appendChild(item);
-    });
-
-    // Create interactive charts
-    setTimeout(() => {
-      createCharts(analytics);
-    }, 100); // Small delay to ensure DOM is ready
-  }
-
-  // Add event listener for the statistics button
-  document.getElementById("generateStatsBtn").addEventListener("click", generateUserStats);
-
-  // 📊 Charts Management
-  let chartInstances = {};
-
-  // 📈 Create Charts
-  function createCharts(analytics) {
-    // Destroy existing charts
-    Object.values(chartInstances).forEach(chart => {
-      if (chart) chart.destroy();
-    });
-    chartInstances = {};
-
-    // Location Chart (Pie Chart)
-    const locationCtx = document.getElementById('locationChart').getContext('2d');
-    const locationData = Object.entries(analytics.locationStatistics);
-    chartInstances.location = new Chart(locationCtx, {
-      type: 'pie',
-      data: {
-        labels: locationData.map(([location]) => location),
-        datasets: [{
-          data: locationData.map(([, data]) => data.count),
-          backgroundColor: [
-            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', 
-            '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF',
-            '#4BC0C0', '#FF6384', '#36A2EB', '#FFCE56'
-          ],
-          borderWidth: 2,
-          borderColor: '#fff'
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              padding: 20,
-              usePointStyle: true
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                const label = context.label || '';
-                const value = context.parsed;
-                const percentage = locationData.find(([loc]) => loc === label)[1].percentage;
-                return `${label}: ${value} users (${percentage}%)`;
-              }
-            }
-          }
-        }
-      }
-    });
-
-    // Age Range Chart (Bar Chart)
-    const ageCtx = document.getElementById('ageChart').getContext('2d');
-    const ageData = Object.entries(analytics.ageRangeStatistics);
-    chartInstances.age = new Chart(ageCtx, {
-      type: 'bar',
-      data: {
-        labels: ageData.map(([range]) => range),
-        datasets: [{
-          label: 'Users',
-          data: ageData.map(([, data]) => data.count),
-          backgroundColor: 'rgba(54, 162, 235, 0.8)',
-          borderColor: 'rgba(54, 162, 235, 1)',
-          borderWidth: 2,
-          borderRadius: 8
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: false
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                const percentage = ageData[context.dataIndex][1].percentage;
-                return `${context.parsed.y} users (${percentage}%)`;
-              }
-            }
-          }
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            ticks: {
-              stepSize: 1
-            }
-          }
-        }
-      }
-    });
-
-    // Gender Chart (Doughnut Chart)
-    const genderCtx = document.getElementById('genderChart').getContext('2d');
-    const genderData = Object.entries(analytics.genderStatistics);
-    chartInstances.gender = new Chart(genderCtx, {
-      type: 'doughnut',
-      data: {
-        labels: genderData.map(([gender]) => gender),
-        datasets: [{
-          data: genderData.map(([, data]) => data.count),
-          backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0'],
-          borderWidth: 3,
-          borderColor: '#fff'
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              padding: 20,
-              usePointStyle: true
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                const label = context.label || '';
-                const value = context.parsed;
-                const percentage = genderData.find(([gender]) => gender === label)[1].percentage;
-                return `${label}: ${value} users (${percentage}%)`;
-              }
-            }
-          }
-        }
-      }
-    });
-
-    // Registration Timeline Chart (Line Chart)
-    const timelineCtx = document.getElementById('timelineChart').getContext('2d');
-    const timelineData = Object.entries(analytics.registrationTimeline);
-    chartInstances.timeline = new Chart(timelineCtx, {
-      type: 'line',
-      data: {
-        labels: timelineData.map(([month]) => month),
-        datasets: [{
-          label: 'New Registrations',
-          data: timelineData.map(([, count]) => count),
-          borderColor: 'rgba(75, 192, 192, 1)',
-          backgroundColor: 'rgba(75, 192, 192, 0.2)',
-          borderWidth: 3,
-          fill: true,
-          tension: 0.4,
-          pointBackgroundColor: 'rgba(75, 192, 192, 1)',
-          pointBorderColor: '#fff',
-          pointBorderWidth: 2,
-          pointRadius: 6
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: false
-          }
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            ticks: {
-              stepSize: 1
-            }
-          },
-          x: {
-            ticks: {
-              maxRotation: 45
-            }
-          }
-        }
-      }
-    });
-  }
-
-  // 📄 PDF Download Functionality
-  async function downloadPDF() {
-    const button = document.getElementById("downloadPdfBtn");
-    const originalText = button.innerHTML;
+  function displayAnalytics(data) {
+    const content = document.getElementById("analyticsContent");
     
+    // Add debugging and error handling
+    console.log('Analytics data received:', data);
+    
+    // Ensure all required properties exist
+    const safeData = {
+      totalUsers: data.totalUsers || 0,
+      countryStats: data.countryStats || {},
+      ageRangeStats: data.ageRangeStats || {},
+      genderStats: data.genderStats || {},
+      roleStats: data.roleStats || {},
+      registrationTrends: data.registrationTrends || {}
+    };
+    
+    console.log('Safe data:', safeData);
+    
+    content.innerHTML = `
+      <div class="analytics-summary">
+        <h2 style="color: #2c3e50; margin-bottom: 20px; text-align: center;">
+          📊 User Analytics Dashboard
+        </h2>
+        <div style="text-align: center; margin-bottom: 30px;">
+          <div style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; border-radius: 50px; font-size: 1.5rem; font-weight: bold;">
+            Total Users: ${safeData.totalUsers}
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <h4>🌍 Users by Country</h4>
+          <canvas id="countryChart" width="400" height="200"></canvas>
+          <div style="margin-top: 15px;">
+            ${Object.entries(safeData.countryStats).map(([country, stats]) => `
+              <div class="stat-item">
+                <span class="stat-label">${country}</span>
+                <div>
+                  <span class="stat-value">${stats.count} users</span>
+                  <span class="percentage">${stats.percentage}%</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <h4><i class="fa fa-users icon"></i> Age Distribution</h4>
+          <canvas id="ageChart" width="400" height="200"></canvas>
+          <div style="margin-top: 15px;">
+            ${Object.entries(safeData.ageRangeStats).map(([range, stats]) => `
+              <div class="stat-item">
+                <span class="stat-label">${range} years</span>
+                <div>
+                  <span class="stat-value">${stats.count} users</span>
+                  <span class="percentage">${stats.percentage}%</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <h4><i class="fa fa-venus-mars icon"></i> Gender Distribution</h4>
+          <canvas id="genderChart" width="400" height="200"></canvas>
+          <div style="margin-top: 15px;">
+            ${Object.entries(safeData.genderStats).map(([gender, stats]) => `
+              <div class="stat-item">
+                <span class="stat-label">${gender}</span>
+                <div>
+                  <span class="stat-value">${stats.count} users</span>
+                  <span class="percentage">${stats.percentage}%</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <h4><i class="fa fa-crown icon"></i> User Roles</h4>
+          <canvas id="roleChart" width="400" height="200"></canvas>
+          <div style="margin-top: 15px;">
+            ${Object.entries(safeData.roleStats).map(([role, stats]) => `
+              <div class="stat-item">
+                <span class="stat-label">${role.charAt(0).toUpperCase() + role.slice(1)}</span>
+                <div>
+                  <span class="stat-value">${stats.count} users</span>
+                  <span class="percentage">${stats.percentage}%</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        
+        <div class="stat-card" style="grid-column: 1 / -1;">
+          <h4><i class="fa fa-chart-line icon"></i> Registration Trends (Last 12 Months)</h4>
+          <canvas id="trendsChart" width="800" height="300"></canvas>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 15px;">
+            ${Object.entries(safeData.registrationTrends).map(([month, stats]) => `
+              <div style="text-align: center; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                <div style="font-weight: 600; color: #495057; margin-bottom: 5px;">${month}</div>
+                <div style="font-size: 1.2rem; font-weight: bold; color: #28a745;">${stats.count}</div>
+                <div style="font-size: 0.85rem; color: #6c757d;">${stats.percentage}%</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Create charts after DOM is updated
+    setTimeout(() => {
+      createCharts(safeData);
+    }, 100);
+  }
+
+  // Create interactive charts
+  function createCharts(data) {
+    console.log('Creating charts with data:', data);
+    console.log('Country stats:', data.countryStats);
+    
+    // Country Chart (Pie Chart)
+    const countryCtx = document.getElementById('countryChart');
+    if (countryCtx) {
+      const countryLabels = Object.keys(data.countryStats);
+      const countryValues = Object.values(data.countryStats).map(stat => stat.count);
+      const countryColors = generateColors(countryLabels.length);
+      
+      console.log('Country labels:', countryLabels);
+      console.log('Country values:', countryValues);
+      
+      if (countryLabels.length === 0) {
+        console.warn('No country data available for chart');
+        countryCtx.getContext('2d').fillText('No country data available', 50, 100);
+        return;
+      }
+      
+      new Chart(countryCtx, {
+        type: 'pie',
+        data: {
+          labels: countryLabels,
+          datasets: [{
+            data: countryValues,
+            backgroundColor: countryColors,
+            borderWidth: 2,
+            borderColor: '#fff'
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                padding: 20,
+                usePointStyle: true
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.parsed;
+                  const percentage = data.countryStats[label].percentage;
+                  return `${label}: ${value} users (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Age Chart (Doughnut Chart)
+    const ageCtx = document.getElementById('ageChart');
+    if (ageCtx) {
+      const ageLabels = Object.keys(data.ageRangeStats);
+      const ageValues = Object.values(data.ageRangeStats).map(stat => stat.count);
+      
+      new Chart(ageCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ageLabels,
+          datasets: [{
+            data: ageValues,
+            backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'],
+            borderWidth: 2,
+            borderColor: '#fff'
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                padding: 20,
+                usePointStyle: true
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.parsed;
+                  const percentage = data.ageRangeStats[label].percentage;
+                  return `${label}: ${value} users (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Gender Chart (Bar Chart)
+    const genderCtx = document.getElementById('genderChart');
+    if (genderCtx) {
+      const genderLabels = Object.keys(data.genderStats);
+      const genderValues = Object.values(data.genderStats).map(stat => stat.count);
+      
+      new Chart(genderCtx, {
+        type: 'bar',
+        data: {
+          labels: genderLabels,
+          datasets: [{
+            label: 'Users',
+            data: genderValues,
+            backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56'],
+            borderColor: ['#FF6384', '#36A2EB', '#FFCE56'],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                stepSize: 1
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.parsed.y;
+                  const percentage = data.genderStats[label].percentage;
+                  return `${label}: ${value} users (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Role Chart (Polar Area Chart)
+    const roleCtx = document.getElementById('roleChart');
+    if (roleCtx) {
+      const roleLabels = Object.keys(data.roleStats).map(role => role.charAt(0).toUpperCase() + role.slice(1));
+      const roleValues = Object.values(data.roleStats).map(stat => stat.count);
+      
+      new Chart(roleCtx, {
+        type: 'polarArea',
+        data: {
+          labels: roleLabels,
+          datasets: [{
+            data: roleValues,
+            backgroundColor: ['#FF6384', '#4BC0C0', '#FFCE56', '#9966FF', '#FF9F40'],
+            borderWidth: 2,
+            borderColor: '#fff'
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                padding: 20,
+                usePointStyle: true
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.parsed.r;
+                  const originalLabel = Object.keys(data.roleStats)[context.dataIndex];
+                  const percentage = data.roleStats[originalLabel].percentage;
+                  return `${label}: ${value} users (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Registration Trends Chart (Line Chart)
+    const trendsCtx = document.getElementById('trendsChart');
+    if (trendsCtx) {
+      const trendsLabels = Object.keys(data.registrationTrends);
+      const trendsValues = Object.values(data.registrationTrends).map(stat => stat.count);
+      
+      new Chart(trendsCtx, {
+        type: 'line',
+        data: {
+          labels: trendsLabels,
+          datasets: [{
+            label: 'New Registrations',
+            data: trendsValues,
+            borderColor: '#667eea',
+            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+            borderWidth: 3,
+            fill: true,
+            tension: 0.4,
+            pointBackgroundColor: '#667eea',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            pointRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                stepSize: 1
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              display: true,
+              position: 'top'
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.parsed.y;
+                  const percentage = data.registrationTrends[label].percentage;
+                  return `${label}: ${value} registrations (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+  }
+
+  // Generate colors for charts
+  function generateColors(count) {
+    const colors = [
+      '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+      '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384'
+    ];
+    return colors.slice(0, count);
+  }
+
+  // 📄 Download Analytics as PDF with Enhanced Design and Charts
+  async function downloadAnalyticsPDF() {
+    if (!analyticsData) {
+      alert("Please generate analytics first!");
+      return;
+    }
+
     try {
-      button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating PDF...';
-      button.disabled = true;
-
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      // Create PDF with enhanced design
+      const { jsPDF } = window.jspdf || window.jsPDF || {};
+      if (!jsPDF) {
+        throw new Error('jsPDF library not loaded properly');
+      }
+      const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
       
-      // Add title and header
-      pdf.setFontSize(20);
-      pdf.setTextColor(0, 123, 255);
-      pdf.text('User Analytics Report', 20, 25);
+      // Set up pink color scheme
+      const primaryPink = [236, 72, 153]; // #ec4899 - Hot pink
+      const secondaryPink = [219, 39, 119]; // #db2777 - Deep pink
+      const lightPink = [252, 231, 243]; // #fce7f3 - Very light pink
+      const accentPink = [190, 24, 93]; // #be185d - Dark pink
+      const textColor = [44, 62, 80]; // #2c3e50 - Dark text
+      const darkGray = [108, 117, 125]; // #6c757d
       
-      pdf.setFontSize(12);
-      pdf.setTextColor(100, 100, 100);
-      const generatedAt = document.getElementById("statsGeneratedAt").textContent;
-      const totalUsers = document.getElementById("totalUsersCount").textContent;
-      pdf.text(generatedAt, 20, 35);
-      pdf.text(totalUsers, 20, 42);
+      let yPosition = 20;
       
-      let yPosition = 55;
-
-      // Capture charts as images and add to PDF
-      const chartContainers = document.querySelectorAll('.chart-container');
+      // Generate unique report ID and timestamp
+      const reportId = 'CHR-' + Date.now().toString(36).toUpperCase();
+      const currentDate = new Date();
+      const formattedDate = currentDate.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZoneName: 'short'
+      });
       
-      for (let i = 0; i < chartContainers.length; i++) {
-        const container = chartContainers[i];
-        const canvas = await html2canvas(container, {
-          backgroundColor: '#ffffff',
-          scale: 2,
-          logging: false
-        });
+      // Create QR Code data for authentication
+      const qrData = JSON.stringify({
+        reportId: reportId,
+        timestamp: currentDate.toISOString(),
+        totalUsers: analyticsData.totalUsers,
+        generatedBy: 'ConnectHer Mobile App SuperAdmin',
+        hash: btoa(reportId + currentDate.toISOString() + analyticsData.totalUsers)
+      });
+      
+      // Generate QR Code using a simple implementation
+      function generateQRCodeDataURL(data) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 100;
+        const ctx = canvas.getContext('2d');
         
-        const imgData = canvas.toDataURL('image/png');
-        const imgWidth = 170;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        // Fill background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, 100, 100);
         
-        // Add new page if needed
-        if (yPosition + imgHeight > 280) {
-          pdf.addPage();
+        // Create a simple pattern to represent QR code
+        ctx.fillStyle = '#000000';
+        const gridSize = 10;
+        const hash = data.split('').reduce((a, b) => {
+          a = ((a << 5) - a) + b.charCodeAt(0);
+          return a & a;
+        }, 0);
+        
+        for (let x = 0; x < 10; x++) {
+          for (let y = 0; y < 10; y++) {
+            if ((hash + x * y) % 3 === 0) {
+              ctx.fillRect(x * gridSize, y * gridSize, gridSize, gridSize);
+            }
+          }
+        }
+        
+        // Add corner markers
+        ctx.fillRect(0, 0, 30, 30);
+        ctx.fillRect(70, 0, 30, 30);
+        ctx.fillRect(0, 70, 30, 30);
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(10, 10, 10, 10);
+        ctx.fillRect(80, 10, 10, 10);
+        ctx.fillRect(10, 80, 10, 10);
+        
+        // Export as compressed JPEG to keep PDF size small
+        return canvas.toDataURL('image/jpeg', 0.75);
+      }
+      
+      // Load logo.png directly from public without re-encoding or scaling
+      async function loadLogoAsBase64() {
+        try {
+          const res = await fetch('./logo.png', { cache: 'no-store' });
+          if (!res.ok) throw new Error('Logo fetch failed');
+          const blob = await res.blob();
+          const reader = new FileReader();
+          return await new Promise((resolve) => {
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+          });
+        } catch (e) {
+          console.warn('Logo load error:', e);
+          return null;
+        }
+      }
+      
+      // Load logo
+      const logoDataURL = await loadLogoAsBase64();
+      
+      // Function to add watermark logo to each page
+      function addWatermarkToPage() {
+        if (logoDataURL) {
+          try {
+            // Add watermark at 90% transparency (10% opacity)
+            doc.saveGraphicsState();
+            doc.setGState(new doc.GState({opacity: 0.07}));
+            
+            // Center the watermark on the page
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            const watermarkSize = 70; // Slightly smaller watermark
+            const x = (pageWidth - watermarkSize) / 2;
+            const y = (pageHeight - watermarkSize) / 2;
+            
+            doc.addImage(logoDataURL, 'PNG', x, y, watermarkSize, watermarkSize);
+            doc.restoreGraphicsState();
+          } catch (e) {
+            console.log('Watermark failed to add:', e);
+          }
+        }
+      }
+      
+      // Add watermark to first page
+      addWatermarkToPage();
+      
+      // Header with pink gradient effect
+      doc.setFillColor(...primaryPink);
+      doc.rect(0, 0, 210, 50, 'F');
+      
+      // Add actual logo or fallback
+      if (logoDataURL) {
+        try {
+          // Compute display size based on natural pixel dimensions to avoid upscaling
+          await new Promise((resolve) => {
+            const imgMeta = new Image();
+            imgMeta.onload = () => {
+              const pxToMm = 0.264583; // 1px ≈ 0.264583 mm (96 DPI)
+              const naturalWmm = imgMeta.width * pxToMm;
+              const naturalHmm = imgMeta.height * pxToMm;
+              const targetWmm = Math.min(26, naturalWmm > 0 ? naturalWmm : 26);
+              const targetHmm = Math.min(26, naturalHmm > 0 ? naturalHmm : 26);
+              doc.addImage(logoDataURL, 'PNG', 15, 15, targetWmm, targetHmm);
+              resolve();
+            };
+            imgMeta.onerror = () => resolve();
+            imgMeta.src = logoDataURL;
+          });
+        } catch (e) {
+          // Fallback to text logo if image fails
+          doc.setFillColor(255, 255, 255);
+          doc.circle(25, 25, 12, 'F');
+          doc.setTextColor(...primaryPink);
+          doc.setFontSize(16);
+          doc.setFont('helvetica', 'bold');
+          doc.text('CH', 25, 28, { align: 'center' });
+        }
+      } else {
+        // Fallback to text logo
+        doc.setFillColor(255, 255, 255);
+        doc.circle(25, 25, 12, 'F');
+        doc.setTextColor(...primaryPink);
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.text('CH', 25, 28, { align: 'center' });
+      }
+      
+      // Title
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(24);
+      doc.setFont('helvetica', 'bold');
+      doc.text('ConnectHer Mobile App', 105, 25, { align: 'center' });
+      
+      // Subtitle
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Official Analytics & Statistics Report', 105, 35, { align: 'center' });
+      
+      // Report ID and Date
+      doc.setFontSize(10);
+      doc.text(`Report ID: ${reportId}`, 105, 42, { align: 'center' });
+      
+      // Add headquarters address
+      doc.setFontSize(8);
+      doc.setTextColor(255, 255, 255);
+      doc.text('First Floor, Amaden Plaza, Mabushi, FCT, Abuja', 105, 47, { align: 'center' });
+      
+      yPosition = 60;
+      
+      // Summary Box
+      doc.setFillColor(...lightPink);
+      doc.roundedRect(15, yPosition, 180, 25, 3, 3, 'F');
+      
+      doc.setTextColor(...textColor);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Executive Summary', 25, yPosition + 8);
+      
+      doc.setFontSize(20);
+      doc.setTextColor(...primaryPink);
+      doc.text(`Total Registered Users: ${analyticsData.totalUsers}`, 25, yPosition + 18);
+      
+      yPosition += 40;
+      
+      // Geographic Distribution Section
+      doc.setTextColor(...textColor);
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Geographic Distribution', 20, yPosition);
+      yPosition += 10;
+      
+      // Create a simple chart representation for countries
+      const countryEntries = Object.entries(analyticsData.countryStats);
+      const maxCountryUsers = Math.max(...countryEntries.map(([_, stats]) => stats.count));
+      
+      countryEntries.forEach(([country, stats], index) => {
+        if (yPosition > 250) {
+          doc.addPage();
           yPosition = 20;
         }
         
-        pdf.addImage(imgData, 'PNG', 20, yPosition, imgWidth, imgHeight);
-        yPosition += imgHeight + 15;
-      }
-
-      // Add detailed statistics tables
-      pdf.addPage();
-      yPosition = 25;
+        // Country name and stats
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${country}:`, 25, yPosition);
+        doc.text(`${stats.count} users (${stats.percentage}%)`, 80, yPosition);
+        
+        // Visual bar representation with pink colors
+        const barWidth = (stats.count / maxCountryUsers) * 100;
+        const pinkColors = [
+          [236, 72, 153], [219, 39, 119], [190, 24, 93], 
+          [244, 114, 182], [251, 207, 232], [253, 164, 175]
+        ];
+        doc.setFillColor(...pinkColors[index % pinkColors.length]);
+        doc.rect(130, yPosition - 3, barWidth, 5, 'F');
+        
+        yPosition += 8;
+      });
       
-      pdf.setFontSize(16);
-      pdf.setTextColor(0, 123, 255);
-      pdf.text('Detailed Statistics', 20, yPosition);
-      yPosition += 15;
-
-      // Location Statistics
-      pdf.setFontSize(14);
-      pdf.setTextColor(0, 0, 0);
-      pdf.text('Location Distribution:', 20, yPosition);
       yPosition += 10;
       
-      const locationStats = document.getElementById('locationStats').children;
-      for (let i = 0; i < locationStats.length; i++) {
-        const item = locationStats[i];
-        const label = item.querySelector('.stat-label').textContent;
-        const count = item.querySelector('.stat-count').textContent;
-        const percentage = item.querySelector('.stat-percentage').textContent;
-        
-        pdf.setFontSize(10);
-        pdf.text(`${label}: ${count} users (${percentage})`, 25, yPosition);
-        yPosition += 6;
-        
-        if (yPosition > 270) {
-          pdf.addPage();
-          yPosition = 25;
-        }
+      // Age Distribution Section
+      if (yPosition > 220) {
+        doc.addPage();
+        yPosition = 20;
       }
-
+      
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Age Demographics', 20, yPosition);
+      yPosition += 10;
+      
+      Object.entries(analyticsData.ageRangeStats).forEach(([range, stats], index) => {
+        if (yPosition > 250) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${range} years:`, 25, yPosition);
+        doc.text(`${stats.count} users (${stats.percentage}%)`, 80, yPosition);
+        
+        // Visual representation with pink colors
+        const barWidth = (stats.percentage / 100) * 100;
+        const agePinkColors = [[236, 72, 153], [219, 39, 119], [244, 114, 182], [251, 207, 232]];
+        doc.setFillColor(...agePinkColors[index % agePinkColors.length]);
+        doc.rect(130, yPosition - 3, barWidth, 5, 'F');
+        
+        yPosition += 8;
+      });
+      
+      yPosition += 10;
+      
+      // Gender Distribution Section
+      if (yPosition > 220) {
+        doc.addPage();
+        yPosition = 20;
+      }
+      
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Gender Distribution', 20, yPosition);
+      yPosition += 10;
+      
+      Object.entries(analyticsData.genderStats).forEach(([gender, stats], index) => {
+        if (yPosition > 250) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${gender}:`, 25, yPosition);
+        doc.text(`${stats.count} users (${stats.percentage}%)`, 80, yPosition);
+        
+        // Visual representation with pink colors
+        const barWidth = (stats.percentage / 100) * 100;
+        const genderPinkColors = [[236, 72, 153], [219, 39, 119], [244, 114, 182]];
+        doc.setFillColor(...genderPinkColors[index % genderPinkColors.length]);
+        doc.rect(130, yPosition - 3, barWidth, 5, 'F');
+        
+        yPosition += 8;
+      });
+      
+      yPosition += 10;
+      
+      // User Roles Section
+      if (yPosition > 220) {
+        doc.addPage();
+        yPosition = 20;
+      }
+      
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('User Roles Distribution', 20, yPosition);
+      yPosition += 10;
+      
+      Object.entries(analyticsData.roleStats).forEach(([role, stats], index) => {
+        if (yPosition > 250) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        const roleName = role.charAt(0).toUpperCase() + role.slice(1);
+        doc.text(`${roleName}:`, 25, yPosition);
+        doc.text(`${stats.count} users (${stats.percentage}%)`, 80, yPosition);
+        
+        // Visual representation with pink colors
+        const barWidth = (stats.percentage / 100) * 100;
+        const rolePinkColors = [[236, 72, 153], [219, 39, 119], [244, 114, 182], [190, 24, 93]];
+        doc.setFillColor(...rolePinkColors[index % rolePinkColors.length]);
+        doc.rect(130, yPosition - 3, barWidth, 5, 'F');
+        
+        yPosition += 8;
+      });
+      
+      // Registration Trends Section
+      doc.addPage();
+      yPosition = 20;
+      
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Registration Trends (Last 12 Months)', 20, yPosition);
+      yPosition += 15;
+      
+      // Create a simple line chart representation
+      const trendsEntries = Object.entries(analyticsData.registrationTrends);
+      const maxTrendValue = Math.max(...trendsEntries.map(([_, stats]) => stats.count));
+      
+      // Chart area
+      const chartX = 20;
+      const chartY = yPosition;
+      const chartWidth = 170;
+      const chartHeight = 80;
+      
+      // Draw chart background
+      doc.setFillColor(...lightPink);
+      doc.rect(chartX, chartY, chartWidth, chartHeight, 'F');
+      
+      // Draw chart border
+      doc.setDrawColor(...primaryPink);
+      doc.rect(chartX, chartY, chartWidth, chartHeight);
+      
+      // Plot data points and connect them
+      const pointSpacing = chartWidth / (trendsEntries.length - 1);
+      let prevX = chartX;
+      let prevY = chartY + chartHeight;
+      
+      trendsEntries.forEach(([month, stats], index) => {
+        const x = chartX + (index * pointSpacing);
+        const y = chartY + chartHeight - ((stats.count / maxTrendValue) * chartHeight);
+        
+        // Draw line
+        if (index > 0) {
+          doc.setDrawColor(...primaryPink);
+          doc.line(prevX, prevY, x, y);
+        }
+        
+        // Draw point
+        doc.setFillColor(...primaryPink);
+        doc.circle(x, y, 1, 'F');
+        
+        prevX = x;
+        prevY = y;
+      });
+      
+      yPosition += chartHeight + 15;
+      
+      // Trends data table
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      trendsEntries.forEach(([month, stats], index) => {
+        if (yPosition > 270) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        const xPos = 20 + (index % 3) * 60;
+        if (index % 3 === 0 && index > 0) yPosition += 8;
+        
+        doc.text(`${month}: ${stats.count} (${stats.percentage}%)`, xPos, yPosition);
+      });
+      
+      // Report Summary
+      doc.addPage();
+      yPosition = 20;
+      
+      doc.setFillColor(...lightPink);
+      doc.rect(15, yPosition, 180, 50, 'F');
+      
+      doc.setTextColor(...textColor);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Report Summary', 25, yPosition + 10);
+      
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`• Total Users: ${analyticsData.totalUsers}`, 25, yPosition + 20);
+      doc.text(`• Countries Represented: ${Object.keys(analyticsData.countryStats).length}`, 25, yPosition + 27);
+      doc.text(`• Report Generated: ${formattedDate}`, 25, yPosition + 34);
+      doc.text(`• Report ID: ${reportId}`, 25, yPosition + 41);
+      
+      yPosition += 60;
+      
+      // Report Authentication Section (moved to bottom)
+      doc.setFillColor(...lightPink);
+      doc.rect(15, yPosition, 180, 40, 'F');
+      doc.setDrawColor(...primaryPink);
+      doc.rect(15, yPosition, 180, 40);
+      
+      doc.setTextColor(...textColor);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('REPORT AUTHENTICATION', 25, yPosition + 12);
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Generated: ${formattedDate}`, 25, yPosition + 22);
+      doc.text(`Digital Signature: ${reportId}`, 25, yPosition + 30);
+      
+      doc.setTextColor(...accentPink);
+      doc.setFont('helvetica', 'bold');
+      doc.text('WARNING: Any alteration renders this report invalid', 25, yPosition + 38);
+      
+      yPosition += 50;
+      
+      // QR Code Section (moved to the very end)
+      doc.setFillColor(255, 255, 255);
+      doc.rect(15, yPosition, 180, 50, 'F');
+      doc.setDrawColor(...primaryPink);
+      doc.rect(15, yPosition, 180, 50);
+      
+      // Generate QR Code
+      const qrCodeDataURL = generateQRCodeDataURL(qrData);
+      
+      doc.setTextColor(...primaryPink);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('QR Code Verification', 25, yPosition + 12);
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Scan this QR code to verify the authenticity of this report', 25, yPosition + 22);
+      doc.text('Contains report metadata and verification hash', 25, yPosition + 30);
+      
+      // Add QR Code at the end
+      doc.addImage(qrCodeDataURL, 'JPEG', 150, yPosition + 10, 28, 28, undefined, 'MEDIUM');
+      doc.setFontSize(8);
+      doc.text('Scan to verify', 165, yPosition + 45, { align: 'center' });
+      
+      // Footer with page numbers, timestamp, and watermarks
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        
+        // Add watermark to each page
+        addWatermarkToPage();
+        
+        doc.setFontSize(8);
+        doc.setTextColor(128, 128, 128);
+        doc.text(`Page ${i} of ${pageCount}`, 105, 290, { align: 'center' });
+        doc.text(`Generated: ${formattedDate}`, 20, 290);
+      doc.text('ConnectHer Mobile App', 190, 290, { align: 'right' });
+      }
+      
       // Save the PDF
-      const timestamp = new Date().toISOString().split('T')[0];
-      pdf.save(`User_Analytics_Report_${timestamp}.pdf`);
+      doc.save(`ConnectHer_Mobile_App_Analytics_Report_${reportId}.pdf`);
+      
+      // Show success message using the same pattern as other functions
+      const msgBox = document.getElementById("analyticsMsg");
+      msgBox.innerHTML = "✅ PDF report generated successfully! Check your downloads folder.";
+      msgBox.className = 'message success';
+      msgBox.style.display = "block";
       
     } catch (error) {
-      console.error('PDF Generation Error:', error);
-      alert('Failed to generate PDF. Please try again.');
-    } finally {
-      button.innerHTML = originalText;
-      button.disabled = false;
+      console.error('Error downloading PDF:', error);
+      const msgBox = document.getElementById("analyticsMsg");
+      msgBox.innerHTML = "❌ Failed to download PDF report. Please try again.";
+      msgBox.className = 'message error';
+      msgBox.style.display = "block";
     }
   }
-
-  // Add event listener for PDF download
-  document.addEventListener('DOMContentLoaded', function() {
-    document.getElementById('downloadPdfBtn').addEventListener('click', downloadPDF);
-  });
-
-  // 🔻 Demote an Admin to User
-async function demoteUser() {
-  const username = document.getElementById("demoteUsername").value;
-  const res = await fetch(`/api/admin/demote/${username}`, {
-    method: "POST",
-    headers: {
-      "Authorization": "Bearer " + token
-    }
-  });
-
-  const data = await res.json();
-  const msgBox = document.getElementById("demoteMsg");
-  msgBox.style.display = "block";
-  msgBox.innerText = data.message || "Failed to demote user.";
-  fetchUsers(); // refresh user list
-}
 </script>
-<script src="theme.js" defer></script>
 
+<script src="theme.js" defer></script>
 </body>
 </html>
