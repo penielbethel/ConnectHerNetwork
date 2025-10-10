@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">ConnectHer Network</string>
-    <string name="title_activity_main">ConnectHer Network</string>
-    <string name="package_name">com.peniel.connecther</string>
-    <string name="custom_url_scheme">com.peniel.connecther</string>
-</resources>
