@@ -101,7 +101,9 @@ const DashboardScreen = () => {
 
   useFocusEffect(
     useCallback(() => {
+      // Reload posts and current user on focus so location/flag changes reflect immediately
       loadPosts();
+      loadCurrentUser();
     }, [])
   );
 

@@ -141,20 +141,44 @@ export class PushNotificationService {
         }
       },
 
-      onAction: (notification) => {
+      onAction: async (notification) => {
         console.log('Notification action:', notification);
         // Accept/Decline actions for call alerts
         try {
           const action = (notification as any).action;
           const data = (notification as any)?.data || (notification as any)?.userInfo || {};
           const caller = data?.caller || data?.from || data?.username;
-          const type = (data?.callType || data?.type) === 'video' ? 'video' : 'audio';
+          const dtype = String(data?.type || '').toLowerCase();
+          const type = (data?.callType === 'video' || data?.type === 'video') ? 'video' : 'audio';
 
-          if (action === 'Accept' && caller) {
-            socketService.acceptCall({ from: data?.receiver || data?.to, to: caller });
-            navigate('Call', { to: caller, type, mode: 'callee' });
-          } else if (action === 'Decline' && caller) {
-            socketService.rejectCall({ from: data?.receiver || data?.to, to: caller });
+          if (dtype === 'group_call') {
+            const communityId = data?.communityId;
+            const communityName = data?.communityName;
+            if (action === 'Accept' && communityId) {
+              navigate('CommunityIncomingCall', {
+                communityId,
+                communityName,
+                caller: { username: caller },
+                type,
+                mode: 'callee',
+              });
+            } else if (action === 'Decline' && communityId) {
+              try {
+                const stored = await AsyncStorage.getItem('currentUser');
+                const me = stored ? JSON.parse(stored) : null;
+                const username = me?.username;
+                if (username) {
+                  socketService.declineGroupCall({ communityId, username });
+                }
+              } catch (_) {}
+            }
+          } else {
+            if (action === 'Accept' && caller) {
+              socketService.acceptCall({ from: data?.receiver || data?.to, to: caller });
+              navigate('Call', { to: caller, type, mode: 'callee' });
+            } else if (action === 'Decline' && caller) {
+              socketService.rejectCall({ from: data?.receiver || data?.to, to: caller });
+            }
           }
         } catch (e) {
           console.log('onAction handler error:', e);
@@ -332,7 +356,8 @@ export class PushNotificationService {
     
     if (!notification) return;
 
-    const isCall = !!(data?.caller || String(data?.type || '').toLowerCase() === 'call' || String(notification.title || '').toLowerCase().includes('call'));
+    const dtype = String(data?.type || '').toLowerCase();
+    const isCall = !!(data?.caller || dtype === 'call' || dtype === 'group_call' || String(notification.title || '').toLowerCase().includes('call'));
     const channelId = isCall ? 'connecther_calls' : 'connecther_messages';
     const actions = isCall ? ['Accept', 'Decline'] : ['View'];
 
@@ -396,6 +421,26 @@ export class PushNotificationService {
             }
           } catch (e) {
             console.log('Navigate to IncomingCall failed:', e);
+          }
+          break;
+        case 'group_call':
+          // Navigate to community incoming call UI
+          try {
+            const communityId = (data as any)?.communityId;
+            const communityName = (data as any)?.communityName;
+            const caller = (data as any)?.caller;
+            const callType = ((data as any)?.callType === 'video') ? 'video' : 'audio';
+            if (communityId) {
+              navigate('CommunityIncomingCall', {
+                communityId,
+                communityName,
+                caller: { username: caller },
+                type: callType,
+                mode: 'callee',
+              });
+            }
+          } catch (e) {
+            console.log('Navigate to CommunityIncomingCall failed:', e);
           }
           break;
         case 'event':

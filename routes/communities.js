@@ -104,6 +104,17 @@ router.post("/:id/leave", async (req, res) => {
     }
 
     await community.save();
+    // Notify only admins and creator that a member left
+    try {
+      const io = req.app.get('io');
+      const notifyUsers = new Set([community.creator, ...community.admins]);
+      notifyUsers.forEach(u => {
+        try { io.to(u).emit('community-member-left', { communityId: community._id.toString(), username }); } catch (_) {}
+      });
+    } catch (emitErr) {
+      console.warn('⚠️ Failed to emit admin-only leave notification:', emitErr);
+    }
+
     res.json({ success: true, message: "Left community successfully" });
 
   } catch (err) {
@@ -168,6 +179,93 @@ router.post("/:id/join", async (req, res) => {
   } catch (err) {
     console.error("❌ Error joining community:", err);
     res.status(500).json({ success: false, message: "Server error." });
+  }
+});
+
+// ✅ Add member (admin/creator only)
+router.post('/:id/add-member', async (req, res) => {
+  try {
+    const { username, target } = req.body;
+    if (!username || !target) return res.status(400).json({ success: false, message: 'Missing username or target' });
+
+    const community = await Community.findById(req.params.id);
+    if (!community) return res.status(404).json({ success: false, message: 'Community not found' });
+
+    const isAdmin = community.admins.includes(username) || community.creator === username;
+    if (!isAdmin) return res.status(403).json({ success: false, message: 'Only admins can add members.' });
+
+    if (community.members.includes(target)) {
+      return res.json({ success: true, message: 'User already a member.' });
+    }
+
+    // Optionally validate user exists
+    const User = require('../models/User');
+    const userDoc = await User.findOne({ username: target });
+    if (!userDoc) return res.status(404).json({ success: false, message: 'User not found' });
+
+    community.members.push(target);
+    await community.save();
+
+    res.json({ success: true, message: 'Member added.' });
+  } catch (err) {
+    console.error('❌ Error adding member:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ✅ Edit community avatar/name (admin/creator only)
+router.patch('/:id/edit', async (req, res) => {
+  try {
+    const { username, name, avatar } = req.body;
+    if (!username) return res.status(400).json({ success: false, message: 'Missing username' });
+
+    const community = await Community.findById(req.params.id);
+    if (!community) return res.status(404).json({ success: false, message: 'Community not found' });
+
+    const isAdmin = community.admins.includes(username) || community.creator === username;
+    if (!isAdmin) return res.status(403).json({ success: false, message: 'Only admins can edit the community.' });
+
+    if (typeof name === 'string' && name.trim()) community.name = name.trim();
+    if (typeof avatar === 'string' && avatar.trim()) community.avatar = avatar.trim();
+
+    await community.save();
+    res.json({ success: true, community });
+  } catch (err) {
+    console.error('❌ Error editing community:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ✅ Lock/unlock community (admin/creator only)
+router.patch('/:id/lock', async (req, res) => {
+  try {
+    const { username } = req.body;
+    const community = await Community.findById(req.params.id);
+    if (!community) return res.status(404).json({ success: false, message: 'Community not found' });
+    const isAdmin = community.admins.includes(username) || community.creator === username;
+    if (!isAdmin) return res.status(403).json({ success: false, message: 'Only admins can lock the community.' });
+    community.isLocked = true;
+    await community.save();
+    res.json({ success: true, isLocked: community.isLocked });
+  } catch (err) {
+    console.error('❌ Error locking community:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+router.patch('/:id/unlock', async (req, res) => {
+  try {
+    const { username } = req.body;
+    const community = await Community.findById(req.params.id);
+    if (!community) return res.status(404).json({ success: false, message: 'Community not found' });
+    const isAdmin = community.admins.includes(username) || community.creator === username;
+    if (!isAdmin) return res.status(403).json({ success: false, message: 'Only admins can unlock the community.' });
+    community.isLocked = false;
+    await community.save();
+    res.json({ success: true, isLocked: community.isLocked });
+  } catch (err) {
+    console.error('❌ Error unlocking community:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 

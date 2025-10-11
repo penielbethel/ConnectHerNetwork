@@ -243,6 +243,34 @@ router.delete('/:id/messages/:msgId', async (req, res) => {
 });
 
 
+// ✅ Hide a single message for a user (Delete for me)
+router.post('/:id/messages/:msgId/hide', async (req, res) => {
+  try {
+    const { id: communityId, msgId } = req.params;
+    const { username } = req.body;
+
+    if (!username) {
+      return res.status(400).json({ success: false, message: "Username required." });
+    }
+
+    const updated = await CommunityMessage.findOneAndUpdate(
+      { _id: msgId, communityId },
+      { $addToSet: { hiddenFrom: username } },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: "Message not found." });
+    }
+
+    return res.json({ success: true, message: "Message hidden for user." });
+  } catch (err) {
+    console.error("❌ Error hiding message:", err);
+    return res.status(500).json({ success: false, message: "Server error." });
+  }
+});
+
+
 
 // ✅ PATCH: Edit message
 router.patch('/:id/messages/:msgId', async (req, res) => {

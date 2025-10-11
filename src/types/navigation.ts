@@ -18,6 +18,31 @@ export type RootStackParamList = {
     type: 'audio' | 'video';
   };
   Community: undefined;
+  CommunityChat: {
+    communityId: string;
+    communityName?: string;
+  };
+  CommunityIncomingCall: {
+    communityId: string;
+    communityName: string;
+    caller: {
+      username: string;
+      name?: string;
+      avatar?: string;
+    };
+    type: 'audio' | 'video';
+  };
+  CommunityCall: {
+    communityId: string;
+    communityName: string;
+    mode: 'caller' | 'callee';
+    type: 'audio' | 'video';
+    caller: {
+      username: string;
+      name?: string;
+      avatar?: string;
+    };
+  };
   Profile: {
     username?: string;
   };

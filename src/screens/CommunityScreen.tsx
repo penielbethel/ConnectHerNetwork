@@ -461,9 +461,9 @@ const CommunityScreen = () => {
             } catch (e) {
               console.warn('Failed to set currentCommunityId:', e);
             }
-            navigation.navigate('Community' as never, { communityId: community._id } as never);
+            navigation.navigate('CommunityChat' as never, { communityId: community._id, communityName: community.name } as never);
           }}>
-          <Text style={styles.viewButtonText}>View</Text>
+          <Text style={styles.viewButtonText}>Chat</Text>
         </TouchableOpacity>
       </View>
     </View>

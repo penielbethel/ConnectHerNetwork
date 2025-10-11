@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const CallLog = require("../models/CallLog");
 const User = require("../models/User");
+const Community = require("../models/Community");
 const admin = require("firebase-admin");
 
 // ✅ Log a call (save + notify receiver via FCM if they have tokens)
@@ -100,3 +101,64 @@ router.post("/bulk-delete", async (req, res) => {
 });
 
 module.exports = router;
+
+// 🚀 Broadcast a group call start to all community members via FCM
+router.post('/group-start', async (req, res) => {
+  const { communityId, caller, type } = req.body;
+
+  if (!communityId || !caller) {
+    return res.status(400).json({ success: false, message: 'Missing communityId or caller' });
+  }
+
+  try {
+    const community = await Community.findById(communityId);
+    if (!community) {
+      return res.status(404).json({ success: false, message: 'Community not found' });
+    }
+
+    const memberUsernames = Array.isArray(community.members) ? community.members.filter(u => u && u !== caller) : [];
+    if (memberUsernames.length === 0) {
+      return res.json({ success: true, notified: 0 });
+    }
+
+    // Fetch users to collect FCM tokens
+    const users = await User.find({ username: { $in: memberUsernames } });
+    const tokens = users
+      .map(u => Array.isArray(u.fcmTokens) ? u.fcmTokens : [])
+      .flat()
+      .filter(Boolean);
+
+    if (tokens.length === 0) {
+      console.log('ℹ️ No FCM tokens found for community members of', communityId);
+      return res.json({ success: true, notified: 0 });
+    }
+
+    const payload = {
+      notification: {
+        title: '📢 Incoming Group Call',
+        body: `${caller} started a ${type || 'audio'} call in ${community.name || 'community'}`,
+        sound: 'default',
+      },
+      data: {
+        type: 'group_call',
+        caller,
+        callType: type || 'audio',
+        communityId: String(communityId),
+        communityName: community.name || '',
+      },
+    };
+
+    try {
+      const response = await admin.messaging().sendToDevice(tokens, payload);
+      console.log('✅ FCM group call alert sent to', response.successCount, 'device(s)');
+      return res.json({ success: true, notified: response.successCount });
+    } catch (fcmErr) {
+      console.warn('⚠️ FCM group call send failed:', fcmErr?.message || fcmErr);
+      // Do not fail request due to FCM issues
+      return res.json({ success: true, notified: 0 });
+    }
+  } catch (err) {
+    console.error('❌ Error broadcasting group call start:', err);
+    return res.status(500).json({ success: false, message: 'Server error broadcasting group call' });
+  }
+});

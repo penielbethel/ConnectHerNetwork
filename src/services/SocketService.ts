@@ -160,6 +160,33 @@ class SocketService {
     this.emit('stopTyping-community', {room, from});
   }
 
+  // =====================
+  // Group Call (Community)
+  // =====================
+  startGroupCall(data: { from: string; communityId: string; communityName: string; members: string[] }) {
+    this.emit('incoming-group-call', data);
+  }
+
+  joinGroupCall(data: { username: string; communityId: string; communityName: string; name: string; avatar?: string }) {
+    this.emit('join-group-call', data);
+  }
+
+  leaveGroupCall(data: { communityId: string; username: string }) {
+    this.emit('leave-group-call', data);
+  }
+
+  declineGroupCall(data: { communityId: string; username: string }) {
+    this.emit('decline-group-call', data);
+  }
+
+  onGroupCallStart(callback: (data: { communityId: string; communityName: string }) => void) {
+    this.on('group-call-start', callback);
+  }
+
+  onIncomingGroupCall(callback: (data: { from: string; communityId: string; communityName: string; type?: 'audio' | 'video' }) => void) {
+    this.on('incoming-group-call', callback);
+  }
+
   // Call related methods
   initiateCall(data: {
     from: string;
@@ -216,6 +243,12 @@ const socketServiceProxy = {
   stopTyping: (to: string) => socketServiceSingleton.stopTyping(to),
   startCommunityTyping: (room: string, from: string) => socketServiceSingleton.startCommunityTyping(room, from),
   stopCommunityTyping: (room: string, from: string) => socketServiceSingleton.stopCommunityTyping(room, from),
+  // Group call helpers
+  startGroupCall: (data: { from: string; communityId: string; communityName: string; members: string[] }) => socketServiceSingleton.startGroupCall(data),
+  joinGroupCall: (data: { username: string; communityId: string; communityName: string; name: string; avatar?: string }) => socketServiceSingleton.joinGroupCall(data),
+  leaveGroupCall: (data: { communityId: string; username: string }) => socketServiceSingleton.leaveGroupCall(data),
+  declineGroupCall: (data: { communityId: string; username: string }) => socketServiceSingleton.declineGroupCall(data),
+  onGroupCallStart: (callback: (data: { communityId: string; communityName: string }) => void) => socketServiceSingleton.onGroupCallStart(callback),
   initiateCall: (data: { from: string; to: string; type: 'audio' | 'video'; offer: any }) => socketServiceSingleton.initiateCall(data),
   acceptCall: (data: { from: string; to: string }) => socketServiceSingleton.acceptCall(data),
   rejectCall: (data: { from: string; to: string }) => socketServiceSingleton.rejectCall(data),

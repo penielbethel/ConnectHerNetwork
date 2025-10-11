@@ -20,25 +20,10 @@ export class ApiService {
   private devHost: string | null = null;
 
   constructor() {
-    // Prefer local dev server during development for faster iteration on device
+    // Force production endpoints so the app consistently uses the live server
     this.devHost = getDevHost();
-    if (__DEV__) {
-      const host = this.devHost;
-      if (host && host !== 'localhost' && host !== '127.0.0.1') {
-        // Use the Metro host IP so physical devices can reach the dev server
-        this.rootUrl = `http://${host}:3000`;
-        this.baseUrl = `${this.rootUrl}/api`;
-      } else {
-        // If we cannot infer a reachable dev host (common on physical devices),
-        // default to production to avoid "Network request failed" during development.
-        this.baseUrl = 'https://connecther.network/api';
-        this.rootUrl = 'https://connecther.network';
-      }
-    } else {
-      // Production endpoints for distributed builds so users have live access
-      this.baseUrl = 'https://connecther.network/api';
-      this.rootUrl = 'https://connecther.network';
-    }
+    this.baseUrl = 'https://connecther.network/api';
+    this.rootUrl = 'https://connecther.network';
     console.log('ApiService baseUrl:', this.baseUrl);
   }
 
@@ -791,6 +776,20 @@ export class ApiService {
     }
   }
 
+  async notifyCommunityGroupCallStart(communityId: string, caller: string, type: 'audio' | 'video' = 'audio') {
+    try {
+      return await this.makeRequest('/calls/group-start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ communityId, caller, type }),
+      });
+    } catch (error) {
+      console.error('notifyCommunityGroupCallStart error:', error);
+      // Do not throw to avoid blocking call start UX; return a soft failure
+      return { success: false } as any;
+    }
+  }
+
   // Fetch user summary by username (name, avatar, username)
   async getUserByUsername(username: string) {
     try {
@@ -1341,6 +1340,32 @@ export class ApiService {
       return { success: true, messages } as any;
     } catch (error) {
       console.error('getCommunityMessages error:', error);
+      throw error;
+    }
+  }
+
+  async sendCommunityTextMessage(communityId: string, text: string, replyTo?: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+      const name = current?.name || `${current?.firstName || ''} ${current?.surname || ''}`.trim() || username;
+
+      const formData = new FormData();
+      if (username) {
+        formData.append('sender', JSON.stringify({ username, name, avatar: this.normalizeAvatar(current?.avatar) }));
+      }
+      formData.append('text', text);
+      formData.append('time', new Date().toISOString());
+      if (replyTo) formData.append('replyTo', replyTo);
+
+      const res = await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/messages`, {
+        method: 'POST',
+        body: formData,
+      });
+      return res;
+    } catch (error) {
+      console.error('sendCommunityTextMessage error:', error);
       throw error;
     }
   }

@@ -38,6 +38,9 @@ const SearchScreen = requireSafe(() => require('./src/screens/SearchScreen'), 'S
 const PostDetailScreen = requireSafe(() => require('./src/screens/PostDetailScreen'), 'PostDetailScreen');
 const CreateCommunityScreen = requireSafe(() => require('./src/screens/CreateCommunityScreen'), 'CreateCommunityScreen');
 const ConversationScreen = requireSafe(() => require('./src/screens/ConversationScreen'), 'ConversationScreen');
+const CommunityChatScreen = requireSafe(() => require('./src/screens/CommunityChatScreen'), 'CommunityChatScreen');
+const CommunityCallScreen = requireSafe(() => require('./src/screens/CommunityCallScreen'), 'CommunityCallScreen');
+const CommunityIncomingCallScreen = requireSafe(() => require('./src/screens/CommunityIncomingCallScreen'), 'CommunityIncomingCallScreen');
 const VerificationScreen = requireSafe(() => require('./src/screens/VerificationScreen'), 'VerificationScreen');
 const SponsorsScreen = requireSafe(() => require('./src/screens/SponsorsScreen'), 'SponsorsScreen');
 const SuperAdminPanelScreen = requireSafe(() => require('./src/screens/SuperAdminPanelScreen'), 'SuperAdminPanelScreen');
@@ -170,6 +173,40 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated]);
 
+  // Listen for incoming group calls and navigate to community incoming call screen
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const groupHandler = (payload: { from: string; communityId: string; communityName: string; type?: 'audio' | 'video' }) => {
+      try {
+        // Show local push notification as well
+        PushNotificationService.getInstance().displayNotification({
+          title: 'Group Call',
+          message: `${payload.from} is calling in ${payload.communityName}`,
+        });
+      } catch (_) {}
+      try {
+        navigate('CommunityIncomingCall', {
+          communityId: payload.communityId,
+          communityName: payload.communityName,
+          caller: { username: payload.from },
+          type: payload.type || 'audio',
+        });
+      } catch (e) {
+        console.error('[NavFAIL] CommunityIncomingCall navigate', e);
+      }
+    };
+    try {
+      SocketService.onIncomingGroupCall(groupHandler as any);
+    } catch (e) {
+      console.error('[SocketFAIL] incoming-group-call listener', e);
+    }
+    return () => {
+      try {
+        SocketService.off('incoming-group-call', groupHandler as any);
+      } catch (e) {}
+    };
+  }, [isAuthenticated]);
+
   const navTheme = {
     ...DefaultTheme,
     colors: {
@@ -211,6 +248,9 @@ const App: React.FC = () => {
         <Stack.Screen name="Search" component={SearchScreen} />
         <Stack.Screen name="PostDetail" component={PostDetailScreen} />
         <Stack.Screen name="CreateCommunity" component={CreateCommunityScreen} />
+        <Stack.Screen name="CommunityChat" component={CommunityChatScreen} />
+        <Stack.Screen name="CommunityCall" component={CommunityCallScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="CommunityIncomingCall" component={CommunityIncomingCallScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Conversation" component={ConversationScreen} />
         <Stack.Screen name="Call" component={CallScreen} />
         <Stack.Screen name="IncomingCall" component={IncomingCallScreen} options={{ headerShown: false }} />
