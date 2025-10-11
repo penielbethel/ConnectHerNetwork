@@ -28,10 +28,35 @@ router.get("/likes-comments/:username", async (req, res) => {
   try {
     const alerts = await Notification.find({
       to: req.params.username,
-      type: { $in: ["like", "comment"] }
+      type: { $in: ["like", "comment", "reply", "share"] }
     }).sort({ createdAt: -1 });
 
-    res.json(alerts);
+    // Enrich notifications with sender details and normalize fields for client
+    const enriched = await Promise.all(
+      alerts.map(async (n) => {
+        let sender = null;
+        if (n.from) {
+          const u = await User.findOne({ username: n.from });
+          if (u) {
+            sender = { username: u.username, name: u.name || `${u.firstName} ${u.surname}`.trim(), avatar: u.avatar };
+          } else {
+            sender = { username: n.from, name: n.from, avatar: "" };
+          }
+        }
+        return {
+          _id: n._id,
+          type: n.type,
+          title: n.title,
+          message: n.content,
+          sender,
+          isRead: !!n.read,
+          createdAt: n.createdAt,
+          data: { postId: n.postId },
+        };
+      })
+    );
+
+    res.json(enriched);
   } catch (err) {
     console.error("❌ Error fetching likes/comments notifications:", err);
     res.status(500).json([]);
@@ -130,7 +155,7 @@ router.post("/send", async (req, res) => {
     const messages = user.fcmTokens.map(token => ({
       token,
       notification: { title, body, sound: "notify" },
-      android: { notification: { channelId: "alerts", sound: "notify", priority: "high", visibility: "public", vibrateTimingsMillis: [0, 500, 500, 500], notificationPriority: "PRIORITY_MAX", fullScreenIntent: true } },
+      android: { priority: "high", notification: { channel_id: "connecther_notifications", sound: "default", visibility: "public" } },
       apns: { payload: { aps: { sound: "default" } } },
       data: { type, forAll: String(forAll), createdAt: newNotif.createdAt.toISOString(), url: "/dashboard.html" }
     }));

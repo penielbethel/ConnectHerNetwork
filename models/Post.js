@@ -36,6 +36,12 @@ const PostSchema = new mongoose.Schema({
   avatar: String,
   caption: String,
 
+  // Author location for flag rendering and feed filtering
+  location: String,
+
+  // Sponsored/boosted flag: visible to all users regardless of relationships
+  sponsored: { type: Boolean, default: false },
+
   media: [MediaSchema], // ✅ Now structured with all required fields
 
   likes: { type: Number, default: 0 },

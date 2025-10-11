@@ -54,10 +54,10 @@ router.post("/register", verifyTokenAndRole(["admin", "superadmin"]), upload.sin
 
     const newSponsor = new Sponsor({ companyName, objectives, logo, logoPublicId, posts: [], postCount: 0 });
     await newSponsor.save();
-    res.status(201).json({ message: "Sponsor registered successfully", sponsor: newSponsor });
+    res.status(201).json({ success: true, message: "Sponsor registered successfully", sponsor: newSponsor });
   } catch (err) {
     console.error("Register Sponsor Error:", err);
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -201,11 +201,11 @@ try {
 
 
 
-    res.status(200).json({ message: "Post added, notification & emails sent", sponsor });
+    res.status(200).json({ success: true, message: "Post added, notification & emails sent", sponsor });
 
   } catch (err) {
     console.error("Add Post Error:", err);
-    res.status(500).json({ message: "Failed to add post", error: err.message });
+    res.status(500).json({ success: false, message: "Failed to add post", error: err.message });
   }
 });
 
@@ -251,10 +251,10 @@ router.put("/:sponsorId/posts/:postId", verifyTokenAndRole(["admin","superadmin"
     }
 
     await sponsor.save();
-    res.json({ message: "Post updated successfully", post });
+    res.json({ success: true, message: "Post updated successfully", post });
   } catch (err) {
     console.error("Edit Post Error:", err);
-    res.status(500).json({ message: "Failed to update post", error: err.message });
+    res.status(500).json({ success: false, message: "Failed to update post", error: err.message });
   }
 });
 
@@ -286,10 +286,10 @@ router.delete("/:sponsorId/posts/:postId", verifyTokenAndRole(["admin", "superad
     sponsor.postCount = sponsor.posts.length;
     await sponsor.save();
 
-    res.json({ message: "✅ Post deleted successfully" });
+    res.json({ success: true, message: "✅ Post deleted successfully" });
   } catch (err) {
     console.error("❌ Delete Sponsor Post Error:", err);
-    res.status(500).json({ message: "Failed to delete post", error: err.message });
+    res.status(500).json({ success: false, message: "Failed to delete post", error: err.message });
   }
 });
 
@@ -307,10 +307,10 @@ router.delete("/:id", verifyTokenAndRole(["admin","superadmin"]), async (req,res
     for (const post of sponsor.posts) if(post.mediaPublicId) await deleteFromCloudinary(post.mediaPublicId);
 
     await Sponsor.findByIdAndDelete(req.params.id);
-    res.json({ message: "Sponsor deleted successfully" });
+    res.json({ success: true, message: "Sponsor deleted successfully" });
   } catch(err){
     console.error("Delete Sponsor Error:", err);
-    res.status(500).json({ message: "Failed to delete sponsor", error: err.message });
+    res.status(500).json({ success: false, message: "Failed to delete sponsor", error: err.message });
   }
 });
 

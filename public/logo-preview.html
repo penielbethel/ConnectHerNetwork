@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Logo Preview</title>
+  <link rel="stylesheet" href="/theme.css" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 24px; }
+    .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; text-align: center; }
+    img { width: 96px; height: 96px; object-fit: contain; }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    .note { margin-top: 16px; color: #555; }
+  </style>
+  </head>
+  <body>
+    <h1>ConnectHer Logo Asset Preview</h1>
+    <p>This page shows the app logo used for Android launcher icons.</p>
+
+    <div class="grid">
+      <div class="card"><div>mdpi</div><img src="/logo.png" alt="logo mdpi" /></div>
+      <div class="card"><div>hdpi</div><img src="/logo.png" alt="logo hdpi" /></div>
+      <div class="card"><div>xhdpi</div><img src="/logo.png" alt="logo xhdpi" /></div>
+      <div class="card"><div>xxhdpi</div><img src="/logo.png" alt="logo xxhdpi" /></div>
+      <div class="card"><div>xxxhdpi</div><img src="/logo.png" alt="logo xxxhdpi" /></div>
+    </div>
+
+    <p class="note">Note: On Android, these are placed under <code>res/mipmap-*</code> as <code>ic_launcher.png</code> and <code>ic_launcher_round.png</code>.</p>
+  </body>
+</html>

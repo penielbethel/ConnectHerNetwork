@@ -120,8 +120,6 @@ app.use('/api/posts', postRoutes);
 const userRoutes = require("./routes/users");
 app.use('/api/users', userRoutes);
 
-const messageRoutes = require('./routes/messages');
-app.use('/api/messages', messageRoutes);
 
 const callRoutes = require("./routes/calls");
 app.use("/api/calls", callRoutes);
@@ -196,11 +194,33 @@ app.post('/friend-accept', async (req, res) => {
   const { user1, user2 } = req.body;
 
   try {
-    // Save as friends
-    await Friendship.create({ users: [user1, user2] });
+    if (!user1 || !user2) {
+      return res.status(400).json({ success: false, message: 'Missing users' });
+    }
 
-    // Remove the pending request
-    await FriendRequest.deleteOne({ from: user2, to: user1 });
+    // Avoid duplicates – check if friendship already exists regardless of order
+    const exists = await Friendship.exists({ users: { $all: [user1, user2] } });
+    if (!exists) {
+      await Friendship.create({ users: [user1, user2] });
+    }
+
+    // Clean up any pending requests in either direction
+    await FriendRequest.deleteMany({
+      $or: [
+        { from: user2, to: user1 },
+        { from: user1, to: user2 }
+      ]
+    });
+    // Notify both parties via Socket.IO
+    try {
+      io.to(user1).emit('friendship-accepted', { by: user2 });
+      io.to(user2).emit('friendship-accepted', { by: user1 });
+      // Refresh suggestions for both users
+      io.to(user1).emit('refresh-suggestions');
+      io.to(user2).emit('refresh-suggestions');
+    } catch (emitErr) {
+      console.warn('⚠️ Socket emit failed for friendship-accepted:', emitErr);
+    }
 
     res.json({ success: true });
   } catch (err) {
@@ -215,6 +235,15 @@ app.post('/friend-decline', async (req, res) => {
 
   try {
     await FriendRequest.deleteOne({ from, to });
+    // Inform both users and refresh suggestions
+    try {
+      io.to(from).emit('friendship-declined', { by: to });
+      io.to(from).emit('refresh-suggestions');
+      io.to(to).emit('refresh-suggestions');
+    } catch (emitErr) {
+      console.warn('⚠️ Socket emit failed for friendship-declined:', emitErr);
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error("❌ Error declining request:", err);
@@ -252,9 +281,9 @@ app.get('/api/friends/:username', async (req, res) => {
       users: username
     });
 
-    const friendUsernames = friendships.map(f =>
+    const friendUsernames = [...new Set(friendships.map(f =>
       f.users.find(u => u !== username)
-    );
+    ))];
 
     const users = await User.find({ username: { $in: friendUsernames } });
 
@@ -270,6 +299,60 @@ app.get('/api/friends/:username', async (req, res) => {
   } catch (err) {
     console.error("❌ Failed to get friends:", err);
     res.status(500).json([]);
+  }
+});
+
+// 🧹 Maintenance: reconcile friendships in DB (dedupe, remove invalid)
+app.post('/api/friends/reconcile', async (req, res) => {
+  try {
+    const all = await Friendship.find({});
+    const beforeCount = all.length;
+
+    // Group by sorted pair key
+    const groups = new Map();
+    for (const f of all) {
+      const users = Array.isArray(f.users) ? [...f.users] : [];
+      if (users.length !== 2) continue;
+      users.sort();
+      const key = users.join('|');
+      const arr = groups.get(key) || [];
+      arr.push(f);
+      groups.set(key, arr);
+    }
+
+    let duplicatesRemoved = 0;
+    let invalidRemoved = 0;
+
+    // Remove duplicates (keep the first by created order)
+    for (const [_key, list] of groups) {
+      if (list.length > 1) {
+        // Sort by _id timestamp ascending, keep first
+        list.sort((a, b) => String(a._id).localeCompare(String(b._id)));
+        const toDelete = list.slice(1);
+        for (const d of toDelete) {
+          await Friendship.deleteOne({ _id: d._id });
+          duplicatesRemoved++;
+        }
+      }
+    }
+
+    // Remove friendships where one or both users no longer exist
+    const afterDupes = await Friendship.find({});
+    for (const f of afterDupes) {
+      const [u1, u2] = f.users || [];
+      const user1 = await User.findOne({ username: u1 });
+      const user2 = await User.findOne({ username: u2 });
+      if (!user1 || !user2) {
+        await Friendship.deleteOne({ _id: f._id });
+        invalidRemoved++;
+      }
+    }
+
+    const finalCount = await Friendship.countDocuments({});
+    res.json({ success: true, beforeCount, duplicatesRemoved, invalidRemoved, finalCount });
+  } catch (err) {
+    console.error('❌ Reconcile friendships failed:', err);
+    res.status(500).json({ success: false, message: 'Reconcile failed' });
   }
 });
 // Check if two users are friends (mutual friendship)
@@ -288,53 +371,6 @@ app.get('/api/friends/check/:user1/:user2', async (req, res) => {
   }
 });
 
-// ✅ Send a message (text, audio, or media)
-app.post('/api/messages', async (req, res) => {
-  const { sender, recipient, text, audio } = req.body;
-
-  if (!sender || !recipient || (!text && !audio)) {
-    return res.status(400).json({ success: false, message: "Missing fields" });
-  }
-
-  try {
-    const newMsg = await Message.create({ sender, recipient, text, audio });
-
-    // ✅ Socket.IO real-time delivery
-    const roomId = [sender, recipient].sort().join("_");
-    io.to(roomId).emit("newMessage", newMsg);
-    io.to(recipient).emit("newMessage", newMsg);
-
-    // ✅ FCM Notification
-    const recipientUser = await User.findOne({ username: recipient });
-    if (recipientUser?.fcmToken) {
-      const fcmPayload = {
-        notification: {
-          title: `New message from ${sender}`,
-          body: text || "Sent you an audio message",
-          sound: "default"      // uses your raw/notify.mp3
-        },
-        android: {
-    priority: "high",
-    notification: {
-      channel_id: "alerts",
-      sound: "default",
-      vibrate_timings_millis: [0, 500, 500, 1000, 500, 2000],
-      visibility: "public",
-      notification_priority: "PRIORITY_MAX",
-      default_light_settings: true
-          }
-        },
-        token: recipientUser.fcmToken
-      };
-      await admin.messaging().send(fcmPayload);
-    }
-
-    res.json({ success: true, message: newMsg });
-  } catch (err) {
-    console.error("❌ Error sending message:", err);
-    res.status(500).json({ success: false });
-  }
-});
 
 
 // ✅ Clear chat for current user only
@@ -357,6 +393,7 @@ app.post("/api/messages/clear", async (req, res) => {
   }
 });
 
+// Mount messages router (single source of truth for media + caption handling)
 app.use('/api/messages', require('./routes/messages'));
 io.on("connection", (socket) => {
   console.log("🧠 New client connected:", socket.id);

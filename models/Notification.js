@@ -35,6 +35,8 @@ const notificationSchema = new mongoose.Schema({
       "call",
       "like",
       "comment",
+      "reply",
+      "share",
       "other",
       "group-call" // ✅ NEW: Group call events (missed, declined, ended)
     ]

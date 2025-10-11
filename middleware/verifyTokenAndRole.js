@@ -6,12 +6,19 @@ const SECRET = process.env.JWT_SECRET || "FORam8n8ferans#1";
 function verifyTokenAndRole(allowedRoles = []) {
   return async function (req, res, next) {
     const authHeader = req.headers.authorization;
+    let token = null;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    // Primary: Authorization Bearer header
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    }
+    // Fallback: token provided via query string (e.g., for opening PDFs via Linking)
+    if (!token && req.query && req.query.token) {
+      token = req.query.token;
+    }
+    if (!token) {
       return res.status(401).json({ message: "Access token missing" });
     }
-
-    const token = authHeader.split(" ")[1];
 
     try {
       const decoded = jwt.verify(token, SECRET);

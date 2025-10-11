@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+// Ensure JSON bodies are parsed for non-multipart requests hitting this router
+router.use(express.json());
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -64,14 +66,46 @@ async function compressVideo(inputBuffer, outputPath) {
  * Then upload the resulting file to Cloudinary and clean up the local file.
  */
 router.post('/', upload.array('media', 10), async (req, res) => {
-  const { sender, recipient, text = "", audio = "", reply = "", replyFrom = "", replyToId = "" } = req.body;
+  const { sender, recipient, reply = "", replyFrom = "", replyToId = "" } = req.body;
+  // Accept caption via either `text` or `caption` field
+  const text = (req.body.text && String(req.body.text)) || (req.body.caption && String(req.body.caption)) || "";
+  const caption = (req.body.caption && String(req.body.caption)) || "";
+  const audio = (req.body.audio && String(req.body.audio)) || "";
   const files = req.files || [];
-  
-  if (!sender || !recipient || (!text && !audio && files.length === 0)) {
+
+  // Support pre-uploaded media via JSON body: `media: [{url, type, name, public_id}]`
+  let bodyMedia = [];
+  try {
+    const raw = req.body.media;
+    if (raw) {
+      if (typeof raw === 'string') {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) bodyMedia = parsed;
+      } else if (Array.isArray(raw)) {
+        bodyMedia = raw;
+      }
+    }
+  } catch (_e) {
+    // Ignore JSON parse errors; fallback to file processing only
+  }
+
+  if (!sender || !recipient || (!text && !audio && files.length === 0 && bodyMedia.length === 0)) {
     return res.status(400).json({ success: false, message: "Missing message content" });
   }
   
   const mediaArray = [];
+  // First include any body-provided media (already uploaded to Cloudinary)
+  for (const m of bodyMedia) {
+    if (m && m.url) {
+      mediaArray.push({
+        name: m.name || 'media',
+        url: m.url,
+        public_id: m.public_id || undefined,
+        type: m.type || 'application/octet-stream',
+        caption: m.caption || '',
+      });
+    }
+  }
 
   for (const file of files) {
     const ext = path.extname(file.originalname).toLowerCase();
@@ -139,6 +173,7 @@ const message = new Message({
   sender,
   recipient,
   text,
+  caption, // store caption separately in addition to text
   audio,
   media: mediaArray,
   reply,
@@ -303,9 +338,14 @@ router.get('/community/:communityId', async (req, res) => {
  * GET: Retrieve the last message for each friend (with friend details enriched)
  */
 const User = require('../models/User'); // ensuring User model is available
+const Friendship = require('../models/Friendship');
 router.get('/latest/:username', async (req, res) => {
   const { username } = req.params;
   try {
+    // Build a list of confirmed friends for the given user
+    const friendships = await Friendship.find({ users: username });
+    const friendUsernames = friendships.flatMap(f => f.users.filter(u => u !== username));
+
     const latestMessages = await Message.aggregate([
       {
         $match: {
@@ -342,9 +382,12 @@ router.get('/latest/:username', async (req, res) => {
         }
       }
     ]);
-  
+    
+    // Filter to only confirmed friends
+    const friendFiltered = latestMessages.filter(entry => friendUsernames.includes(entry.friend));
+
     // Populate friend details (name, avatar, etc.) for richer UI
-    const enrichedResults = await Promise.all(latestMessages.map(async entry => {
+    const enrichedResults = await Promise.all(friendFiltered.map(async entry => {
       const friendUser = await User.findOne({ username: entry.friend })
         .select("name avatar username status")
         .lean();

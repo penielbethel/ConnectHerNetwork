@@ -150,45 +150,43 @@ router.post("/login", express.json(), async (req, res) => {
     user.otpExpires = otpExpires;
     await user.save();
 
-    // Send Email via Gmail
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // TLS
-  auth: {
-    user: process.env.EMAIL_USERNAME,
-    pass: process.env.EMAIL_PASSWORD
-  }
-});
-
-transporter.verify((error, success) => {
-  if (error) {
-    console.error("❌ Transport error:", error);
-  } else {
-    console.log("✅ Server is ready to send emails");
-  }
-});
-
-
-    const mailOptions = {
-      from: process.env.EMAIL_USERNAME,
-      to: user.email,
-      subject: "Your OTP Code for Login",
-      text: `Your login OTP code is: ${otp}. It will expire in 5 minutes.`
-    };
-
-    transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        console.error("❌ Email error:", error);
-        return res.status(500).json({ message: "Failed to send OTP email." });
-      } else {
-        return res.status(200).json({
-          message: "OTP sent to your email.",
-          step: "otp",
-          userId: user._id
-        });
+    // Send Email via Gmail (robust config) and provide dev fallback
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USERNAME,
+        pass: process.env.EMAIL_PASSWORD
       }
     });
+
+    try {
+      await transporter.verify();
+      const mailOptions = {
+        from: process.env.EMAIL_USERNAME,
+        to: user.email,
+        subject: "Your OTP Code for Login",
+        text: `Your login OTP code is: ${otp}. It will expire in 5 minutes.`
+      };
+      await transporter.sendMail(mailOptions);
+      return res.status(200).json({
+        message: "OTP sent to your email.",
+        step: "otp",
+        userId: user._id
+      });
+    } catch (error) {
+      console.error("❌ Email send failed:", error?.message || error);
+      if (process.env.ALLOW_DEV_OTP === 'true' || process.env.NODE_ENV !== 'production') {
+        // Dev fallback: allow proceeding with OTP shown in client for testing
+        return res.status(200).json({
+          message: "Email delivery failed; using development OTP fallback.",
+          step: "otp",
+          userId: user._id,
+          devOtp: otp,
+          emailDelivery: "failed"
+        });
+      }
+      return res.status(500).json({ message: "Failed to send OTP email." });
+    }
 
   } catch (err) {
     console.error("❌ Login error:", err);
@@ -237,6 +235,69 @@ router.post("/verify-otp", express.json(), async (req, res) => {
   } catch (err) {
     console.error("❌ OTP verification error:", err);
     res.status(500).json({ message: "Error verifying OTP." });
+  }
+});
+
+
+// RESEND OTP (for login flow)
+router.post('/resend-otp', express.json(), async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ message: 'Missing userId.' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+
+    // Generate new 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = Date.now() + 5 * 60 * 1000; // 5 mins
+
+    user.otpCode = otp;
+    user.otpExpires = otpExpires;
+    await user.save();
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USERNAME,
+        pass: process.env.EMAIL_PASSWORD,
+      },
+    });
+
+    try {
+      await transporter.verify();
+      const mailOptions = {
+        from: process.env.EMAIL_USERNAME,
+        to: user.email,
+        subject: 'Your OTP Code for Login (Resent)',
+        text: `Your login OTP code is: ${otp}. It will expire in 5 minutes.`,
+      };
+      await transporter.sendMail(mailOptions);
+      return res.status(200).json({
+        success: true,
+        message: 'OTP resent to your email.',
+        step: 'otp',
+        userId: user._id,
+      });
+    } catch (error) {
+      console.error('❌ Resend OTP email failed:', error?.message || error);
+      if (process.env.ALLOW_DEV_OTP === 'true' || process.env.NODE_ENV !== 'production') {
+        return res.status(200).json({
+          success: true,
+          message: 'Email delivery failed; using development OTP fallback.',
+          step: 'otp',
+          userId: user._id,
+          devOtp: otp,
+          emailDelivery: 'failed',
+        });
+      }
+      return res.status(500).json({ message: 'Failed to send OTP email.' });
+    }
+  } catch (err) {
+    console.error('❌ Resend OTP error:', err);
+    res.status(500).json({ message: 'Error resending OTP.' });
   }
 });
 

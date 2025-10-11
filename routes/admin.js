@@ -4,6 +4,13 @@ const router = express.Router();
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const verifyTokenAndRole = require("../middleware/verifyTokenAndRole");
+// Optional PDF export support (install: npm install pdfkit)
+let PDFDocument;
+try {
+  PDFDocument = require("pdfkit");
+} catch (e) {
+  console.warn("pdfkit not installed; /admin/analytics.pdf disabled until installed.");
+}
 
 const SECRET = process.env.JWT_SECRET || "FORam8n8ferans#1";
 
@@ -11,11 +18,11 @@ const SECRET = process.env.JWT_SECRET || "FORam8n8ferans#1";
 router.post("/generate-invite", verifyTokenAndRole(["superadmin"]), (req, res) => {
   const { role } = req.body;
   if (!role || !["admin", "superadmin"].includes(role)) {
-    return res.status(400).json({ message: "Invalid role." });
+    return res.status(400).json({ success: false, message: "Invalid role." });
   }
 
   const inviteToken = jwt.sign({ role, type: "invite" }, SECRET, { expiresIn: "2h" });
-  res.json({ inviteToken });
+  res.json({ success: true, inviteToken });
 });
 
 // 🧑 Promote a user to admin (Only for SuperAdmins)
@@ -23,15 +30,15 @@ router.post("/promote/:username", verifyTokenAndRole(["superadmin"]), async (req
   const { username } = req.params;
   try {
     const user = await User.findOne({ username });
-    if (!user) return res.status(404).json({ message: "User not found." });
+    if (!user) return res.status(404).json({ success: false, message: "User not found." });
 
     user.role = "admin";
     await user.save();
 
-    res.json({ message: `${username} promoted to admin.` });
+    res.json({ success: true, message: `${username} promoted to admin.` });
   } catch (err) {
     console.error("Error promoting user:", err);
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -51,19 +58,19 @@ router.post("/demote/:username", verifyTokenAndRole(["superadmin"]), async (req,
   const { username } = req.params;
   try {
     const user = await User.findOne({ username });
-    if (!user) return res.status(404).json({ message: "User not found." });
+    if (!user) return res.status(404).json({ success: false, message: "User not found." });
 
     if (user.role !== "admin") {
-      return res.status(400).json({ message: `${username} is not an admin.` });
+      return res.status(400).json({ success: false, message: `${username} is not an admin.` });
     }
 
     user.role = "user";
     await user.save();
 
-    res.json({ message: `${username} has been demoted to user.` });
+    res.json({ success: true, message: `${username} has been demoted to user.` });
   } catch (err) {
     console.error("Error demoting user:", err);
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -572,6 +579,114 @@ router.get('/analytics', verifyTokenAndRole(['superadmin']), async (req, res) =>
   } catch (error) {
     console.error('Analytics error:', error);
     res.status(500).json({ message: 'Failed to generate analytics' });
+  }
+});
+
+// 📝 Download Analytics as PDF (SuperAdmin only)
+router.get('/analytics.pdf', verifyTokenAndRole(['superadmin']), async (req, res) => {
+  try {
+    if (!PDFDocument) {
+      return res.status(500).json({ message: 'PDF export unavailable. Install pdfkit.' });
+    }
+
+    const users = await User.find({});
+    const totalUsers = users.length;
+
+    // Build stats (aligned with /analytics)
+    const countryStats = {};
+    const roleStats = {};
+    const genderStats = {};
+    const ageRangeStats = { '18-25': 0, '26-35': 0, '36-45': 0, '46+': 0, 'Not specified': 0 };
+    const registrationTrends = {};
+
+    // Country counts (fallback to raw location/country fields)
+    users.forEach(user => {
+      const country = (user.location || user.country || 'Not specified').trim();
+      countryStats[country] = (countryStats[country] || 0) + 1;
+    });
+
+    // Role counts
+    users.forEach(user => {
+      const role = user.role || 'user';
+      roleStats[role] = (roleStats[role] || 0) + 1;
+    });
+
+    // Gender counts
+    users.forEach(user => {
+      const gender = user.gender || 'Not specified';
+      genderStats[gender] = (genderStats[gender] || 0) + 1;
+    });
+
+    // Age buckets
+    users.forEach(user => {
+      if (user.dob || user.birthday) {
+        const birthDate = new Date(user.dob || user.birthday);
+        const age = new Date().getFullYear() - birthDate.getFullYear();
+        if (age >= 18 && age <= 25) ageRangeStats['18-25']++;
+        else if (age >= 26 && age <= 35) ageRangeStats['26-35']++;
+        else if (age >= 36 && age <= 45) ageRangeStats['36-45']++;
+        else if (age >= 46) ageRangeStats['46+']++;
+        else ageRangeStats['Not specified']++;
+      } else {
+        ageRangeStats['Not specified']++;
+      }
+    });
+
+    // Registration trends (last 12 months)
+    const monthCounts = {};
+    const currentDate = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+      const monthKey = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+      monthCounts[monthKey] = 0;
+    }
+    users.forEach(user => {
+      if (user.createdAt) {
+        const userDate = new Date(user.createdAt);
+        const monthKey = userDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+        if (monthCounts.hasOwnProperty(monthKey)) {
+          monthCounts[monthKey]++;
+        }
+      }
+    });
+    Object.keys(monthCounts).forEach(k => { registrationTrends[k] = monthCounts[k]; });
+
+    // Create PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="ConnectHer_Analytics_Report.pdf"');
+    const doc = new PDFDocument({ margin: 40 });
+    doc.pipe(res);
+
+    doc.fontSize(20).text('ConnectHer Analytics Report', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(12).text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
+    doc.moveDown();
+
+    doc.fontSize(16).text('Summary');
+    doc.moveDown(0.2);
+    doc.fontSize(12).text(`Total Users: ${totalUsers}`);
+    doc.moveDown();
+
+    const writeSection = (title, obj) => {
+      doc.fontSize(14).text(title);
+      doc.moveDown(0.2);
+      doc.fontSize(11);
+      Object.keys(obj).sort().forEach(k => {
+        doc.text(`${k}: ${obj[k]}`);
+      });
+      doc.moveDown();
+    };
+
+    writeSection('By Country', countryStats);
+    writeSection('By Role', roleStats);
+    writeSection('By Gender', genderStats);
+    writeSection('By Age Range', ageRangeStats);
+    writeSection('Registrations by Month', registrationTrends);
+
+    doc.end();
+  } catch (err) {
+    console.error('❌ PDF analytics error:', err);
+    res.status(500).json({ message: 'Failed to generate analytics PDF' });
   }
 });
 

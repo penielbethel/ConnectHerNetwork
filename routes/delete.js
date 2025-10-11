@@ -32,11 +32,11 @@ router.delete('/:username', async (req, res) => {
     // Step 4: Delete the posts from DB
     await Post.deleteMany({ username });
 
-    res.status(200).json({ message: "User and their posts (including media) deleted successfully." });
+    res.status(200).json({ success: true, message: "User and their posts (including media) deleted successfully." });
 
   } catch (err) {
     console.error("❌ Delete failed:", err);
-    res.status(500).json({ message: "Error deleting user and their media." });
+    res.status(500).json({ success: false, message: "Error deleting user and their media." });
   }
 });
 

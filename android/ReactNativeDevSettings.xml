@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+  <string name="server_host">localhost:8082</string>
+  <string name="debug_http_host">localhost:8082</string>
+  <boolean name="use_custom_dev_server">true</boolean>
+</map>

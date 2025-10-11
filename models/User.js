@@ -26,6 +26,9 @@ const userSchema = new mongoose.Schema({
   joined: { type: String },
   name: { type: String },
 
+  // 📌 Saved posts for bookmarking
+  savedPosts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post' }],
+
   // 🔐 For password reset
   resetCode: { type: String },
   resetCodeExpires: { type: Date },

@@ -13,43 +13,47 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    // Save the call log
+    // Save the call log first
     const log = await CallLog.create({
       caller,
       receiver,
       status,
       duration: duration || 0,
-      type: type || "audio"
+      type: type || "audio",
     });
 
-    // 🔥 Find receiver and send FCM if they have tokens
-    const receiverUser = await User.findOne({ username: receiver });
+    // Attempt to send FCM notification but DO NOT fail the request if FCM fails
+    try {
+      const receiverUser = await User.findOne({ username: receiver });
+      if (receiverUser && Array.isArray(receiverUser.fcmTokens) && receiverUser.fcmTokens.length > 0) {
+        const payload = {
+          notification: {
+            title: "📞 Incoming Call",
+            body: `${caller} is calling you (${type || "audio"})`,
+            // Use custom sound channel name if configured on client; fallback to default
+            sound: "default",
+          },
+          data: {
+            caller,
+            type: type || "audio",
+            status,
+          },
+        };
 
-    if (receiverUser && Array.isArray(receiverUser.fcmTokens) && receiverUser.fcmTokens.length > 0) {
-      const payload = {
-        notification: {
-          title: "📞 Incoming Call",
-          body: `${caller} is calling you (${type || "audio"})`,
-          sound: "default"
-        },
-        data: {
-          caller,
-          type: type || "audio",
-          status: status
-        }
-      };
-
-      const response = await admin.messaging().sendToDevice(receiverUser.fcmTokens, payload);
-      console.log("✅ FCM call alert sent to", receiver, response.successCount, "device(s)");
-    } else {
-      console.log("ℹ️ No FCM tokens found for", receiver);
+        const response = await admin.messaging().sendToDevice(receiverUser.fcmTokens, payload);
+        console.log("✅ FCM call alert sent to", receiver, response.successCount, "device(s)");
+      } else {
+        console.log("ℹ️ No FCM tokens found for", receiver);
+      }
+    } catch (fcmErr) {
+      console.warn("⚠️ FCM send failed, continuing without notification:", fcmErr?.message || fcmErr);
     }
 
+    // Always return success for the call log creation
     res.json({ success: true, log });
-
   } catch (err) {
-    console.error("❌ Error logging call or sending notification:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error("❌ Error logging call:", err);
+    res.status(500).json({ success: false, message: "Server error saving call log" });
   }
 });
 
