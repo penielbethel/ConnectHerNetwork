@@ -34,6 +34,22 @@ class SocketService {
     this.socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
     });
+
+    // Debug: log incoming group call-related events to aid live error tracking
+    this.socket.on('incoming-group-call', (data: any) => {
+      try {
+        console.log('[socket] incoming-group-call:', JSON.stringify(data));
+      } catch (_) {
+        console.log('[socket] incoming-group-call received');
+      }
+    });
+    this.socket.on('group-call-start', (data: any) => {
+      try {
+        console.log('[socket] group-call-start:', JSON.stringify(data));
+      } catch (_) {
+        console.log('[socket] group-call-start received');
+      }
+    });
   }
 
   private async registerUser() {
