@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import apiService from '../services/ApiService';
 import { globalStyles, colors } from '../styles/globalStyles';
+import DocumentPicker from 'react-native-document-picker';
 
 type Sponsor = {
   _id: string;
@@ -229,9 +230,19 @@ const AdminPanelScreen: React.FC = () => {
         {/* Simple file picker hint: on native, integrate ImagePicker to set logoFile */}
         <TouchableOpacity
           style={[globalStyles.secondaryButton, { marginBottom: 10 }]}
-          onPress={() => Alert.alert('Pick Logo', 'Integrate ImagePicker to select logo file.')}
+          onPress={async () => {
+            try {
+              const res = await DocumentPicker.pickSingle({
+                type: [DocumentPicker.types.images, DocumentPicker.types.video, DocumentPicker.types.allFiles],
+                copyTo: 'cachesDirectory',
+              });
+              setLogoFile({ uri: res.fileCopyUri || res.uri, name: res.name || 'upload', type: res.type || 'application/octet-stream' });
+            } catch (e: any) {
+              if (!DocumentPicker.isCancel(e)) Alert.alert('Picker Error', e?.message || 'Failed to pick file');
+            }
+          }}
         >
-          <Text style={globalStyles.secondaryButtonText}>Select Logo</Text>
+          <Text style={globalStyles.secondaryButtonText}>Select Logo / Media</Text>
         </TouchableOpacity>
         {logoFile && (
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -327,12 +338,29 @@ const AdminPanelScreen: React.FC = () => {
 
               {activeSponsorForPost === s._id && (
                 <View style={{ marginTop: 10 }}>
-                  {/* Inline post form; for media, integrate picker */}
+                  {/* Media picker supporting any file type */}
                   <TouchableOpacity
                     style={[globalStyles.secondaryButton, { marginBottom: 8 }]}
-                    onPress={() => Alert.alert('Pick Media', 'Integrate Image/Video picker to attach media.')}
+                    onPress={async () => {
+                      try {
+                        const res = await DocumentPicker.pickSingle({
+                          type: [
+                            DocumentPicker.types.images,
+                            DocumentPicker.types.video,
+                            DocumentPicker.types.audio,
+                            DocumentPicker.types.pdf,
+                            DocumentPicker.types.plainText,
+                            DocumentPicker.types.allFiles,
+                          ],
+                          copyTo: 'cachesDirectory',
+                        });
+                        setPostMediaFile({ uri: res.fileCopyUri || res.uri, name: res.name || 'media', type: res.type || 'application/octet-stream' });
+                      } catch (e: any) {
+                        if (!DocumentPicker.isCancel(e)) Alert.alert('Picker Error', e?.message || 'Failed to pick file');
+                      }
+                    }}
                   >
-                    <Text style={globalStyles.secondaryButtonText}>Select Media</Text>
+                    <Text style={globalStyles.secondaryButtonText}>Select Media (any file)</Text>
                   </TouchableOpacity>
                   <TextInput
                     style={styles.input}
