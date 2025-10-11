@@ -864,86 +864,92 @@ const DashboardScreen = () => {
 
   return (
     <View style={globalStyles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>ConnectHer</Text>
-        <TouchableOpacity
-          style={styles.headerButton}
-          onPress={() => setShowQuickMenu(prev => !prev)}>
-          <Icon name="menu" size={24} color={colors.text} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Search bar */}
-      <View style={styles.searchBar}>
-        <Icon name="search" size={20} color={colors.textMuted} style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search users or posts..."
-          placeholderTextColor={colors.textMuted}
-          onFocus={() => navigation.navigate('Search' as never)}
-        />
-        <TouchableOpacity
-          style={styles.searchAction}
-          onPress={() => navigation.navigate('Search' as never)}
-          accessibilityRole="button"
-          accessibilityLabel="Open search options"
-        >
-          <Icon name="tune" size={20} color={colors.textMuted} />
-        </TouchableOpacity>
-      </View>
-
-{/* Welcome line under nav */}
-<Text style={styles.headerWelcome}>
-{(() => {
-  const displayName = getDisplayName(currentUser);
-  return displayName ? `Welcome ${displayName}` : 'Welcome';
-})()}
-</Text>
-
-      {/* Quick options menu */}
-      {showQuickMenu && (
-        <View style={styles.quickMenu}>
-          <TouchableOpacity
-            style={styles.quickMenuItem}
-            onPress={() => navigation.navigate('Search' as never)}>
-            <Icon name="search" size={20} color={colors.text} />
-            <Text style={styles.quickMenuText}>Search</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickMenuItem}
-            onPress={() => navigation.navigate('CreateCommunity' as never)}>
-            <Icon name="add-circle" size={20} color={colors.text} />
-            <Text style={styles.quickMenuText}>Create</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickMenuItem}
-            onPress={() => navigation.navigate('Settings' as never)}>
-            <Icon name="settings" size={20} color={colors.text} />
-            <Text style={styles.quickMenuText}>Settings</Text>
-          </TouchableOpacity>
-          {(currentUser?.role === 'admin' || currentUser?.role === 'superadmin') && (
-            <TouchableOpacity
-              style={styles.quickMenuItem}
-              onPress={() =>
-                navigation.navigate(
-                  (currentUser?.role === 'superadmin' ? 'SuperAdminPanel' : 'AdminPanel') as never
-                )
-              }>
-              <Icon name="admin-panel-settings" size={20} color={colors.text} />
-              <Text style={styles.quickMenuText}>Admin</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-
       <ScrollView
         style={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}> 
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>ConnectHer</Text>
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={() => setShowQuickMenu(prev => !prev)}
+          >
+            <Icon name="menu" size={24} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Search bar */}
+        <View style={styles.searchBar}>
+          <Icon name="search" size={20} color={colors.textMuted} style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search users or posts..."
+            placeholderTextColor={colors.textMuted}
+            onFocus={() => navigation.navigate('Search' as never)}
+          />
+          <TouchableOpacity
+            style={styles.searchAction}
+            onPress={() => navigation.navigate('Search' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Open search options"
+          >
+            <Icon name="tune" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Welcome line under nav */}
+        <Text style={styles.headerWelcome}>
+          {(() => {
+            const displayName = getDisplayName(currentUser);
+            return displayName ? `Welcome ${displayName}` : 'Welcome';
+          })()}
+        </Text>
+
+        {/* Quick options menu */}
+        {showQuickMenu && (
+          <View style={styles.quickMenu}>
+            <TouchableOpacity
+              style={styles.quickMenuItem}
+              onPress={() => navigation.navigate('Search' as never)}
+            >
+              <Icon name="search" size={20} color={colors.text} />
+              <Text style={styles.quickMenuText}>Search</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickMenuItem}
+              onPress={() => navigation.navigate('CreateCommunity' as never)}
+            >
+              <Icon name="add-circle" size={20} color={colors.text} />
+              <Text style={styles.quickMenuText}>Create</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickMenuItem}
+              onPress={() => navigation.navigate('Settings' as never)}
+            >
+              <Icon name="settings" size={20} color={colors.text} />
+              <Text style={styles.quickMenuText}>Settings</Text>
+            </TouchableOpacity>
+            {(currentUser?.role === 'admin' || currentUser?.role === 'superadmin') && (
+              <TouchableOpacity
+                style={styles.quickMenuItem}
+                onPress={() =>
+                  navigation.navigate(
+                    (currentUser?.role === 'superadmin' ? 'SuperAdminPanel' : 'AdminPanel') as never
+                  )
+                }
+              >
+                <Icon name="admin-panel-settings" size={20} color={colors.text} />
+                <Text style={styles.quickMenuText}>Admin</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {/* People You May Know */}
         <View style={styles.greetingCard}>
           <Text style={styles.peopleHeading}>People You May Know</Text>
-          
+
           {/* Suggestions */}
           {suggestedUsers.length > 0 && (
             <ScrollView horizontal style={styles.suggestionsRow} contentContainerStyle={styles.suggestionsContainer}>
@@ -990,7 +996,8 @@ const DashboardScreen = () => {
             <Text style={styles.emptyText}>Start the conversation by creating your first post</Text>
             <TouchableOpacity
               style={globalStyles.button}
-              onPress={() => setShowComposer(true)}>
+              onPress={() => setShowComposer(true)}
+            >
               <Text style={globalStyles.buttonText}>Create Post</Text>
             </TouchableOpacity>
           </View>
