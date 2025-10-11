@@ -43,6 +43,7 @@ const CommunityCallScreen = requireSafe(() => require('./src/screens/CommunityCa
 const CommunityIncomingCallScreen = requireSafe(() => require('./src/screens/CommunityIncomingCallScreen'), 'CommunityIncomingCallScreen');
 const VerificationScreen = requireSafe(() => require('./src/screens/VerificationScreen'), 'VerificationScreen');
 const SponsorsScreen = requireSafe(() => require('./src/screens/SponsorsScreen'), 'SponsorsScreen');
+const SponsorDetailScreen = requireSafe(() => require('./src/screens/SponsorDetailScreen'), 'SponsorDetailScreen');
 const SuperAdminPanelScreen = requireSafe(() => require('./src/screens/SuperAdminPanelScreen'), 'SuperAdminPanelScreen');
 const AdminPanelScreen = requireSafe(() => require('./src/screens/AdminPanelScreen'), 'AdminPanelScreen');
 const CallScreen = requireSafe(() => require('./src/screens/CallScreen'), 'CallScreen');

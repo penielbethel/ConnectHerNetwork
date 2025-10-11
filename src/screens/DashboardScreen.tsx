@@ -615,26 +615,29 @@ const DashboardScreen = () => {
             const itemWidth = mediaWidth;
             const itemHeight = Math.round(mediaWidth * 0.56);
             if (isVideo) {
-              const thumb = file?.thumbnailUrl || deriveVideoThumbnail(file?.url || '');
+              const html = `<!DOCTYPE html><html><head><meta name=viewport content='width=device-width,initial-scale=1'>
+              <style>body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;}video{width:100%;height:100%;object-fit:cover}</style>
+              </head><body>
+              <video id='v' src='${file?.url || ''}' autoplay muted playsinline controls></video>
+              <script>var v=document.getElementById('v'); v.muted=true; v.play();</script>
+              </body></html>`;
               return (
                 <TouchableOpacity key={index} activeOpacity={0.85} onPress={() => openMediaPreview(post, index)}>
-                  <View style={{ width: itemWidth, height: itemHeight, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
-                    {thumb ? (
-                      <Image source={{ uri: thumb }} style={{ width: itemWidth, height: itemHeight }} />
-                    ) : (
-                      <View style={{ width: itemWidth, height: itemHeight, justifyContent: 'center', alignItems: 'center' }}>
-                        <Icon name="videocam" size={48} color={colors.textMuted} />
-                      </View>
-                    )}
-                    <View style={{ position: 'absolute', justifyContent: 'center', alignItems: 'center' }}>
-                      <Icon name="play-circle-outline" size={56} color="#fff" />
-                    </View>
+                  <View style={{ width: itemWidth, height: itemHeight, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' }}>
+                    <WebView
+                      source={{ html }}
+                      style={styles.videoWebView}
+                      javaScriptEnabled
+                      domStorageEnabled
+                      mediaPlaybackRequiresUserAction={false}
+                      allowsInlineMediaPlayback
+                    />
                   </View>
                 </TouchableOpacity>
               );
             }
             return (
-              <TouchableOpacity key={index} activeOpacity={0.85} onPress={() => openMediaPreview(post, index)}>
+              <TouchableOpacity key={index} activeOpacity={0.85} onPress={() => openImagePreview(file.url)}>
                 <Image
                   source={{uri: file.url}}
                   style={[styles.mediaImage, { width: itemWidth, height: Math.round(mediaWidth * 0.75) }]}
@@ -1053,6 +1056,29 @@ const DashboardScreen = () => {
               </TouchableOpacity>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      {/* Image Preview Modal (white background full-screen) */}
+      <Modal
+        visible={imagePreviewVisible}
+        transparent={false}
+        animationType="fade"
+        onRequestClose={closeImagePreview}
+      >
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 56, justifyContent: 'center', alignItems: 'flex-end', paddingHorizontal: 12 }}>
+            <TouchableOpacity onPress={closeImagePreview} style={{ padding: 8 }}>
+              <Icon name="close" size={28} color="#333" />
+            </TouchableOpacity>
+          </View>
+          {!!imagePreviewSource && (
+            <Image
+              source={{ uri: imagePreviewSource }}
+              style={{ width: screenWidth, height: screenHeight }}
+              resizeMode="contain"
+            />
+          )}
         </View>
       </Modal>
 

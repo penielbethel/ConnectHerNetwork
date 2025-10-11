@@ -81,7 +81,7 @@ router.get("/", async (req, res) => {
  * ------------------------ */
 router.put("/:id/post", verifyTokenAndRole(["admin","superadmin"]), upload.single("media"), async (req, res) => {
   try {
-    const { caption, jobLink } = req.body;
+    const { caption, jobLink, postLink } = req.body;
     const sponsor = await Sponsor.findById(req.params.id);
     if (!sponsor) return res.status(404).json({ message: "Sponsor not found" });
 
@@ -110,7 +110,7 @@ router.put("/:id/post", verifyTokenAndRole(["admin","superadmin"]), upload.singl
       fs.unlinkSync(outputPath);
     }
 
-    const post = { caption: caption || "No caption", jobLink: jobLink || "#", media, mediaPublicId, views: 0, clicks: 0, createdAt: new Date() };
+    const post = { caption: caption || "No caption", jobLink: jobLink || "#", postLink: postLink || undefined, media, mediaPublicId, views: 0, clicks: 0, createdAt: new Date() };
     sponsor.posts.push(post);
     sponsor.postCount = sponsor.posts.length;
     await sponsor.save();
@@ -175,7 +175,7 @@ try {
                 }
 
                 <p>
-                  <a href="${jobLink || "#"}" target="_blank" style="display:inline-block; background:#e91e63; color:#fff; padding:10px 15px; text-decoration:none; border-radius:5px;">
+                  <a href="${postLink || jobLink || "#"}" target="_blank" style="display:inline-block; background:#e91e63; color:#fff; padding:10px 15px; text-decoration:none; border-radius:5px;">
                     View Opportunity
                   </a>
                 </p>
@@ -223,6 +223,7 @@ router.put("/:sponsorId/posts/:postId", verifyTokenAndRole(["admin","superadmin"
 
     if (req.body.caption) post.caption = req.body.caption;
     if (req.body.jobLink) post.jobLink = req.body.jobLink;
+    if (req.body.postLink) post.postLink = req.body.postLink;
 
     if (req.file) {
       // Delete old media

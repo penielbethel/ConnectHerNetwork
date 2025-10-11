@@ -5,6 +5,7 @@ const PostSchema = new mongoose.Schema({
   mediaPublicId: String, // ✅ Track for Cloudinary deletion
   caption: String,
   jobLink: String,
+  postLink: String,
   views: { type: Number, default: 0 },
   clicks: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }

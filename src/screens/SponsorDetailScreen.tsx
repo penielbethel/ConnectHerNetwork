@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, Image, FlatList, TouchableOpacity, RefreshControl, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Image, FlatList, TouchableOpacity, RefreshControl, ScrollView, Linking } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { colors, globalStyles } from '../styles/globalStyles';
 import apiService from '../services/ApiService';
@@ -14,6 +14,8 @@ interface SponsorPost {
   content?: string;
   media?: { url: string; type?: string; thumbnailUrl?: string }[];
   createdAt?: string;
+  jobLink?: string;
+  postLink?: string;
 }
 
 interface SponsorProfile {
@@ -88,6 +90,7 @@ const SponsorDetailScreen: React.FC = () => {
     const title = item.title || item.caption || 'Opportunity';
     const description = item.content || item.caption || '';
     const thumb = item.media?.[0]?.thumbnailUrl || item.media?.[0]?.url;
+    const link = item.postLink || item.jobLink;
     return (
       <View style={styles.postCard}>
         {thumb ? <Image source={{ uri: getAssetUri(thumb) }} style={styles.postImage} /> : null}
@@ -95,6 +98,11 @@ const SponsorDetailScreen: React.FC = () => {
         {description ? <Text style={styles.postDesc} numberOfLines={3}>{description}</Text> : null}
         <View style={styles.postMetaRow}>
           <Text style={styles.postMetaText}>{new Date(item.createdAt || Date.now()).toLocaleDateString()}</Text>
+          {link ? (
+            <TouchableOpacity style={styles.linkBtn} onPress={() => Linking.openURL(link!)}>
+              <Text style={styles.linkBtnText}>Open Link</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
     );
@@ -178,9 +186,12 @@ const styles = StyleSheet.create({
     ...globalStyles.padding,
     ...globalStyles.flexRow,
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.secondary,
+    borderBottomWidth: 0,
+    backgroundColor: '#ffe3ef',
+    paddingVertical: 16,
+    shadowColor: '#e91e63',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
   logo: {
     width: 72,
@@ -192,17 +203,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   company: {
-    color: colors.text,
+    color: '#c2185b',
     fontSize: 18,
     fontWeight: '700',
   },
   location: {
-    color: colors.textMuted,
+    color: '#7a2750',
     fontSize: 14,
     marginTop: 2,
   },
   website: {
-    color: '#e91e63',
+    color: '#c2185b',
     fontSize: 12,
     marginTop: 2,
   },
@@ -251,6 +262,17 @@ const styles = StyleSheet.create({
     marginTop: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  linkBtn: {
+    backgroundColor: '#e91e63',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 18,
+  },
+  linkBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   postMetaText: {
     color: colors.textMuted,

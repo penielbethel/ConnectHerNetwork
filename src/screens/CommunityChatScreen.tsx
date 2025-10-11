@@ -159,8 +159,15 @@ const CommunityChatScreen: React.FC = () => {
     try {
       const res = await apiService.getCommunityMessages(communityId);
       const raw = (res as any)?.messages || [];
+      // Normalize and de-duplicate by _id to avoid duplicate FlatList keys
       const list = raw.map(normalizeMessage);
-      setMessages(list);
+      const dedupMap = new Map<string, CommunityMessage>();
+      for (const msg of list) {
+        if (!dedupMap.has(msg._id)) {
+          dedupMap.set(msg._id, msg);
+        }
+      }
+      setMessages(Array.from(dedupMap.values()));
       setTimeout(scrollToEnd, 200);
     } catch (e) {
       // swallow
