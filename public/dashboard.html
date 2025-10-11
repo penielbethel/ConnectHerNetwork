@@ -1,0 +1,2185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ConnectHer - Home Feed</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="/pull-to-refresh.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    body {
+      background-color: #121212;
+      color: white;
+      max-width: 480px;
+      margin: auto;
+      padding-bottom: 70px;
+    }
+
+:root {
+  --bg: #0e0e0e;
+  --text: #ffcce6;
+}
+
+.light-theme {
+  --bg: #fff;
+  --text: #222;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  transition: background 0.3s, color 0.3s;
+}
+
+    .top-nav {
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      background-color: #1e1e1e; 
+      border-top-left-radius: 0;
+      border-top-right-radius: 0;
+      border-bottom-left-radius: 10px;
+      border-bottom-right-radius: 10px;
+      padding: 14px 0;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .top-nav div {
+      text-align: center;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .top-nav div.active {
+      color: #ff4081;
+      font-weight: bold;
+    }
+
+    .post-composer {
+      display: flex;
+      align-items: center;
+      padding: 10px;
+      /*background-color: #1e1e1e;
+      border-bottom: 1px solid #333;*/
+    }
+
+   .post-composer img {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-right: 10px;
+  border: 3px solid pink;   /* Pink circular outline */
+  box-shadow: 0 0 5px rgba(255, 105, 180, 0.6); /* Subtle pink glow */
+  padding: 2px; /* Slight spacing between image and border */
+}
+
+    .post-composer input[type="text"] {
+      flex: 1;
+      padding: 10px;
+      border-radius: 20px;
+      border: none;
+      outline: none;
+      background-color: #2c2c2c;
+      color: white;
+    }
+
+    .post-composer button {
+      background-color: #ff4081;
+      color: white;
+      border: none;
+      border-radius: 20px;
+      padding: 8px 16px;
+      margin-left: 10px;
+      cursor: pointer;
+    }
+
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background-color: #1e1e1e;
+      border-radius: 10px;
+      padding: 20px;
+      width: 90%;
+      max-width: 400px;
+      color: white;
+    }
+
+    .modal-content textarea {
+      width: 100%;
+      background-color: #2c2c2c;
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 10px;
+      resize: none;
+    }
+
+    .modal-content input[type="file"] {
+      margin-top: 10px;
+      display: block;
+    }
+
+    .modal-content button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      background-color: #ff4081;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      cursor: pointer;
+    }
+
+    .feed {
+      padding: 10px;
+    }
+
+    .post {
+      background-color: #1e1e1e;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .post-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .post-header img {
+      width: 45px;
+      height: 45px;
+      border-radius: 50%;
+      margin-right: 10px;
+      object-fit: cover;
+    }
+
+    .post-header .info {
+      flex: 1;
+    }
+
+    .post-header .info h4 {
+      margin-bottom: 2px;
+      font-size: 15px;
+      color: #ff4081;
+    }
+
+    .post-header .info span {
+      font-size: 12px;
+      color: gray;
+    }
+
+    .post-content p {
+      margin-bottom: 10px;
+    }
+
+    .post-caption {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+    .post-actions {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 10px;
+      font-size: 14px;
+      color: #ccc;
+    }
+
+    .post-actions div {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    .post-actions div:hover {
+      color: #ff4081;
+    }
+
+    /* Carousel Styles */
+    .media-carousel {
+      position: relative;
+      overflow: hidden;
+      width: 100%;
+    }
+
+    .carousel-track {
+      display: flex;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scroll-behavior: smooth;
+      gap: 10px;
+      padding-bottom: 10px;
+    }
+
+    .carousel-track::-webkit-scrollbar {
+      display: none;
+    }
+
+    .carousel-item {
+      flex: 0 0 100%;
+      scroll-snap-align: start;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .carousel-item img,
+    .carousel-item video,
+    .carousel-item iframe {
+      width: 100%;
+      height: auto;
+      max-height: 250px;
+      object-fit: cover;
+      display: block;
+      border-radius: 10px;
+    }
+
+    .carousel-nav {
+      position: absolute;
+      top: 40%;
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+
+    .carousel-nav button {
+      background-color: rgba(0, 0, 0, 0.5);
+      border: none;
+      pointer-events: all;
+      color: white;
+      padding: 6px 12px;
+      font-size: 18px;
+      cursor: pointer;
+      border-radius: 50%;
+      margin: 0 5px;
+    }
+
+    .comment-section {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: #2c2c2c;
+  border-radius: 10px;
+}
+
+.comment-section input {
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  border: none;
+  background-color: #1e1e1e;
+  color: white;
+  margin-bottom: 8px;
+}
+
+.comment-section .comment-list {
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.comment-section .comment {
+  background-color: #1e1e1e;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #ccc;
+}
+
+.save-message {
+  font-size: 12px;
+  color: #ff4081;
+  margin-top: 5px;
+}
+
+
+.media-preview {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.media-preview {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.media-preview-content {
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.media-preview-content img,
+.media-preview-content video,
+.media-preview-content iframe {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 0 15px rgba(0,0,0,0.6);
+}
+
+.add-friend-btn {
+  margin-top: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  background-color: #ff1493;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.add-friend-btn.sent {
+  background-color: gray;
+  cursor: default;
+}
+
+.comment {
+  margin-bottom: 10px;
+  background: #222;
+  padding: 8px;
+  border-radius: 8px;
+  color: #ddd;
+}
+
+.comment-meta {
+  font-size: 12px;
+  margin-top: 5px;
+}
+
+.replies {
+  margin-top: 5px;
+  margin-left: 15px;
+}
+
+.reply {
+  background: #333;
+  padding: 6px;
+  border-radius: 6px;
+  margin-bottom: 5px;
+}
+
+.reply-meta {
+  font-size: 10px;
+  color: #aaa;
+  margin-top: 3px;
+}
+
+.mention {
+  color: #e91e63;
+  font-weight: bold;
+}
+
+
+.mention-dropdown {
+  position: absolute;
+  background-color: #111;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 4px 0;
+  max-height: 150px;
+  overflow-y: auto;
+  z-index: 9999;
+  font-size: 14px;
+}
+
+.mention-dropdown div {
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.mention-dropdown div:hover {
+  background-color: #222;
+}
+
+.mention {
+  color: #e91e63;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.comment {
+  margin-top: 10px;
+  padding-left: 10px;
+  border-left: 2px solid #ccc;
+}
+
+.reply {
+  margin-top: 5px;
+  padding-left: 15px;
+  border-left: 1px dashed #999;
+  font-size: 0.9em;
+}
+
+.reply-input {
+  width: 100%;
+  margin-top: 5px;
+  padding: 5px;
+  font-size: 0.9em;
+}
+
+.timestamp {
+  font-size: 0.8em;
+  color: #888;
+  margin-left: 5px;
+}
+
+
+.reply-btn {
+  font-size: 12px;
+  background-color: #ff69b4; /* pink */
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 4px 10px;
+  margin-top: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: background-color 0.2s ease;
+}
+
+.reply-btn i {
+  font-size: 12px;
+}
+
+.reply-btn:hover {
+  background-color: #ff1493; /* deeper pink on hover */
+}
+
+.suggestion-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(80px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.nav-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin: 0 6px;
+  transition: background 0.3s ease;
+  position: relative; /* Make it a positioned parent */
+}
+
+.nav-icon i {
+  font-size: 18px;
+  color: #fff;
+}
+
+.notification-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  height: 10px;
+  width: 10px;
+  background-color: #00ff00;
+  border-radius: 50%;
+  display: none; /* Hidden by default */
+  box-shadow: 0 0 4px rgba(0, 255, 0, 0.7);
+}
+
+.message-count-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background-color: red;
+  color: white;
+  font-size: 11px;
+  font-weight: bold;
+  border-radius: 10px;
+  text-align: center;
+  display: none;
+}
+
+.nav-icon:hover {
+  background: rgba(255, 255, 255, 0.12); /* Slight hover glow */
+}
+
+.nav-icon.active {
+  background: rgba(255, 255, 255, 0.2); /* Highlight active */
+}
+
+.post-options {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+}
+
+.post-options i {
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+}
+
+.post-dropdown-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  background: #333;
+  color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 0 6px rgba(0,0,0,0.3);
+  margin-top: 6px;
+  min-width: 120px;
+}
+
+.post-dropdown-menu div {
+  padding: 10px 15px;
+  cursor: pointer;
+}
+
+  </style>
+</head>
+
+<body>
+<div style="background:#0e0e0e;padding:15px 20px 5px;font-size:30px;font-weight:bold;color:#ffcce6; display: flex; justify-content: space-between; align-items: center;">
+  <span>ConnectHer</span>
+  <div style="display: flex; align-items: center; gap: 15px;">
+<button id="adminPanelBtn" title="Admin Panel"
+  onclick="redirectAdminPanel()"
+  style="background: none; border: none; font-size: 22px; color: #ffcce6; cursor: pointer;">
+  <i class="fas fa-user-gear"></i>
+</button>
+    <button id="themeToggle" title="Toggle Theme" style="background: none; border: none; font-size: 22px; color: #ffcce6; cursor: pointer;">
+      <i class="fas fa-moon"></i>
+    </button>
+  </div>
+</div>
+
+  <div class="top-nav" style="margin-top:10px;">
+    <div class="nav-icon active"><i class="fas fa-home"></i></div>
+<div class="nav-icon" onclick="openChatPage()">
+  <i class="fas fa-comments"></i>
+  <span class="message-count-badge" id="chatBadge">0</span>
+</div>
+<div class="nav-icon" id="communityButton" onclick="openCommunityPage()">
+  <i class="fas fa-users"></i>
+  <span class="message-count-badge" id="communityBadge">0</span>
+</div>
+<div class="nav-icon" onclick="openNotificationPage()">
+  <i class="fas fa-bell"></i>
+  <span class="notification-dot" id="notifDot"></span>
+</div>
+<div class="nav-icon" onclick="window.location.href='sponsors.html'"><i class="fas fa-handshake-angle"></i></div>
+  </div>
+
+
+<div style="padding: 10px; position: relative;">
+  <i class="fa fa-search" style="
+    position: absolute;
+    left: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #ff80ab;
+    font-size: 16px;
+  "></i>
+  
+  <input type="text" id="searchInput" placeholder="Search users or posts..." style="
+    width: 100%;
+    padding: 10px 10px 10px 40px; /* space for the icon */
+    border-radius: 8px;
+    border: none;
+    outline: none;
+    background-color: #e3b0c2;
+    color: #fff;
+  ">
+</div>
+
+
+  <div class="post-composer">
+    <a id="profileLink" href="#">
+  <img id="composerAvatar" src="" alt="Me">
+</a>
+
+    <input type="text" id="statusText" placeholder="What is on your mind?" onclick="openModal()">
+  </div>
+
+<h4 style="color: #ef99ef; margin-top: 20px;">
+  <i class="fa-solid fa-user-group" style="color: #ce1797; margin-left: 8px; padding-right: 8px;"></i>
+  People You May Know
+</h4>
+
+
+<div style="overflow-x: auto; white-space: nowrap; padding: 10px; scroll-behavior: smooth;" id="suggestionContainer" class="suggestion-scrollbar"></div>
+
+  <div class="modal" id="createPostModal">
+  <div class="modal-content">
+    <h3>Create Post</h3>
+    <textarea id="captionText" rows="3" placeholder="What's on your mind?"></textarea>
+    <input type="file" id="mediaFiles" multiple accept=".jpg,.png,.mp4,.pdf">
+
+    <!-- ✅ Progress Bar -->
+    <div id="uploadProgress" style="display:none; margin-top:10px; width:100%; background:#ddd; border-radius:5px;">
+      <div id="progressBar" style="width:0%; height:20px; background:#4caf50; color:white; text-align:center; border-radius:5px;">
+        0%
+      </div>
+    </div>
+
+    <button onclick="submitPost()">Post</button>
+  </div>
+</div>
+
+  
+  <!-- Edit Post Modal -->
+<div class="modal" id="editPostModal">
+  <div class="modal-content">
+    <h3>Edit Caption</h3>
+    <textarea id="editCaptionText" rows="5" placeholder="Update your caption..." style="width: 100%; background-color: #2c2c2c; color: white; border: none; padding: 10px; border-radius: 10px;"></textarea>
+    <button onclick="saveEditedPost()" style="margin-top: 10px; padding: 10px 20px; background-color: #ff4081; border: none; border-radius: 5px; color: white; cursor: pointer;">Save Changes</button>
+  </div>
+</div>
+
+  <div class="feed" id="feed"></div>
+  <div id="mentionDropdown" class="mention-dropdown" style="display: none;"></div>
+
+
+<!-- Share Modal -->
+<div class="modal" id="shareModal">
+  <div class="modal-content">
+    <h3>Share Post</h3>
+    <p>What would you like to do?</p>
+    <button onclick="reshareToFeed()">Reshare to My Feed</button>
+  </div>
+</div>
+
+<div id="mediaPreviewOverlay" class="media-preview" style="display: none;">
+  <div class="media-preview-content" id="previewContent"></div>
+</div>
+<div id="publicProfileModal" class="modal" style="display:none;">
+  <div class="modal-content" style="max-width:300px;">
+    <span class="close" onclick="closeProfileModal()">&times;</span>
+    <div id="profileDetails"></div>
+  </div>
+</div>
+
+
+<script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+
+<!-- Firebase App (core) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+
+<!-- Firebase Messaging -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+
+
+  <script> 
+ // FIREBASE script
+ const firebaseConfig = {
+    apiKey: "AIzaSyCsQwg0D4gH1xCUiBmVi-nKoSEGHNy40yY",
+    authDomain: "connecther-76f65.firebaseapp.com",
+    projectId: "connecther-76f65",
+    storageBucket: "connecther-76f65.firebasestorage.app",
+    messagingSenderId: "745841685228",
+    appId: "1:745841685228:web:d9b0dda1a964c9a564ebc9",
+    measurementId: "G-4G8THWFDY5"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+
+  const messaging = firebase.messaging();
+
+  async function getFCMTokenAndSave() {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        alert("Push notifications not granted.");
+        return;
+      }
+
+      const fcmToken = await messaging.getToken({
+        vapidKey: "BDzsFAUo-AoHxsyWwRXNVhBEs1HYK-XljgNWux7i15HvU6dWt6UOyhCisxAYp4T12KxWkCqRIEm9spyM-bvrLMg" // Example VAPID Key – replace with yours from Firebase Console
+      });
+
+      console.log("✅ FCM Token:", fcmToken);
+
+      // Send token to backend
+      const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+      if (!currentUser) return;
+
+      await fetch("https://connecther.network/api/notifications/save-token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          username: currentUser.username,
+          token: fcmToken
+        })
+      });
+
+      console.log("✅ Token saved to backend.");
+    } catch (err) {
+      console.error("❌ FCM error:", err);
+    }
+  }
+
+  // Call this after login or page load
+  getFCMTokenAndSave(); 
+  
+  // SERVICE WORKER
+  if ("serviceWorker" in navigator) {
+  navigator.serviceWorker
+    .register("/firebase-messaging-sw.js")
+    .then(reg => {
+      console.log("✅ Service Worker registered:", reg.scope);
+    })
+    .catch(err => console.error("❌ Service Worker error:", err));
+}
+
+
+// 🚫 If user is NOT logged in, redirect to access.html (the login/signup page)
+if (!localStorage.getItem("username")) {
+  window.location.href = "index.html"; // Change to your actual file name if different
+}
+
+// Save current user's identity
+const userFromSignup = JSON.parse(localStorage.getItem("pendingUser")) || {};
+let currentUser = JSON.parse(localStorage.getItem("currentUser"));
+if (!currentUser || !currentUser.username) {window.location.href = "index.html";}
+localStorage.setItem("currentUser", JSON.stringify(currentUser));
+localStorage.setItem("username", currentUser.username); // So community.html knows the current user
+localStorage.removeItem("pendingUser");
+console.log("👤 Current User Loaded:", currentUser);
+
+let lastFetched = Date.now();
+
+function autoRefreshFeed() {
+  fetch(`https://connecther.network/api/posts/${currentUser.username}/feed`)
+    .then(res => res.json())
+    .then(posts => {
+      // Filter only new posts
+      const newPosts = posts.filter(post => {
+        const createdTime = new Date(post.time).getTime() || 0;
+        return createdTime > lastFetched;
+      });
+
+      if (newPosts.length > 0) {
+        lastFetched = Date.now();
+        newPosts.reverse().forEach((post, index) => {
+          dummyPosts.unshift(post);
+          renderPost(post, index, true); // Prepend
+        });
+      }
+    })
+    .catch(err => {
+      console.warn("Auto-refresh failed:", err);
+    });
+}
+
+function parseMentions(text) {
+  return text.replace(/@([\w\s]+)/g, (match, name) => {
+    const user = mentionableUsers.find(u => u.name === name.trim());
+    if (user) {
+      return `<span class="mention" onclick="openProfileModal('${user.username}')">@${user.name}</span>`;
+    }
+    return match;
+  });
+}
+    const feed = document.getElementById("feed");
+    const modal = document.getElementById("createPostModal");
+    const friendRequests = {};
+    const dummyPosts = [];
+
+    function openModal() {
+      modal.style.display = "flex";
+    }
+
+    function closeModal() {
+      modal.style.display = "none";
+    }
+
+
+    
+// ✅ Helper function for file upload with progress
+function uploadFilesWithProgress(formData) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "https://connecther.network/api/upload", true);
+
+    // Progress handler
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        const progressBar = document.getElementById("progressBar");
+        const progressBox = document.getElementById("uploadProgress");
+
+        progressBox.style.display = "block";
+        progressBar.style.width = percent + "%";
+        progressBar.textContent = percent + "%";
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        resolve(JSON.parse(xhr.responseText));
+      } else {
+        reject("Upload failed");
+      }
+    };
+
+    xhr.onerror = () => reject("Network error");
+    xhr.send(formData);
+  });
+}
+
+async function submitPost() {
+  const caption = document.getElementById("captionText").value.trim();
+  const files = document.getElementById("mediaFiles").files;
+
+  if (!caption && files.length === 0) {
+    alert("Please write something or upload media.");
+    return;
+  }
+
+  if (files.length > 20) {
+    alert("You can only upload up to 20 files.");
+    return;
+  }
+
+  const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+  if (!currentUser || !currentUser.username) {
+    alert("User not found. Please login again.");
+    return;
+  }
+
+  let mediaFiles = [];
+
+  // ✅ Upload files only if selected
+  if (files.length > 0) {
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append("files", files[i]);
+    }
+
+    try {
+      const uploadData = await uploadFilesWithProgress(formData);
+
+      if (!uploadData.success) {
+        alert("Media upload failed.");
+        return;
+      }
+
+      mediaFiles = uploadData.files.map(file => ({
+        url: file.url,
+        type: file.type,
+        name: "compressed-" + file.name
+      }));
+    } catch (err) {
+      console.error(err);
+      alert("Error uploading media.");
+      return;
+    }
+  }
+
+  // ✅ Post body works with or without media
+  const postBody = {
+    username: currentUser.username,
+    caption,
+    media: mediaFiles
+  };
+
+  try {
+    const postRes = await fetch("https://connecther.network/api/posts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(postBody),
+    });
+
+    const savedPost = await postRes.json();
+
+    if (!savedPost.time) {
+      savedPost.time = new Date().toISOString();
+    }
+
+    dummyPosts.unshift(savedPost);
+    renderPost(savedPost, 0, true);
+
+    // Reset form + progress bar
+    document.getElementById("captionText").value = "";
+    document.getElementById("mediaFiles").value = "";
+    document.getElementById("uploadProgress").style.display = "none";
+    closeModal();
+    alert("Posted Successfully");
+
+  } catch (err) {
+    console.error(err);
+    alert("Error submitting post.");
+  }
+}
+
+
+
+
+
+    
+function formatTimeAgo(isoTime) {
+  // ⛔ Check if time is missing or null
+  if (!isoTime) return "Some time ago";
+
+  const time = new Date(isoTime);
+
+  // ⛔ Check if time is invalid (e.g. not a real date)
+  if (isNaN(time.getTime())) return "Some time ago";
+
+  const now = new Date();
+  const seconds = Math.floor((now - time) / 1000);
+
+  if (seconds < 60) return "Just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+function renderComments(postIndex, comments) {
+  const commentList = document.getElementById(`comment-list-${postIndex}`);
+  if (!commentList) return;
+
+  commentList.innerHTML = ""; // Clear existing comments
+
+  comments.forEach((comment, commentIndex) => {
+    const commentDiv = document.createElement("div");
+    commentDiv.className = "comment";
+    commentDiv.innerHTML = `
+      <div class="comment-text">
+        <strong><a href="profile.html?user=${comment.user.username}" style="color:inherit;text-decoration:none;">
+        ${comment.user.name}</a></strong>: ${parseMentions(comment.text)}
+        <span class="timestamp">${formatTimeAgo(comment.createdAt)}</span>
+      </div>
+      <div class="comment-meta">
+        <button 
+  class="reply-btn" 
+  onclick="replyToComment(this, ${postIndex}, ${commentIndex}); return false;">
+  <i class="fas fa-reply"></i> Reply
+</button>
+
+        <div class="replies">
+          ${(comment.replies || []).map(reply => `
+            <div class="reply">
+              <strong><a href="profile.html?user=${reply.user.username}" style="color:inherit;text-decoration:none;">
+              ${reply.user.name}</a></strong>: ${parseMentions(reply.text)}
+              <div class="reply-meta"><small>${formatTimeAgo(reply.createdAt)}</small></div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    commentList.appendChild(commentDiv);
+  });
+}
+
+function truncateWords(text, wordLimit) {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= wordLimit) return text;
+  return words.slice(0, wordLimit).join(" ") + "...";
+}
+
+
+let acceptedFriends = [];
+fetch(`https://connecther.network/api/users/${currentUser.username}/friends`)
+  .then(res => res.json())
+  .then(data => {
+    acceptedFriends = data || [];
+
+    // Load posts from backend so all users can see them
+fetch(`https://connecther.network/api/posts/${currentUser.username}/feed`)
+  .then(res => res.json())
+  .then(posts => {
+    posts.forEach((post, index) => {
+      // 🧠 STEP 1: If there's no 'time', but there's 'createdAt', use that instead
+      if (!post.time && post.createdAt) {
+        post.time = post.createdAt;
+      }
+
+      // 🛡️ STEP 2: If still no time, just put current time to prevent error
+      if (!post.time) {
+        post.time = new Date().toISOString();
+      }
+
+      // 🧠 STEP 3: Add the post to the feed
+      dummyPosts.push(post);
+      renderPost(post, index);
+
+// 🔍 If user clicked from a notification, scroll to that post
+const urlParams = new URLSearchParams(window.location.search);
+const targetPostId = urlParams.get("post");
+
+if (targetPostId && post._id === targetPostId) {
+  setTimeout(() => {
+    const postElem = document.querySelector(`#post-${index}`);
+    if (postElem) postElem.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, 300); // wait for DOM render
+}
+    });
+  })
+
+  .catch(err => {
+    alert("Error loading posts.");
+    console.error(err);
+  });
+  })
+  .catch(err => {
+    console.error("❌ Failed to load friends", err);
+  });
+
+
+    function renderPost(post, index, prepend = false) {
+  let friendButton = "";
+
+  if (post.username !== currentUser.username) {
+    const friendRequests = JSON.parse(localStorage.getItem("friendRequests") || "{}");
+    const pendingTo = friendRequests[post.username] || [];
+    const requestSent = pendingTo.includes(currentUser.username);
+    const isFriend = acceptedFriends.includes(post.username);
+
+    if (!isFriend && !requestSent) {
+      friendButton = `<button class="add-friend-btn" onclick="sendFriendRequest('${post.username}', this)">Add Friend</button>`;
+    } else if (requestSent) {
+      friendButton = `<button class="add-friend-btn sent" disabled>Request Sent</button>`;
+    }
+  }
+
+  const profileLink = post.username ? `profile.html?user=${post.username}` : "#";
+  const uniqueId = `carousel-${Date.now()}-${index}`;
+  let mediaHtml = `<div class="media-carousel" id="${uniqueId}"><div class="carousel-track">`;
+
+  if (post.media) {
+    post.media.forEach((file) => {
+      if (file.type.startsWith("image/")) {
+        mediaHtml += `<div class="carousel-item">
+          <img src="${file.url}" alt="Image" onerror="this.style.display='none';">
+        </div>`;
+      } else if (file.type.startsWith("video/")) {
+        mediaHtml += `<div class="carousel-item">
+          <video controls src="${file.url}" onerror="this.style.display='none';"></video>
+        </div>`;
+      } else if (file.type === "application/pdf") {
+        mediaHtml += `<div class="carousel-item"><iframe src="${file.url}" style="height:250px;"></iframe></div>`;
+      }
+    });
+  } else {
+    mediaHtml += `<div class="carousel-item">`;
+    if (post.contentType === "image") {
+      mediaHtml += `<img src="${post.content}" alt="Post Image">`;
+    } else if (post.contentType === "video") {
+      mediaHtml += `<video controls src="${post.content}"></video>`;
+    } else {
+      mediaHtml += `<iframe src="${post.content}" style="height:250px;"></iframe>`;
+    }
+    mediaHtml += `</div>`;
+  }
+
+  mediaHtml += `</div>
+    <div class="carousel-nav">
+      <button onclick="scrollCarousel('${uniqueId}', -1)"><i class="fas fa-chevron-left"></i></button>
+      <button onclick="scrollCarousel('${uniqueId}', 1)"><i class="fas fa-chevron-right"></i></button>
+    </div>
+  </div>`;
+
+  const html = `
+    <div class="post" id="post-${index}" data-index="${index}" style="position: relative;">
+      <div class="post-header" style="position: relative;">
+        <img src="${post.avatar}" alt="User" onclick="window.location.href='${profileLink}'">
+        <div class="info">
+          <h4><a href="${profileLink}" style="color:#fff;text-decoration:none;">${post.name}</a></h4>
+          <span>${formatTimeAgo(post.time)}</span>
+          ${friendButton}
+        </div>
+
+        ${post.username === currentUser.username ? `
+        <div class="post-options">
+          <div>
+            <i class="fas fa-ellipsis-v" onclick="toggleMenu(${index})"></i>
+            <div id="menu-${index}" class="post-dropdown-menu">
+              <div onclick="editPost(${index})"><i class="fas fa-edit"></i> Edit</div>
+              <div onclick="deletePost(${index})"><i class="fas fa-trash"></i> Delete</div>
+            </div>
+          </div>
+        </div>` : ""}
+      </div>
+      <div class="post-content">
+${post.caption ? `
+<div class="post-caption" 
+     data-raw="${post.caption.replace(/"/g, '&quot;')}"
+     data-full="${formatCaptionWithParagraphs(post.caption).replace(/"/g, '&quot;')}"
+     data-expanded="false"
+     style="text-align: justify;">
+  ${formatCaptionWithParagraphs(truncateWords(post.caption, 60))} 
+  <span class="toggle-caption" style="color: #4FC3F7; cursor: pointer;">Read more</span>
+</div>
+  ` : ""}
+  
+        ${mediaHtml}
+      </div>
+
+      <div class="post-actions">
+        <div onclick="likePost(${index})">
+          <i class="fa-solid fa-heart" style="color: #ff6fa8;"></i> 
+          <span id="like-${index}">${post.likes}</span> Like
+        </div>
+
+        <div onclick="commentPost(${index})">
+          <i class="fa-solid fa-message" style="color: #74c0fc;"></i> 
+          <span id="comment-${index}">${post.comments.length}</span> Comment
+        </div>
+
+        <div onclick="sharePost(${index})">
+          <i class="fa-solid fa-share-nodes" style="color: #9d9dff;"></i> 
+          <span id="share-${index}">${post.shares}</span> Share
+        </div>
+
+        <div onclick="savePost(${index})">
+          <i class="fa-solid fa-bookmark" style="color: #ffc107;"></i> Save
+        </div>
+      </div>
+    </div>
+  `;
+
+  if (prepend) {
+    feed.insertAdjacentHTML("afterbegin", html);
+  } else {
+    feed.insertAdjacentHTML("beforeend", html);
+  }
+}
+
+document.addEventListener("click", function (e) {
+  if (e.target.classList.contains("toggle-caption")) {
+    const captionDiv = e.target.closest(".post-caption");
+    const rawText = captionDiv.getAttribute("data-raw");
+    const fullHTML = captionDiv.getAttribute("data-full");
+    const isExpanded = captionDiv.getAttribute("data-expanded") === "true";
+
+    if (isExpanded) {
+      // COLLAPSE back to preview
+      captionDiv.innerHTML =
+        formatCaptionWithParagraphs(truncateWords(rawText, 60)) +
+        ' <span class="toggle-caption" style="color: #4FC3F7; cursor: pointer;">Read more</span>';
+      captionDiv.setAttribute("data-expanded", "false");
+    } else {
+      // EXPAND to full
+      captionDiv.innerHTML =
+        fullHTML +
+        ' <span class="toggle-caption" style="color: #4FC3F7; cursor: pointer;">Read less</span>';
+      captionDiv.setAttribute("data-expanded", "true");
+    }
+  }
+});
+
+
+let editingPostIndex = null;
+
+function editPost(index) {
+  const post = dummyPosts[index];
+  const modal = document.getElementById("editPostModal");
+  const textarea = document.getElementById("editCaptionText");
+
+  editingPostIndex = index;
+  textarea.value = post.caption || "";
+  modal.style.display = "flex";
+}
+function saveEditedPost() {
+  const newCaption = document.getElementById("editCaptionText").value.trim();
+  const modal = document.getElementById("editPostModal");
+
+  if (newCaption === "") {
+    alert("Caption cannot be empty.");
+    return;
+  }
+
+  const index = editingPostIndex;
+  const post = dummyPosts[index];
+
+  fetch(`https://connecther.network/api/posts/${post._id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ caption: newCaption })
+  })
+    .then(res => res.json())
+    .then(updated => {
+      dummyPosts[index] = updated;
+      document.getElementById("feed").innerHTML = "";
+      dummyPosts.forEach((p, i) => renderPost(p, i));
+      modal.style.display = "none";
+      editingPostIndex = null;
+    })
+    .catch(err => {
+      alert("Error updating post.");
+      console.error(err);
+    });
+}
+
+function deletePost(index) {
+  const post = dummyPosts[index];
+
+  if (confirm("Are you sure you want to delete this post?")) {
+    fetch(`https://connecther.network/api/posts/${post._id}`, {
+      method: 'DELETE'
+    })
+    .then(() => {
+      dummyPosts.splice(index, 1);
+      document.getElementById("feed").innerHTML = "";
+      dummyPosts.forEach((p, i) => renderPost(p, i));
+    })
+    .catch(err => {
+      alert("Error deleting post.");
+      console.error(err);
+    });
+  }
+}
+
+function sendFriendRequest(userName, button) {
+  const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+
+  fetch('https://connecther.network/friend-request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: currentUser.username,
+      to: userName
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      alert(`Friend request sent to ${userName}.`);
+      button.innerText = "Request Sent";
+      button.disabled = true;
+      button.classList.add("sent");
+    } else {
+      alert(data.message || "Request failed.");
+    }
+  })
+  .catch(err => {
+    console.error(err);
+    alert("Could not contact server.");
+  });
+  socket.emit("friend-request-status", userName); // 👈 Notify receiver
+}
+
+
+    function scrollCarousel(id, direction) {
+  const track = document.querySelector(`#${id} .carousel-track`);
+  const items = track.querySelectorAll(".carousel-item");
+  const itemWidth = items[0].offsetWidth;
+
+  const scrollLeft = track.scrollLeft;
+  const maxScrollLeft = track.scrollWidth - track.clientWidth;
+
+  const scrollAmount = itemWidth;
+
+  if (direction === 1) {
+    if (Math.ceil(scrollLeft + scrollAmount) >= maxScrollLeft) {
+      track.scrollTo({ left: 0, behavior: "smooth" });
+    } else {
+      track.scrollBy({ left: scrollAmount, behavior: "smooth" });
+    }
+  } else {
+    if (scrollLeft <= 0) {
+      track.scrollTo({ left: maxScrollLeft, behavior: "smooth" });
+    } else {
+      track.scrollBy({ left: -scrollAmount, behavior: "smooth" });
+    }
+  }
+}
+
+function likePost(index) {
+  const post = dummyPosts[index];
+  fetch(`https://connecther.network/api/posts/${post._id}/like`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: currentUser.username })
+  })
+  .then(res => {
+    if (!res.ok) {
+      if (res.status === 400) alert("You already liked this post.");
+      throw new Error("Like failed");
+    }
+    return res.json();
+  })
+  .then(data => {
+    dummyPosts[index].likes = data.likes;
+    document.getElementById(`like-${index}`).innerText = data.likes;
+  })
+  .catch(err => {
+    console.error("Like error", err);
+  });
+}
+
+
+function commentPost(index) {
+  const postElement = document.querySelector(`.post[data-index="${index}"]`);
+  let commentSection = postElement.querySelector(".comment-section");
+
+  if (!commentSection) {
+    // Create the comment section for the first time
+    commentSection = document.createElement("div");
+    commentSection.className = "comment-section";
+    commentSection.innerHTML = `
+      <input type="text" placeholder="Write a comment..." 
+         oninput="detectMention(event)" 
+         onkeydown="submitComment(event, ${index})">
+      <div class="comment-list" id="comment-list-${index}"></div>
+    `;
+    postElement.appendChild(commentSection);
+  }
+
+  // Toggle visibility using computed style
+  const isVisible = window.getComputedStyle(commentSection).display !== "none";
+  if (isVisible) {
+    commentSection.style.display = "none";
+  } else {
+    commentSection.style.display = "block";
+    // Only refresh when showing
+    renderComments(index, dummyPosts[index].comments || []);
+  }
+}
+
+
+// Simulated users in conversation — in real app, get from backend or post data
+const mentionableUsers = JSON.parse(localStorage.getItem("allUsers") || "[]");
+
+function submitComment(event, index) {
+  if (event.key === "Enter" && event.target.value.trim() !== "") {
+    const commentText = event.target.value.trim();
+    const postId = dummyPosts[index]._id;
+
+    fetch(`https://connecther.network/api/posts/${postId}/comment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: currentUser.username,
+        text: commentText
+      })
+    })
+      .then(res => res.json())
+      .then(comments => {
+        dummyPosts[index].comments = comments;
+        renderComments(index, comments); // Re-render entire comment section
+        event.target.value = "";
+        document.getElementById(`comment-${index}`).innerText = comments.length;
+      })
+      .catch(err => {
+        console.error("Error saving comment", err);
+      });
+  }
+}
+
+function submitReply(event, postIndex, commentIndex) {
+  const input = event.target;
+  const replyText = input.value.trim();
+
+  if (event.key === "Enter" && replyText !== "") {
+    const postId = dummyPosts[postIndex]?._id;
+    const username = currentUser?.username;
+
+    if (!postId || !username) {
+      console.error("Missing postId or username");
+      return;
+    }
+
+    fetch(`https://connecther.network/api/posts/${postId}/comment/${commentIndex}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username,
+        text: replyText
+      })
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("Reply failed");
+        return res.json();
+      })
+      .then(updatedReplies => {
+        dummyPosts[postIndex].comments[commentIndex].replies = updatedReplies;
+        renderComments(postIndex, dummyPosts[postIndex].comments); // Refresh
+        input.value = "";
+      })
+      .catch(err => {
+        console.error("❌ Reply error:", err);
+      });
+  }
+}
+
+
+
+function toggleReplyBox(button, postIndex, commentIndex) {
+  const replyBox = button.closest(".comment").querySelector(".reply-box");
+  replyBox.style.display = replyBox.style.display === "none" ? "block" : "none";
+}
+
+
+function replyToComment(link, postIndex, commentIndex) {
+  const commentMeta = link.closest(".comment-meta");
+  const repliesDiv = commentMeta.querySelector(".replies");
+
+  // Prevent multiple input boxes
+  if (repliesDiv.querySelector("input")) return;
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Write a reply...";
+  input.onkeydown = function (event) {
+    if (event.key === "Enter" && input.value.trim() !== "") {
+      const replyText = input.value.trim();
+      const postId = dummyPosts[postIndex]._id;
+
+      fetch(`https://connecther.network/api/posts/${postId}/comment/${commentIndex}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: currentUser.username,
+          text: replyText
+        })
+      })
+      .then(res => res.json())
+      .then(updatedReplies => {
+        // ✅ Clear old replies
+        repliesDiv.innerHTML = "";
+
+        // ✅ Render each updated reply
+        updatedReplies.forEach(reply => {
+          const replyDiv = document.createElement("div");
+          replyDiv.className = "reply";
+          replyDiv.innerHTML = `
+            <strong><a href="profile.html?user=${reply.user.username}" style="color:inherit;text-decoration:none;">${reply.user.name}</a></strong>: ${parseMentions(reply.text)}
+            <div class="reply-meta"><small>${formatTimeAgo(reply.createdAt)}</small></div>
+          `;
+          repliesDiv.appendChild(replyDiv);
+        });
+
+        // ✅ Remove input box
+        input.remove();
+
+        // ✅ Update local post data
+        dummyPosts[postIndex].comments[commentIndex].replies = updatedReplies;
+      })
+      .catch(err => {
+        console.error("❌ Failed to save reply", err);
+      });
+    }
+  };
+
+  repliesDiv.appendChild(input);
+  input.focus();
+}
+
+
+
+let shareIndex = null;
+
+function sharePost(index) {
+  shareIndex = index;
+  document.getElementById("shareModal").style.display = "flex";
+}
+
+function closeShareModal() {
+  document.getElementById("shareModal").style.display = "none";
+  shareIndex = null;
+}
+
+function reshareToFeed() {
+  if (shareIndex === null) return;
+
+  const original = dummyPosts[shareIndex];
+  const originalPostId = original._id;
+
+  if (!originalPostId) {
+    alert("Error: originalPostId is undefined.");
+    return;
+  }
+
+  const postData = {
+    originalPostId: originalPostId,
+    username: currentUser.username,
+    caption: original.caption || "",
+    media: original.media || [],
+    contentType: original.contentType || "",
+    content: original.content || ""
+  };
+
+  fetch('https://connecther.network/api/posts/reshare', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(postData)
+  })
+    .then(res => {
+      if (!res.ok) {
+        throw new Error("Server error while resharing.");
+      }
+      return res.json();
+    })
+    .then(resharedPost => {
+      dummyPosts.unshift(resharedPost);
+      renderPost(resharedPost, 0, true);
+
+      // Copy reshared link to clipboard
+      const link = `${window.location.origin}/post.html?id=${resharedPost._id}`;
+      navigator.clipboard.writeText(link);
+      alert("Post reshared! Link copied: " + link);
+      closeShareModal();
+    })
+    .catch(err => {
+      console.error("Reshare failed:", err);
+      alert("Error resharing post.");
+    });
+}
+
+
+
+window.addEventListener("click", (e) => {
+  const createModal = document.getElementById("createPostModal");
+  const shareModal = document.getElementById("shareModal");
+
+  // Close Create Post Modal if click is outside modal-content
+  if (createModal && createModal.style.display === "flex") {
+    if (e.target === createModal) {
+      closeModal();
+    }
+  }
+
+  // Close Share Modal if click is outside
+  if (shareModal && e.target === shareModal) {
+    closeShareModal();
+  }
+});
+
+// Add click listeners to each media item
+document.addEventListener("click", function (e) {
+  if (e.target.closest(".carousel-item")) {
+    const media = e.target;
+    const previewContent = document.getElementById("previewContent");
+    const overlay = document.getElementById("mediaPreviewOverlay");
+
+    previewContent.innerHTML = ""; // Clear any existing preview
+
+    if (media.tagName === "IMG") {
+      const img = document.createElement("img");
+      img.src = media.src;
+      previewContent.appendChild(img);
+    } else if (media.tagName === "VIDEO") {
+      const video = document.createElement("video");
+      video.src = media.src;
+      video.controls = true;
+      video.autoplay = true;
+      previewContent.appendChild(video);
+    } else if (media.tagName === "IFRAME") {
+      const iframe = document.createElement("iframe");
+      iframe.src = media.src;
+      iframe.style.height = "80vh";
+      iframe.style.width = "90vw";
+      previewContent.appendChild(iframe);
+    }
+
+    overlay.style.display = "flex";
+  }
+
+  // Close media preview when clicking outside the content
+  if (e.target.id === "mediaPreviewOverlay") {
+    document.getElementById("mediaPreviewOverlay").style.display = "none";
+    document.getElementById("previewContent").innerHTML = "";
+  }
+});
+
+let currentInput = null;
+
+function detectMention(e) {
+  const input = e.target;
+  currentInput = input;
+  const value = input.value;
+  const atIndex = value.lastIndexOf('@');
+
+  if (atIndex >= 0) {
+    const search = value.substring(atIndex + 1).toLowerCase();
+    const suggestions = mentionableUsers.filter(user =>
+      user.name.toLowerCase().includes(search)
+    );
+
+    if (suggestions.length > 0) {
+      showMentionDropdown(suggestions, input, atIndex);
+    } else {
+      hideMentionDropdown();
+    }
+  } else {
+    hideMentionDropdown();
+  }
+}
+
+function showMentionDropdown(users, input, atIndex) {
+  const dropdown = document.getElementById("mentionDropdown");
+  dropdown.innerHTML = "";
+
+  users.forEach(user => {
+    const div = document.createElement("div");
+    div.innerHTML = `<img src="${user.avatar}" width="20" style="border-radius:50%; margin-right:5px;"> ${user.name}`;
+    div.onclick = () => selectMention(user, input, atIndex);
+    dropdown.appendChild(div);
+
+  });
+
+  const rect = input.getBoundingClientRect();
+  dropdown.style.top = (rect.bottom + window.scrollY) + "px";
+  dropdown.style.left = (rect.left + window.scrollX) + "px";
+  dropdown.style.display = "block";
+}
+
+function selectMention(user, input, atIndex) {
+  const value = input.value;
+  const before = value.substring(0, atIndex);
+  const after = value.substring(input.selectionStart);
+
+  input.value = `${before}@${user.name} ${after}`;
+  hideMentionDropdown();
+  input.focus();
+}
+
+function hideMentionDropdown() {
+  document.getElementById("mentionDropdown").style.display = "none";
+}
+
+document.getElementById("communityButton").onclick = function handleCommunityRedirect() {
+  const username = localStorage.getItem("username");
+
+  if (!username) {
+    alert("You must be logged in to access communities.");
+    window.location.href = "index.html";
+    return;
+  }
+
+  fetch(`https://connecther.network/api/communities/user/${encodeURIComponent(username)}`)
+    .then(res => res.json())
+    .then(data => {
+      const owned = data.owned || [];
+      const joined = data.joined || [];
+      const all = [...owned, ...joined];
+
+    
+
+      if (all.length === 0) {
+        window.location.href = "getstartedcommunity.html";
+      } else {
+        window.location.href = "communitylist.html";
+      }
+    })
+    .catch(err => {
+      console.error("Failed to check communities", err);
+      alert("Something went wrong. Try again later.");
+    });
+};
+
+setInterval(autoRefreshFeed, 10000); // Every 10 seconds
+
+// Store all known users into localStorage for use in community.html
+localStorage.setItem("allUsers", JSON.stringify(mentionableUsers));
+document.getElementById("composerAvatar").src = currentUser.avatar;
+document.getElementById("profileLink").href = `profile.html?user=${currentUser.username}`;
+document.getElementById("searchInput").addEventListener("input", function () {
+  const query = this.value.trim();
+  const feedElement = document.getElementById("feed");
+
+  if (query === "") return; // Don't search empty
+
+  fetch(`https://connecther.network/api/posts/search/${encodeURIComponent(query)}`)
+    .then(res => res.json())
+    .then(results => {
+      feedElement.innerHTML = ""; // Clear current feed
+      dummyPosts.length = 0; // Reset
+
+      results.forEach((post, index) => {
+        dummyPosts.push(post);
+        renderPost(post, index);
+      });
+    })
+    .catch(err => {
+      console.error("❌ Global search failed", err);
+    });
+});
+
+
+ // ✅ Add Socket.IO real-time notification handler
+const socket = io("https://connecther.network");
+
+// ✅ Prevent duplicate listeners on reload
+if (currentUser?.username && !window.hasSocketRegistered) {
+  socket.emit("register", currentUser.username);
+
+  socket.on("refresh-suggestions", () => {
+    console.log("🔄 Refreshing suggestions via socket");
+    loadSuggestions(); // 👈 Re-fetch suggestions
+  });
+
+ socket.on("new-notification", (notif) => {
+  console.log("🔔 Real-time notification:", notif);
+
+  // ✅ Always show badge/dot
+  const notifDot = document.getElementById("notifDot");
+  if (notifDot) {
+    notifDot.style.display = "block";
+    localStorage.setItem("hasNewNotif", "true");
+  }
+
+  // ✅ Optional: show toast or alert based on type
+  if (notif.type === "like" || notif.type === "comment") {
+    // Replace this with your toast UI later
+    alert(`${notif.title || "New Activity"}: ${notif.body || notif.content || ""}`);
+  }
+});
+
+ // ===============================================
+// ✅ Group Call Listener for Debug
+// ===============================================
+socket.on("incoming-group-call", ({ from, communityId, communityName }) => {
+  console.log(`📢 Incoming group call from ${from} in community: ${communityName} (ID: ${communityId})`);
+});
+  window.hasSocketRegistered = true; // ✅ Mark as registered
+}
+
+
+function loadSuggestions() {
+  fetch(`https://connecther.network/api/users/suggestions/${currentUser.username}`)
+    .then(res => res.json())
+    .then(users => {
+      const container = document.getElementById("suggestionContainer");
+      container.innerHTML = "";
+
+      if (!users.length) {
+        container.innerHTML = `<p style="color:#ccc">No suggestions found.</p>`;
+        return;
+      }
+
+users.forEach(user => {
+  const div = document.createElement("div");
+  div.className = "suggestion-item";
+  div.style = `
+    display: inline-block;
+    background: #1e1e1e;
+    padding: 10px;
+    border-radius: 10px;
+    margin-right: 10px;
+    text-align: center;
+    width: 160px;
+    animation: slideIn 0.5s ease forwards;
+  `;
+
+  div.innerHTML = `
+    <img src="${user.avatar}" alt="${user.username}" width="60" height="60" style="border-radius:50%; margin-bottom:5px;">
+    <div style="color:#fff; font-size:14px;">${user.firstName} ${user.surname}</div>
+    <button onclick="sendFriendRequest('${user.username}', this)" class="add-friend-btn" style="margin-top:5px;">Add Friend</button>
+  `;
+
+  container.appendChild(div);
+});
+
+
+    })
+    .catch(err => {
+      console.error("❌ Error loading suggestions", err);
+    });
+}
+
+// Load initially
+loadSuggestions();
+
+// ===============================================
+// 📞 Handle Incoming Group Call Modal Logic
+// ===============================================
+document.addEventListener("DOMContentLoaded", () => {
+  const callModal = document.getElementById("incomingCallModal");
+  const callTitle = document.getElementById("incomingCallTitle");
+  const callMessage = document.getElementById("incomingCallMessage");
+  const acceptBtn = document.getElementById("acceptCallBtn");
+  const declineBtn = document.getElementById("declineCallBtn");
+
+  let incomingCallInfo = { communityId: null, communityName: null };
+  let autoDeclineTimer = null;
+
+// ==========================================
+// 🔔 Listen for incoming group call
+// ==========================================
+socket.on("incoming-group-call", async ({ from, communityId, communityName }) => {
+  console.log("📞 Incoming group call:", communityName);
+
+  // Prevent showing multiple modals at once
+  if (callModal.style.display === "block") return;
+
+  incomingCallInfo = { communityId, communityName };
+  callTitle.textContent = "Incoming Group Call";
+  callMessage.textContent = `📢 ${communityName} call from ${from}`;
+  callModal.style.display = "block";
+
+  // 🔊 Play ringtone (connectring.mp3 from public folder)
+  const ringtone = document.getElementById("groupCallRingtone");
+  if (ringtone) {
+    ringtone.currentTime = 0;
+    try {
+      await ringtone.play();
+      console.log("🔔 Ringtone playing...");
+    } catch (err) {
+      console.warn("⚠️ Ringtone autoplay blocked:", err);
+    }
+  }
+
+  // Auto-decline after 30s
+  autoDeclineTimer = setTimeout(() => {
+    if (callModal.style.display === "block") {
+      console.warn("⏱️ Auto-declining group call...");
+      if (ringtone) ringtone.pause();
+      declineGroupCall(true); // Trigger auto-decline logic
+    }
+  }, 30000);
+});
+
+  // ==========================================
+  // ✅ Accept Call
+  // ==========================================
+  acceptBtn.addEventListener("click", () => {
+    console.log("✅ Accept clicked");
+    if (!incomingCallInfo.communityId || !currentUser?.username) return;
+
+    // Disable buttons to prevent double clicks
+    acceptBtn.disabled = true;
+    declineBtn.disabled = true;
+
+    // Notify server that user is joining
+    socket.emit("join-group-call", {
+      username: currentUser.username,
+      communityId: incomingCallInfo.communityId,
+      communityName: incomingCallInfo.communityName
+    });
+
+    // Save last call info for potential rejoin
+    localStorage.setItem("lastCall", JSON.stringify(incomingCallInfo));
+
+    // Redirect to voice call page
+    window.location.href = `voicecall.html?communityId=${incomingCallInfo.communityId}&name=${encodeURIComponent(incomingCallInfo.communityName)}`;
+  });
+
+  // ==========================================
+  // ❌ Decline Call
+  // ==========================================
+  declineBtn.addEventListener("click", () => declineGroupCall(false));
+
+  function declineGroupCall(autoDecline = false) {
+    console.log(autoDecline ? "❌ Auto-declined group call" : "❌ Decline clicked");
+
+    callModal.style.display = "none";
+    clearTimeout(autoDeclineTimer);
+
+    if (incomingCallInfo.communityId && currentUser?.username) {
+      socket.emit("decline-group-call", {
+        username: currentUser.username,
+        communityId: incomingCallInfo.communityId,
+      });
+    }
+
+    if (autoDecline) {
+      // Could log missed calls here if needed
+      console.warn("📴 Missed group call from", incomingCallInfo.communityName);
+    }
+
+    // Reset info
+    incomingCallInfo = { communityId: null, communityName: null };
+    acceptBtn.disabled = false;
+    declineBtn.disabled = false;
+  }
+});
+
+
+function toggleMenu(index) {
+    const menu = document.getElementById(`menu-${index}`);
+    document.querySelectorAll('[id^="menu-"]').forEach(m => {
+      if (m !== menu) m.style.display = 'none';
+    });
+    menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+  }
+
+  window.addEventListener('click', function(e) {
+    if (!e.target.closest('.post-options')) {
+      document.querySelectorAll('[id^="menu-"]').forEach(menu => {
+        menu.style.display = 'none';
+      });
+    }
+  });
+
+
+// CHECK ONLY FOR ADMIN ROLE BUTTON
+function redirectAdminPanel() {
+    const user = JSON.parse(localStorage.getItem("currentUser") || "{}");
+    if (user.role === "superadmin") {
+      window.location.replace("superAdminPanel.html");
+    } else if (user.role === "admin") {
+      window.location.replace("adminPanel.html");
+    } else {
+      alert("You don't have access to this panel.");
+    }
+  }
+
+  // Hide button for non-admins
+  window.addEventListener('DOMContentLoaded', () => {
+    const user = JSON.parse(localStorage.getItem("currentUser") || "{}");
+    const adminBtn = document.getElementById("adminPanelBtn");
+    if (!user.role || (user.role !== "admin" && user.role !== "superadmin")) {
+      if (adminBtn) adminBtn.style.display = "none";
+    }
+  });
+
+ // HANDLE GREEN DOT NOTIF
+  const notifDot = document.getElementById("notifDot");
+  if (currentUser?.username) {
+    socket.emit("register", currentUser.username);
+    socket.on("new-notification", (notif) => {
+      // Show green dot
+      notifDot.style.display = "block";
+      // Mark unseen in localStorage
+      localStorage.setItem("hasNewNotif", "true");
+    });
+  }
+  // On page load, check if there are unseen notifications
+  if (localStorage.getItem("hasNewNotif") === "true") {
+    notifDot.style.display = "block";
+  }
+  function openNotificationPage() {
+    // Mark as seen
+    localStorage.setItem("hasNewNotif", "false");
+    // Optional: hide dot immediately
+    notifDot.style.display = "none";
+    // Go to notifications page
+    window.location.href = "notification.html";
+  }
+
+  //HANDLE GREEN FOT NOTIF FOR MESSAGE
+socket.emit("register", currentUser.username);
+// Reference the sound element
+const notifySound = document.getElementById("notifySound");
+// Track incoming messages
+socket.on("newMessage", (msg) => {
+  const activePage = localStorage.getItem("activePage");
+  // Only count if NOT in conversation.html
+  if (!activePage.includes("conversation.html")) {
+    let currentCount = parseInt(localStorage.getItem("unreadCount") || "0");
+    currentCount++;
+    localStorage.setItem("unreadCount", currentCount);
+    updateChatBadge();
+    // 🔊 Play notification sound
+    if (notifySound) {
+      notifySound.pause();             // Reset sound
+      notifySound.currentTime = 0;
+      notifySound.play().catch(e => {
+        console.warn("🔇 Notification sound blocked by browser:", e.message);
+      });
+    }
+      // 📳 Trigger vibration (200ms) if supported
+    if (navigator.vibrate) {
+      navigator.vibrate([200]); // 200ms vibration
+    }
+  }
+});
+
+  // Function to update the badge UI
+  function updateChatBadge() {
+    const badge = document.getElementById("chatBadge");
+    const count = parseInt(localStorage.getItem("unreadCount") || "0");
+
+    if (count > 0) {
+      badge.style.display = "inline-block";
+      badge.textContent = count > 99 ? "99+" : count;
+    } else {
+      badge.style.display = "none";
+    }
+  }
+  // Run on load to restore badge count
+  updateChatBadge();  
+
+
+  // //HANDLE GREEN FOT NOTIF FOR COMMUNITY MESSAGE
+  socket.emit("register", currentUser.username);
+
+  // 🟢 Unread community messages listener
+  socket.on("community-message", (msg) => {
+    const activePage = localStorage.getItem("activePage");
+
+    if (!activePage.includes("community.html")) {
+      let count = parseInt(localStorage.getItem("unreadCommunityCount") || "0");
+      count++;
+      localStorage.setItem("unreadCommunityCount", count);
+      updateCommunityBadge();
+    }
+  });
+
+  function updateCommunityBadge() {
+    const badge = document.getElementById("communityBadge");
+    const count = parseInt(localStorage.getItem("unreadCommunityCount") || "0");
+
+    if (count > 0) {
+      badge.style.display = "inline-block";
+      badge.textContent = count > 99 ? "99+" : count;
+    } else {
+      badge.style.display = "none";
+    }
+  }
+
+  // On page load, show stored community count
+  updateCommunityBadge();
+
+  function openCommunityPage() {
+    localStorage.setItem("activePage", "community.html");
+    window.location.href = "community.html";
+  }
+
+function truncateWords(text, wordLimit) {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= wordLimit) return text;
+  return words.slice(0, wordLimit).join(" ");
+}
+
+function formatCaptionWithParagraphs(text) {
+  const safeText = text
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return safeText
+    .split(/\n{2,}/)
+    .map(paragraph => `<p>${paragraph.replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+
+  </script>
+
+<audio id="groupCallRingtone" src="connectring.mp3" loop></audio>
+<!-- Incoming Call Modal -->
+<div id="incomingCallModal" style="
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px;
+  background: #2c2c2c;
+  border-radius: 12px;
+  box-shadow: 0 0 12px rgba(255, 64, 129, 0.6);
+  padding: 16px;
+  z-index: 10000;
+  color: #fff;
+  text-align: center;
+">
+  <h3 id="incomingCallTitle" style="color: #ff4081; font-size: 18px; margin-bottom: 8px;">
+    Incoming Call
+  </h3>
+  <p id="incomingCallMessage" style="font-size: 14px;">
+    Call from community
+  </p>
+  <div style="display: flex; justify-content: space-between; margin-top: 16px;">
+    <button id="acceptCallBtn" style="
+      background: #ff4081;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      flex: 1;
+      margin-right: 8px;
+    ">Accept</button>
+    <button id="declineCallBtn" style="
+      background: #444;
+      color: #ccc;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      flex: 1;
+    ">Decline</button>
+  </div>
+</div>
+<script src="theme.js" defer></script>
+<script src="/pull-to-refresh.js"></script>
+<script>
+  localStorage.setItem("activePage", "dashboard.html");
+  function openChatPage() {
+    localStorage.setItem("activePage", "Chat.html");
+    window.location.href = "Chat.html";
+  }
+</script>
+<audio id="notifySound" src="notify.mp3" preload="auto"></audio>
+<audio id="communitySound" src="notify.mp3" preload="auto"></audio>
+<script type="module">
+  import { App } from 'https://cdn.jsdelivr.net/npm/@capacitor/app@5/dist/index.js';
+
+  try {
+    document.addEventListener('DOMContentLoaded', () => {
+      App.addListener('backButton', () => {
+        if (window.history.length > 1) {
+          window.history.back();
+        } else {
+          App.exitApp();
+        }
+      });
+    });
+  } catch (e) {
+    console.warn("⚠️ Back button handler failed:", e);
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Create Community</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    body {
+      background-color: #121212;
+      color: #fff;
+      padding: 10px;
+      max-width: 480px;
+      margin: auto;
+      min-height: 100vh;
+      position: relative;
+    }
+body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+    .header {
+      padding: 20px 10px;
+      background: #ff4081;
+      font-size: 1.5em;
+      font-weight: bold;
+      border-radius: 12px;
+      color: #fff;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .section {
+      padding-bottom: 20px;
+    }
+
+    .section h2 {
+      margin-bottom: 15px;
+      font-size: 1.2em;
+      font-weight: bold;
+      color: #ff79b0;
+    }
+
+    .community-list {
+      list-style: none;
+      padding: 0;
+      margin-bottom: 20px;
+    }
+
+    .community-item {
+      padding: 10px 15px;
+      background: #fff0f5;
+      color: #ff4081;
+      margin-bottom: 10px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      transition: background 0.3s ease;
+      cursor: pointer;
+    }
+
+    .community-item:hover {
+      background: #ffd1e4;
+    }
+
+    .community-item .avatar {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid #ff4081;
+    }
+
+    .community-item .details {
+      flex-grow: 1;
+    }
+
+    .community-item .details .name {
+      font-size: 1.1em;
+      font-weight: bold;
+      margin-bottom: 5px;
+      color: #ff4081;
+    }
+
+    .community-item .details .description {
+      color: #ff79b0;
+      font-size: 0.9em;
+    }
+
+    @media (max-width: 480px) {
+      .header {
+        font-size: 1.4em;
+        padding: 15px 10px;
+      }
+      .section h2 {
+        font-size: 1.1em;
+      }
+      .community-item {
+        padding: 10px;
+        gap: 10px;
+      }
+      .community-item .avatar {
+        width: 40px;
+        height: 40px;
+      }
+      .community-item .details .name {
+        font-size: 1em;
+      }
+      .community-item .details .description {
+        font-size: 0.83em;
+      }
+    }
+   #createBtn {
+  display: block;
+  margin: 30px auto;
+  width: 60px;
+  height: 60px;
+  background-color: #ff4081;
+  color: #fff;
+  font-size: 2em;
+  border-radius: 50%;
+  text-align: center;
+  line-height: 60px;
+  text-decoration: none;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+  transition: background 0.3s ease;
+}
+#createBtn:hover {
+  background-color: #e73370;
+}
+#createBtn:hover {
+  background-color: #e73370;
+}
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    Communities
+  </div>
+
+  <div class="section">
+    <h2>Your Owned Communities</h2>
+    <ul id="ownedCommunities" class="community-list">
+      <!-- To be filled by script -->
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>Communities You Belong To</h2>
+    <ul id="joinedCommunities" class="community-list">
+      <!-- To be filled by script -->
+    </ul>
+  </div>
+<a href="createcommunity.html" id="createBtn" title="Create New Community">+</a>
+
+
+  <script>
+  localStorage.setItem("activePage", "communitylist.html");
+
+document.addEventListener('DOMContentLoaded', () => {
+  const username = localStorage.getItem("username");
+  
+  if (!username) {
+    alert("You must be logged in to view your communities.");
+    window.location.href = "login.html";
+    return;
+  }
+
+  loadCommunities(username);
+});
+
+function loadCommunities(username) {
+  fetch(`https://connecther.network/api/communities/user/${encodeURIComponent(username)}`)
+    .then(res => {
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      return res.json();
+    })
+    .then(data => {
+      if (!data || (!data.owned && !data.joined)) {
+        throw new Error("Invalid response from server");
+      }
+
+      renderCommunities("ownedCommunities", data.owned);
+      renderCommunities("joinedCommunities", data.joined);
+    })
+    .catch(err => {
+      console.error(err);
+      alert("Failed to load communities. Please try again later.");
+    });
+}
+
+function renderCommunities(containerId, communities) {
+  const ul = document.getElementById(containerId);
+  ul.innerHTML = '';
+
+  if (!communities.length) {
+    ul.innerHTML = `<li style="color:#999; padding:10px;">No communities yet.</li>`;
+    return;
+  }
+
+  communities.forEach((community) => {
+    const li = document.createElement('li');
+    li.className = "community-item";
+    li.innerHTML = `
+      <img src="${community.avatar}" alt="${community.name}" class="avatar">
+      <div class="details">
+        <div class="name">${community.name}</div>
+        <div class="description">${community.description}</div>
+      </div>
+    `;
+    li.onclick = () => openChatPage(community._id);
+    ul.appendChild(li);
+  });
+}
+
+function openChatPage(communityId) {
+  // Wipe ALL old community context completely
+  localStorage.removeItem("currentCommunityId");
+  localStorage.removeItem("currentCommunity");
+  localStorage.removeItem("communityAvatar");
+  localStorage.removeItem("communityPurpose");
+  localStorage.removeItem("communityMessages");
+  localStorage.removeItem("chatHTML");
+
+  // Now only save the new ID
+  localStorage.setItem("currentCommunityId", communityId);
+  window.location.href = "community.html";
+}
+
+</script>
+
+<script src="theme.js" defer></script>
+
+</body>
+</html>

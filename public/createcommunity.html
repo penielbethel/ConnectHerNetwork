@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create Community</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    body {
+      background-color: #121212;
+      color: #fff;
+      padding: 10px;
+      max-width: 480px;
+      margin: auto;
+      min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+   .header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 15px 10px;
+  font-size: 18px;
+  background-color: transparent; /* or add a subtle background if needed */
+  color: #fff;
+  width: 100%;
+  box-sizing: border-box;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.header i {
+  font-size: 20px;
+  margin-right: 10px;
+  cursor: pointer;
+  color: #ff6fa8; /* optional: match your pink theme */
+}
+
+.header span {
+  flex: 1;
+  font-weight: bold;
+  text-align: left;
+}
+
+
+    .photo-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 20px 0;
+    }
+
+    .photo-placeholder {
+      position: relative;
+      width: 100px;
+      height: 100px;
+      background-color: #333;
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .photo-placeholder i {
+      font-size: 40px;
+      color: #ff4081;
+    }
+
+    .photo-placeholder .upload-icon {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      background-color: #ff4081;
+      border-radius: 50%;
+      padding: 6px;
+      font-size: 14px;
+      color: #fff;
+    }
+
+    .photo-section span {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #ccc;
+    }
+
+    input[type="text"], textarea {
+      width: 100%;
+      background: transparent;
+      border: 1px solid #555;
+      border-radius: 10px;
+      padding: 12px;
+      color: #fff;
+      font-size: 14px;
+      margin-bottom: 10px;
+      outline: none;
+    }
+
+    .input-label {
+      text-align: left;
+      margin: 10px 0 5px;
+      font-size: 13px;
+      color: #bbb;
+    }
+
+    .char-count {
+      font-size: 12px;
+      text-align: right;
+      color: #666;
+      margin-bottom: 20px;
+    }
+
+.fab {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: #ff4081;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #fff;
+  font-size: 22px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  z-index: 999;
+  max-width: 90vw; /* ensure it never overflows on small screens */
+  box-sizing: border-box;
+}
+
+
+.fab:hover {
+  background-color: #ff6fa8;
+}
+
+.fab i {
+  pointer-events: none;
+}
+
+
+
+
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <i class="fas fa-arrow-left"></i>
+    <span>Create a New Community</span>
+  </div>
+
+ 
+<div class="photo-section">
+  <input type="file" id="avatar-input" accept="image/*" style="display: none" />
+  <div class="photo-placeholder" id="avatar-placeholder" onclick="document.getElementById('avatar-input').click()">
+    <img id="avatar-preview" src="" alt="Avatar" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: none;" />
+    <i class="fas fa-users" id="avatar-icon" style="font-size: 40px; color: #ff4081;"></i>
+    <i class="fas fa-camera upload-icon"></i>
+  </div>
+  <span>Change photo</span>
+</div>
+
+
+  <div class="input-label">Community Name</div>
+  <input type="text" id="community-name" maxlength="100" placeholder="Enter community name" />
+  <div class="char-count" id="name-count">0/100</div>
+
+  <div class="input-label">Community Purpose</div>
+ <textarea
+  id="community-purpose"
+  rows="4"
+  maxlength="2048"
+  style="
+    width: 100%;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    background-color: #f3d9e8;
+    color: #ff9ec9;
+    font-size: 15px;
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+    resize: none;
+    overflow: hidden;
+    box-sizing: border-box;
+  "
+>
+Hi everyone! This community is for members to chat in topic-based groups and get important announcements.
+</textarea>
+
+  <div class="char-count" id="purpose-count">105/2048</div>
+
+  <div class="fab" onclick="createCommunity()">
+    <i class="fas fa-arrow-right"></i>
+  </div>
+
+  <script>
+// Make sure username is available
+if (!localStorage.getItem("username") && localStorage.getItem("currentUser")) {
+  const user = JSON.parse(localStorage.getItem("currentUser"));
+  localStorage.setItem("username", user.username);
+}
+  const nameInput = document.getElementById('community-name');
+  const purposeInput = document.getElementById('community-purpose');
+  const nameCount = document.getElementById('name-count');
+  const purposeCount = document.getElementById('purpose-count');
+
+  nameInput.addEventListener('input', () => {
+    nameCount.textContent = `${nameInput.value.length}/100`;
+  });
+
+  purposeInput.addEventListener('input', () => {
+    purposeCount.textContent = `${purposeInput.value.length}/2048`;
+  });
+
+
+// Avatar Upload Logic (with compression)
+const avatarInput = document.getElementById('avatar-input');
+const avatarPreview = document.getElementById('avatar-preview');
+const avatarIcon = document.getElementById('avatar-icon');
+
+let uploadedAvatarURL = ""; // Store uploaded/compressed image URL
+
+avatarInput.addEventListener('change', async function () {
+  const file = this.files[0];
+  if (!file || !file.type.startsWith('image/')) return;
+
+  const formData = new FormData();
+  formData.append("files", file);
+
+  try {
+    const res = await fetch("https://connecther.network/api/upload", {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await res.json();
+    if (data.success && data.files.length > 0) {
+      uploadedAvatarURL = data.files[0].url;
+      avatarPreview.src = uploadedAvatarURL;
+      avatarPreview.style.display = 'block';
+      avatarIcon.style.display = 'none';
+    } else {
+      alert("❌ Failed to upload avatar.");
+    }
+  } catch (err) {
+    console.error("❌ Avatar upload error:", err);
+    alert("Error uploading avatar. Try again.");
+  }
+});
+
+  // Restore previously selected avatar
+  window.addEventListener('DOMContentLoaded', () => {
+    const savedAvatar = sessionStorage.getItem('communityAvatar');
+    if (savedAvatar) {
+      avatarPreview.src = savedAvatar;
+      avatarPreview.style.display = 'block';
+      avatarIcon.style.display = 'none';
+    }
+  });
+
+  // Create community
+  function createCommunity() {
+    const name = document.getElementById('community-name').value.trim();
+    const purpose = document.getElementById('community-purpose').value.trim();
+    const avatar = uploadedAvatarURL || 'https://via.placeholder.com/50';    
+    const username = localStorage.getItem('username');
+
+    if (!name) return alert("Please enter a community name.");
+    if (!username) return alert("You must be logged in to create a community.");
+
+    fetch("https://connecther.network/api/communities/create", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+        description: purpose,
+        avatar,
+        username
+      }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          sessionStorage.removeItem("communityAvatar");
+          localStorage.setItem("currentCommunityId", data.community._id);
+          localStorage.setItem("currentCommunity", data.community.name);
+          localStorage.setItem("communityPurpose", data.community.description);
+          localStorage.setItem("communityAvatar", data.community.avatar);
+          window.location.href = "communitylist.html";
+        } else {
+          alert("Failed to create community: " + (data.message || "Unknown error"));
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        alert("Failed to create community. Please try again.");
+      });
+  }
+  </script>
+<script src="theme.js" defer></script>
+
+</body>
+</html>

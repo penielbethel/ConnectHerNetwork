@@ -1,0 +1,3048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ConnectHer Conversation</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="theme.css">
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    body {
+      background-color: #121212;
+      color: #fff;
+      max-width: 480px;
+      margin: auto;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+      body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+    .conversation-header {
+      padding: 10px;
+      background-color: #1e1e1e;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      justify-content: space-between;
+    }
+
+    .conversation-header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .conversation-header img {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .conversation-header .name {
+      font-weight: bold;
+      font-size: 16px;
+      color: #ff4081;
+    }
+
+    .conversation-header .voice-call {
+      color: #ff4081;
+      font-size: 20px;
+      cursor: pointer;
+    }
+
+@keyframes pulseTyping {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Animated vertical gradient */
+  background: linear-gradient(
+    180deg,
+    #60012a,
+    #2c001e,
+    #0d0d0d,
+    #2c001e,
+    #8a1749
+  );
+  background-size: 100% 300%;
+  animation: gradientVertical 30s ease-in-out infinite;
+
+  backdrop-filter: blur(2px);
+  scrollbar-width: none; /* Firefox */
+}
+/* Hide scrollbar for Chrome, Edge, Safari */
+.messages::-webkit-scrollbar {
+  display: none;
+}
+/* Vertical gradient animation */
+@keyframes gradientVertical {
+  0% { background-position: 50% 0%; }
+  50% { background-position: 50% 100%; }
+  100% { background-position: 50% 0%; }
+}
+
+.messages::-webkit-scrollbar {
+  display: none;
+}
+
+/* Chat bubble styling */
+.message {
+  max-width: 70%;
+  padding: 12px 16px;
+  border-radius: 18px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(255, 105, 180, 0.2);
+}
+
+/* User (right side) */
+.message.user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #ff7eb3, #ff4e9b);
+}
+
+/* Friend (left side) */
+.message.friend {
+  align-self: flex-start;
+  background: linear-gradient(135deg, #2c2c2c, #3a3a3a);
+  border: 1px solid #ff4e9b;
+}
+    .message {
+      max-width: 70%;
+      padding: 10px;
+      border-radius: 10px;
+      position: relative;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
+    .message img.avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+.message .bubble {
+  background-color: rgba(43, 3, 3, 0.8);
+  padding: 4px 9px 4px 9px;  /* even tighter vertical space */
+  border-radius: 12px;
+  font-size: 14px;
+  color: #fff;
+  position: relative;
+  padding-right: 65px; /* space for time + icon */
+  line-height: 1.2;     /* slightly more compact */
+  word-break: break-word;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  display: inline-block; /* 🔑 this prevents tall full-width bubbles */
+  max-width: 100%;
+}
+
+    .message.sent {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+
+    .message.sent .bubble {
+      background-color: rgba(164, 18, 66, 0.9); /* pink semi-transparent */
+      color: #fff;
+    }
+    a.name {
+  text-decoration: none;
+  color: #ff4081; /* optional: keep your theme color */
+}
+
+    .status {
+      position: absolute;
+      bottom: 3px;
+      right: 8px;
+      font-size: 12px;
+      display: flex;
+      gap: 2px;
+    }
+
+    .status i {
+      color: gray;
+    }
+
+    .status.read i {
+      color: #00bfff;
+    }
+
+    .input-bar {
+      padding: 10px;
+      background-color: #1e1e1e;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      position: relative;
+    }
+
+    .input-bar input {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      color: #fff;
+      padding: 10px;
+      border-radius: 20px;
+      background-color: #333;
+      font-size: 14px;
+    }
+
+    .input-bar button {
+      background-color: transparent;
+      border: none;
+      color: #ff4081;
+      font-size: 20px;
+      cursor: pointer;
+    }
+
+    .emoji-panel {
+      display: none;
+      flex-wrap: wrap;
+      background-color: #222;
+      padding: 10px;
+      border-top: 1px solid #333;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .emoji-panel span {
+      font-size: 20px;
+      margin: 5px;
+      cursor: pointer;
+    }
+
+    .countdown {
+      position: absolute;
+      top: -25px;
+      right: 10px;
+      color: #ccc;
+      font-size: 12px;
+    }
+
+    .audio-preview {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background-color: #333;
+      padding: 8px;
+      border-radius: 10px;
+      margin: 10px;
+    }
+
+    .audio-preview audio {
+      width: 100%;
+    }
+
+.message .options {
+  display: inline;
+  color: #ccc;
+  font-size: 14px;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+    .options-menu {
+      position: absolute;
+      top: 25px;
+      left: 5px;
+      background-color: #2c2c2c;
+      border: 1px solid #444;
+      border-radius: 5px;
+      display: none;
+      flex-direction: column;
+      z-index: 999;
+    }
+
+    .options-menu button {
+      background: none;
+      border: none;
+      color: #fff;
+      padding: 8px 10px;
+      text-align: left;
+      font-size: 14px;
+      cursor: pointer;
+      width: 140px;
+    }
+
+    .options-menu button:hover {
+      background-color: #444;
+    }
+
+    #forwardModal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.6);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+
+    #forwardModal .modal-content {
+      background-color: #1e1e1e;
+      padding: 20px;
+      border-radius: 10px;
+      max-width: 300px;
+      width: 90%;
+      text-align: center;
+    }
+
+    #forwardModal .modal-content h3 {
+      margin-bottom: 10px;
+      color: #ff4081;
+    }
+
+    #forwardModal .friend {
+      padding: 10px;
+      margin: 5px 0;
+      background-color: #333;
+      border-radius: 5px;
+      cursor: pointer;
+      color: white;
+    }
+
+    #forwardModal .friend:hover {
+      background-color: #444;
+    }
+
+.bubble .meta {
+  position: absolute;
+  bottom: 4px;
+  right: 10px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #ccc;
+}
+
+.bubble .timestamp {
+  font-size: 11px;
+  color: #ccc;
+}
+.bubble .status i {
+  font-size: 11px;
+}
+
+.media-image {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.media-video {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 10px;
+}
+
+.media-file {
+  color: #00bfff;
+  text-decoration: underline;
+  display: block;
+  margin-top: 5px;
+  word-break: break-word;
+}
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 6px;
+  width: 100%;
+  max-width: 300px;
+}
+
+.media-grid a {
+  display: block;
+  width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.media-grid img,
+.media-grid video {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 10px;
+  display: block;
+}
+
+.global-options {
+  position: relative;
+  z-index: 1001;
+  cursor: pointer;
+  font-size: 18px;
+  color: #ff4081;
+  padding: 6px;
+  border-radius: 50%;
+  transition: background 0.3s ease;
+}
+
+
+#globalOptionsMenu {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  background: linear-gradient(145deg, #ff4f81, #d43a68);
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(255, 64, 129, 0.3);
+  display: none;
+  flex-direction: column;
+  z-index: 1000;
+  min-width: 150px;
+  overflow: hidden;
+  border: 1px solid #ff8cb7;
+}
+
+#globalOptionsMenu button {
+  background: transparent;
+  border: none;
+  color: white;
+  padding: 12px 15px;
+  text-align: left;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+#globalOptionsMenu button:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.highlight-reply {
+    animation: flashHighlight 1.5s ease-in-out;
+    background: rgba(0, 191, 255, 0.15) !important;
+  }
+
+  @keyframes flashHighlight {
+    0%   { background: rgba(0, 191, 255, 0.3); }
+    100% { background: transparent; }
+  }
+  
+  #callModal,
+  #incomingCallModal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%; height: 100%;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    background: rgba(0, 0, 0, 0.7);
+    flex-direction: column;
+  }
+
+  #callModal p,
+  #callModal #callTimer {
+    color: white;
+    font-size: 16px;
+    margin: 5px 0;
+  }
+
+  #callModal button,
+  #incomingCallModal button {
+    padding: 10px 20px;
+    border-radius: 10px;
+    border: none;
+    color: white;
+    margin: 5px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+
+  #callModal button {
+    background: #ff4081;
+  }
+
+  #incomingCallModal {
+    background: rgba(0, 0, 0, 0.6);
+  }
+
+  #incomingCallModal .modal-box {
+    background: white;
+    padding: 20px;
+    border-radius: 15px;
+    text-align: center;
+    width: 300px;
+    box-shadow: 0 0 15px #000;
+  }
+
+  #incomingCallModal img {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: 10px;
+  }
+
+  #incomingCallModal h3 {
+    color: deeppink;
+    font-weight: bold;
+    margin-bottom: 15px;
+  }
+
+  #incomingCallModal .accept-btn {
+    background: green;
+  }
+
+  #incomingCallModal .decline-btn {
+    background: red;
+  }
+
+  /* Video display size and style */
+  #localVideo, #remoteVideo {
+    width: 150px;
+    border-radius: 10px;
+    margin-top: 10px;
+  }
+
+  .call-controls {
+    margin-top: 15px;
+  }
+
+  .call-controls button {
+    margin: 0 6px;
+  }
+
+/* FILE CARD NEWMEK */
+.file-card {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, #ff4e9b, #7b1fa2, #111);
+  border-radius: 12px;
+  padding: 10px 12px;
+  max-width: 320px;
+  color: #fff;
+  position: relative;
+  font-size: 14px;
+  gap: 10px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease, box-shadow 0.3s ease;
+  overflow: hidden;
+}
+
+.file-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+
+.file-card .file-icon {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #ffb6d9;
+  font-size: 20px;
+  padding: 10px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  text-transform: uppercase;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.file-card .file-info {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.file-card .file-name {
+  font-weight: bold;
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-width: 200px;
+  line-height: 1.2;
+}
+
+.file-card .file-size {
+  font-size: 12px;
+  color: #e0e0e0;
+  opacity: 0.8;
+  margin-top: 2px;
+}
+
+.file-card .file-download {
+  font-size: 18px;
+  color: #fff;
+  text-decoration: none;
+  transition: color 0.3s ease;
+  margin-left: 5px;
+}
+
+.file-card .file-download:hover {
+  color: #ffd1ec;
+}
+
+/* 🔹 Image thumbnail inside file card */
+.file-card.image-card img {
+  width: 50px;
+  height: 50px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 🔹 Video thumbnail (poster or frame) */
+.file-card.video-card video {
+  width: 60px;
+  height: 50px;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: #000;
+}
+
+/* 🔹 Smooth transition for file-size updates */
+.file-card .file-size {
+  transition: opacity 0.2s ease-in-out;
+}
+
+  </style>
+
+</head>
+<body>
+
+  <div class="conversation-header">
+    <div class="conversation-header-left">
+<!-- I filled this with JS -->
+</div>
+    <i class="fa fa-search" onclick="openSearchModal()" title="Search Chat" style="cursor: pointer; font-size: 18px; color: white;"></i>
+    <div class="voice-call" onclick="startVoiceCall()">
+      <i class="fa fa-phone"></i>
+    </div>
+    <div class="video-call" onclick="startVideoCall()" style="color: #ff4081; font-size: 20px; cursor: pointer;">
+  <i class="fa fa-video"></i>
+</div>
+    <div class="global-options">
+  <i class="fa fa-ellipsis-v" onclick="toggleGlobalMenu()"></i>
+  <div id="globalOptionsMenu" class="options-menu" style="right: 0; left: auto;">
+    <button onclick="clearChat()">Clear Chat</button>
+  </div>
+</div>
+  </div>
+
+  <!-- GLOBAL SEARCH-->
+<div id="searchModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); z-index:9999; justify-content:center; align-items:center; flex-direction:column; padding:20px;">
+  <input id="searchInput" type="text" placeholder="Search messages..." style="width:90%; max-width:400px; padding:10px 15px; font-size:16px; border:none; border-radius:8px; outline:none; margin-bottom:20px;">
+  <div id="searchResults" style="width:90%; max-width:400px; max-height:400px; overflow-y:auto; color:white;"></div>
+  <button onclick="closeSearchModal()" style="margin-top:20px; padding:8px 20px; background:#ff4081; color:white; border:none; border-radius:6px;">Close</button>
+</div>
+
+  <div id="typingIndicator" style="
+  display: none;
+  margin: 5px 15px;
+  font-size: 13px;
+  padding: 5px 10px;
+  color: #fff;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #ff4081, #ff80ab);
+  width: fit-content;
+  animation: pulseTyping 1.2s infinite ease-in-out;
+">
+  User is typing...
+</div>
+
+<div class="messages" id="messageContainer"></div>
+
+
+  <div class="emoji-panel" id="emojiPanel">
+    <span>😂</span><span>😍</span><span>🥰</span><span>👑</span><span>💅</span><span>🎉</span><span>👠</span><span>🎀</span><span>📸</span><span>🛍️</span><span>💄</span><span>💃</span><span>📱</span><span>🍹</span><span>🎶</span><span>☕</span><span>🌸</span><span>🌟</span><span>❤️</span><span>💖</span><span>🌷</span><span>✨</span><span>🌺</span>
+  </div>
+
+<div id="replyPreview" style="display:none; padding: 6px 10px; background: #333; color: white; font-size: 14px; border-left: 3px solid deepskyblue; border-radius: 6px; margin-bottom: 6px;"></div>
+
+  <div class="input-bar">
+    <textarea 
+  id="messageInput" 
+  placeholder="Type a message..." 
+  rows="1"
+  style="
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    font-family: Arial, sans-serif;
+    border: none;
+    border-radius: 10px;
+    resize: none;
+    overflow: hidden;
+    background: #1a1a1a;
+    color: #fff;
+    line-height: 1.4;
+  "
+  oninput="autoExpand(this)"
+></textarea>
+    <button onclick="toggleEmojiPanel()"><i class="fa fa-smile"></i></button>
+    <button onclick="startMicRecording()"><i class="fa fa-microphone"></i></button>
+    <button onclick="stopMicRecording()" id="stopBtn" style="display:none;"><i class="fa fa-stop-circle"></i></button>
+    
+<input 
+  type="file" 
+  id="mediaInput" 
+  multiple 
+  accept="image/*,video/*,audio/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,application/x-rar-compressed,application/x-executable,image/svg+xml,image/heic"
+  hidden
+>
+
+<button onclick="document.getElementById('mediaInput').click()">
+  <i class="fa fa-paperclip"></i>
+</button>
+
+    <button onclick="sendMessage()"><i class="fa fa-paper-plane"></i></button>
+    <span class="countdown" id="countdown"></span>
+  </div>
+
+<div id="audioPreview" class="audio-preview" style="display:none;">
+  <audio id="audioPlayer" controls></audio>
+  <button onclick="sendVoiceNote()"><i class="fa fa-paper-plane"></i></button>
+  <button onclick="cancelVoiceNote()" title="Cancel recording" style="color: red;">
+  <i class="fa fa-times"></i>
+</button>
+
+</div>
+
+
+  <div id="forwardModal">
+    <div class="modal-content">
+      <h3>Forward To:</h3>
+      <div id="forwardFriendList"></div>
+    </div>
+  </div>
+<div id="mediaPreview" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:#000; justify-content:center; align-items:center; z-index:10000;">
+  <span onclick="closeMediaPreview()" style="position:absolute; top:10px; right:20px; color:white; font-size:30px; cursor:pointer;">&times;</span>
+  <div id="previewContent"></div>
+</div>
+
+
+
+<!-- Incoming Call Modal NEWMEK-->
+<div id="incomingCallModal">
+  <div class="modal-box">
+    <img id="callerAvatar" src="fa-pa.png" alt="Caller Avatar" />
+    <h3 id="callerName">Someone is calling...</h3>
+    <button class="accept-btn" onclick="acceptCall()">✅ Accept</button>
+    <button class="decline-btn" onclick="declineCall()">❌ Decline</button>
+  </div>
+</div>
+
+<!-- Active Call Modal -->
+<div id="callModal">
+  <p id="callStatus">Connecting...</p>
+  <div id="callTimer" style="font-weight: bold;"></div>
+
+  <!-- Video Streams (only show for video calls) -->
+  <video id="localVideo" autoplay muted playsinline style="display: none;"></video>
+  <video id="remoteVideo" autoplay playsinline style="display: none;"></video>
+
+  <!-- Audio element for voice-only -->
+  <audio id="remoteAudio" autoplay></audio>
+
+  <!-- Call Control Buttons -->
+  <div class="call-controls">
+    <button id="muteButton" onclick="toggleMute()">🔇 Mute</button>
+    <button id="videoToggleButton" onclick="toggleVideo()">📷 Stop Video</button>
+    <button onclick="endCall()">❌ End Call</button>
+  </div>
+</div>
+
+<!-- Ring for incoming call -->
+<audio id="ringtone" src="connectring.mp3" loop preload="auto"></audio>
+
+
+<script src="https://connecther.network/socket.io/socket.io.js"></script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', async () => {
+    try {
+      const { Camera, Microphone, Filesystem, Permissions } = Capacitor.Plugins;
+
+      await Permissions.requestPermissions({
+        permissions: ['camera', 'microphone', 'photos', 'mediaLibrary']
+      });
+
+      await Camera.requestPermissions();
+      await Microphone.requestPermissions();
+      await Filesystem.requestPermissions();
+
+      console.log("✅ All native permissions granted.");
+    } catch (e) {
+      console.warn("❌ Permission error:", e);
+    }
+  });
+</script>
+
+<script>
+localStorage.setItem("activePage", "conversation.html");
+const emojiPanel = document.getElementById("emojiPanel");
+const messageInput = document.getElementById("messageInput");
+const messageContainer = document.getElementById("messageContainer");
+const countdownEl = document.getElementById("countdown");
+const audioPreview = document.getElementById("audioPreview");
+const audioPlayer = document.getElementById("audioPlayer");
+const forwardModal = document.getElementById("forwardModal");
+
+function scrollToMessage(msgId) {
+  const target = document.querySelector(`.message[data-id="${msgId}"]`);
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    // 🔦 Temporary highlight
+    target.classList.add("highlight-reply");
+    setTimeout(() => target.classList.remove("highlight-reply"), 1500);
+  }
+}
+
+// 🔊 Voice Recording
+let mediaRecorder, audioChunks = [], audioBlob, audioURL;
+let forwardMessageContent = "";
+
+// 🌐 Get current user and chat target
+const urlParams = new URLSearchParams(window.location.search);
+const username = urlParams.get("user"); // friend's username
+const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+
+// 📡 Connect Socket.IO with current username in query
+const API = "https://connecther.network";
+const socket = io(API, {
+  query: { username: currentUser.username }
+});socket.emit("register", currentUser.username);
+
+// ✅ Join chat room for real-time messaging
+socket.emit("joinRoom", {
+  user1: currentUser.username,
+  user2: username
+});
+
+// ✅ Check mutual friendship
+fetch(`${API}/api/friends/check/${currentUser.username}/${username}`)
+  .then(res => res.json())
+  .then(data => {
+    if (!data.areFriends) {
+      alert("You are not friends with this user. Only mutual friends can chat.");
+      window.location.href = "chat.html";
+    } else {
+      // ✅ Join room after friendship is confirmed
+      socket.emit("joinRoom", {
+        user1: currentUser.username,
+        user2: username
+      });
+
+      loadMessages(); // ✅ Then load messages
+    }
+  })
+
+  .catch(err => {
+    console.error("Friend check failed", err);
+    alert("Error checking friendship status.");
+    window.location.href = "chat.html";
+  });
+
+// ✅ Load user info and header
+let user = null;
+fetch(`${API}/api/users/user/${username}`)
+  .then(res => res.json())
+  .then(data => {
+    user = data;
+    const fullName = user.name;
+    const myName = `${currentUser.firstName || ""} ${currentUser.surname || ""}`.trim();
+
+    const headerLeft = document.querySelector(".conversation-header-left");
+    headerLeft.innerHTML = ""; // clear old content
+
+    // profile link
+    const profileLink = document.createElement("a");
+    profileLink.href = `profile.html?user=${username}`;
+
+    // avatar image (safe loader)
+const avatarEl = document.createElement("img");
+avatarEl.className = "chat-avatar";
+avatarEl.setAttribute("alt", user.fullName || "avatar");
+avatarEl.setAttribute("data-fallback", FALLBACK_AVATAR);
+
+setAvatarSafely(avatarEl, normalizeUrl(user.avatar));
+
+profileLink.appendChild(avatarEl);
+
+    // ✅ safe loader
+    setAvatarSafely(avatarEl, normalizeUrl(user.avatar));
+
+    profileLink.appendChild(avatarEl);
+
+    // name link
+    const nameLink = document.createElement("a");
+    nameLink.href = `profile.html?user=${username}`;
+    nameLink.className = "name";
+    nameLink.textContent = fullName || username;
+
+    // status div
+    const statusDiv = document.createElement("div");
+    statusDiv.id = "friendStatus";
+    statusDiv.style.fontSize = "14px";
+    statusDiv.style.color = "#ccc";
+    statusDiv.textContent = "Checking status...";
+
+    // append all
+    headerLeft.appendChild(profileLink);
+    headerLeft.appendChild(nameLink);
+    headerLeft.appendChild(statusDiv);
+  
+
+    // ✅ Typing indicator listener — added after user is fetched
+    socket.on("typing", ({ from }) => {
+      if (from === username) {
+        document.getElementById("typingIndicator").textContent = `${user.name} is typing...`;
+        document.getElementById("typingIndicator").style.display = "block";
+      }
+    });
+
+    socket.on("stopTyping", ({ from }) => {
+      if (from === username) {
+        document.getElementById("typingIndicator").style.display = "none";
+      }
+    });
+  });
+
+  // REPLY MESSAGE
+let replyInfo = null;
+function replyToMessage(btn) {
+  const msgDiv = btn.closest(".message");
+  const sender = msgDiv.classList.contains("sent") ? "You" : username;
+  const bubble = msgDiv.querySelector(".bubble");
+
+  let previewHtml = "";
+  let replyContent = "";
+  const replyElement = bubble.cloneNode(true);
+
+  // Remove .meta from clone so it doesn't appear in preview
+  const meta = replyElement.querySelector(".meta");
+  if (meta) meta.remove();
+
+  // If media exists (image, video, file card), clone its preview
+  const hasMedia = replyElement.querySelector("img, video, .file-card");
+  if (hasMedia) {
+    replyContent = replyElement.innerHTML; // Preserve full HTML
+    previewHtml = replyContent;
+  } else {
+    // Fallback: use clean trimmed text
+    let text = replyElement.textContent.trim().slice(0, 100);
+    if (text.length === 100) text += "...";
+    replyContent = text;
+    previewHtml = `<b>${sender}</b>: ${text}`;
+  }
+
+  replyInfo = {
+    sender,
+    content: replyContent,
+    messageId: msgDiv.dataset.id
+  };
+
+  // Show preview
+  const replyPreview = document.getElementById("replyPreview");
+  replyPreview.innerHTML = `
+    ${previewHtml} 
+    <span style="float:right;cursor:pointer;color:red;" onclick="cancelReply()">✖</span>
+  `;
+  replyPreview.style.display = "block";
+  messageInput.focus();
+}
+
+
+function cancelReply() {
+  replyInfo = null;
+  const replyPreview = document.getElementById("replyPreview");
+  replyPreview.innerHTML = "";
+  replyPreview.style.display = "none";
+}
+
+// Media Intermission---------------------------------
+// Media Build NEWMEK
+function buildMediaContent(mediaArray) {
+  return mediaArray.map(file => {
+    const fullUrl = file.url;
+    const fileName = file.name || fullUrl.split("/").pop();
+    const ext = file.type ? file.type.split("/").pop().toLowerCase() : "";
+    const baseType = file.type ? file.type.split("/")[0] : "";
+
+    let preview = "";
+
+    if (baseType === "image") {
+      preview = `<img src="${fullUrl}" class="media-image" onclick="openMediaPreview('${fullUrl}')">`;
+    } else if (baseType === "video") {
+      preview = `<video class="media-video" muted controls>
+                   <source src="${fullUrl}" type="${file.type}">
+                 </video>`;
+    } else if (baseType === "audio") {
+      preview = `<audio controls style="width: 100%;">
+                   <source src="${fullUrl}" type="${file.type}">
+                   Your browser does not support the audio element.
+                 </audio>`;
+    } else {
+      // For documents, archives, etc.
+      const iconClass = file.type.includes("pdf") ? "fa-file-pdf" : "fa-file";
+      const iconColor = file.type.includes("pdf") ? "#d32f2f" : "#888";
+      preview = `<i class="fa ${iconClass}" style="font-size:30px;color:${iconColor};"></i>`;
+    }
+
+    // Return file card structure
+    return `
+      <div class="file-card ${baseType === "image" ? "image-card" : ""} ${baseType === "video" ? "video-card" : ""}">
+        <div class="file-icon">${preview}</div>
+        <div class="file-info">
+          <div class="file-name">${fileName}</div>
+          <div class="file-size">${file.type}</div>
+        </div>
+        <a href="javascript:void(0);" class="file-download" onclick="handleDownload('${fullUrl}', '${fileName}')">
+          <i class="fa fa-download"></i>
+        </a>
+      </div>
+    `;
+  }).join("");
+}
+
+function isNativeApp() {
+  return !!window.Capacitor && !!window.Capacitor.isNativePlatform;
+}
+
+function handleDownload(url, filename) {
+  if (isNativeApp()) {
+    downloadMediaFile(url, filename); // Native path
+  } else {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.target = "_blank";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+}
+
+//DOWNLOAD MEDIA NEWMEK
+async function downloadMediaFile(url, filename) {
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", url, true);
+    xhr.responseType = "blob";
+
+    // Show progress overlay
+    document.getElementById("progressOverlay").style.display = "flex";
+
+    // Track download progress
+    xhr.onprogress = function (event) {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        updateProgress(percent);
+      }
+    };
+
+    xhr.onload = async function () {
+      document.getElementById("progressOverlay").style.display = "none";
+      if (xhr.status === 200) {
+        try {
+          const blob = xhr.response;
+          const base64Data = await convertBlobToBase64(blob);
+          const Filesystem = Capacitor.Plugins.Filesystem;
+
+          const saved = await Filesystem.writeFile({
+            path: filename,
+            data: base64Data,
+            directory: "DOCUMENTS", // keep same save dir
+          });
+
+          alert("✅ File saved to: " + saved.uri);
+        } catch (err) {
+          console.error("❌ Failed to save file:", err);
+          alert("❌ Failed to save file: " + err.message);
+        }
+      } else {
+        alert("❌ Download failed");
+      }
+    };
+
+    xhr.onerror = function () {
+      document.getElementById("progressOverlay").style.display = "none";
+      alert("❌ Download error");
+    };
+
+    // Save xhr globally for Cancel button
+    window.currentTransfer = xhr;
+    xhr.send();
+  } catch (e) {
+    console.error("❌ Download failed:", e);
+    alert("❌ Failed to download file: " + e.message);
+  }
+}
+
+function convertBlobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+//Cancel Media Upload or Download
+function updateProgress(percent) {
+  const circle = document.getElementById("progressPath");
+  const text = document.getElementById("progressText");
+  const dasharray = `${percent},100`;
+  circle.setAttribute("stroke-dasharray", dasharray);
+  text.textContent = percent + "%";
+}
+
+function cancelTransfer() {
+  if (window.currentTransfer) {
+    window.currentTransfer.abort();
+    window.currentTransfer = null;
+    document.getElementById("progressOverlay").style.display = "none";
+    alert("❌ Transfer cancelled");
+  }
+}
+
+
+
+// ✅ Send text message to server (no double display)
+function sendMessage() {
+  const text = messageInput.value.trim();
+  if (!text) return;
+
+  const payload = {
+    sender: currentUser.username,
+    recipient: username,
+    text,
+    audio: "",
+    reply: replyInfo ? replyInfo.content : "",        // 🆕 reply text
+    replyFrom: replyInfo ? replyInfo.sender : "",      // 🆕 reply sender
+    replyToId: replyInfo ? replyInfo.messageId : ""
+  };
+
+  fetch(`${API}/api/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success && data.message) {
+        messageInput.value = "";
+
+        // 🧹 Clear reply UI
+        replyInfo = null;
+        document.getElementById("replyPreview").style.display = "none";
+
+        // Track the message immediately
+        seenMessageIds.add(data.message._id);
+
+        // Show in chat
+        const content = data.message.text || `<audio controls src="${data.message.audio}"></audio>`;
+        
+        // Send to other user
+        socket.emit("newMessage", data.message);
+      }
+    })
+    .catch(err => console.error("Failed to send message", err));
+}
+
+
+// ✅ Load previous messages from MongoDB - HOPE
+function loadMessages() {
+  fetch(`${API}/api/messages/${currentUser.username}/${username}`)
+    .then(res => res.json())
+    .then(messages => {
+      console.log("Loaded messages from backend:", messages);
+
+      messages.forEach(msg => {
+        if (!seenMessageIds.has(msg._id)) {
+          seenMessageIds.add(msg._id);
+
+          let content = "";
+
+          // 📝 Text
+          if (msg.text) {
+            content = msg.text;
+
+          // 🎙️ Audio
+          } else if (msg.audio && msg.audio.trim() !== "") {
+            content = `<audio controls src="${msg.audio}"></audio>`;
+
+          // 🖼️📹📎 Media
+          } else if (msg.media && msg.media.length > 0) {
+  content = buildMediaContent(msg.media);
+}
+          if (content) {
+          addMessage(
+  content,
+  msg.sender,
+  msg.sender === currentUser.username,
+  msg.timestamp,
+  msg._id,
+  msg.reply || "",           
+  msg.replyFrom || "",       
+  msg.replyToId || ""        );}
+        }
+      });
+    })
+    .catch(err => console.error("Failed to load messages", err));
+}
+
+localStorage.setItem("unreadCount", "0");
+
+
+// FILE CARD NEWMEK
+document.getElementById("mediaInput").addEventListener("change", function () {
+  const files = Array.from(this.files);
+  if (!files.length) return;
+
+  const formData = new FormData();
+  formData.append("sender", currentUser.username);
+  formData.append("recipient", username);
+  formData.append("text", ""); // No text
+  formData.append("audio", ""); // No audio
+
+  files.forEach(file => {
+    formData.append("media", file); // ✅ This must match multer field name
+  });
+
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", `${API}/api/messages`);
+
+  // Show progress overlay
+  document.getElementById("progressOverlay").style.display = "flex";
+
+  // Track progress
+  xhr.upload.onprogress = function (event) {
+    if (event.lengthComputable) {
+      const percent = Math.round((event.loaded / event.total) * 100);
+      updateProgress(percent);
+    }
+  };
+
+  xhr.onload = function () {
+    document.getElementById("progressOverlay").style.display = "none";
+    if (xhr.status === 200) {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (data.success) {
+          const msg = data.message;
+          const isMine = msg.sender === currentUser.username;
+
+          // Build media HTML content
+          let content = "";
+          content = buildMediaContent(msg.media);
+
+          // Emit to socket
+          socket.emit("newMessage", msg);
+        }
+      } catch (err) {
+        console.error("❌ Failed to parse upload response", err);
+      }
+    } else {
+      alert("❌ Upload failed");
+    }
+  };
+
+  xhr.onerror = function () {
+    document.getElementById("progressOverlay").style.display = "none";
+    alert("❌ Upload error");
+  };
+
+  // Save xhr globally so Cancel button can abort
+  window.currentTransfer = xhr;
+  xhr.send(formData);
+});
+
+
+//BEFORE MESSAGE IS ADDED NEWMEK
+const API_BASE = "https://connecther.network";
+const FALLBACK_AVATAR = "fa-pa.png"; // must be in same folder as conversation.html
+
+function normalizeUrl(url) {
+  if (!url) return "";
+  if (url.startsWith("data:")) return url;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/")) return API_BASE + url;
+  return API_BASE + "/" + url;
+}
+
+function setAvatarSafely(el, actualUrl) {
+  const fallback = el.dataset.fallback || FALLBACK_AVATAR;
+  if (el.src !== fallback) el.src = fallback;
+
+  if (!actualUrl || actualUrl === "null" || actualUrl === "undefined") return;
+
+  const probe = new Image();
+  probe.onload = () => { el.src = actualUrl; };
+  probe.onerror = () => { el.src = fallback; };
+  probe.src = actualUrl;
+}
+
+
+
+// ADD MESSAGE
+function addMessage(content, sender, isSent, timestamp = new Date(), msgId = "", reply = "", replyFrom = "", replyToId = "") {
+  const msgDiv = document.createElement("div");
+  msgDiv.className = `message ${isSent ? "sent" : ""}`;
+  msgDiv.dataset.id = msgId;
+
+  const dateObj = new Date(timestamp);
+  const options = { hour: 'numeric', minute: '2-digit', hour12: true };
+  const time = dateObj.toLocaleTimeString([], options);
+
+  const tempDiv = document.createElement("div");
+  tempDiv.innerHTML = content;
+
+  const mediaElements = tempDiv.querySelectorAll("img.media-image, video.media-video");
+
+  if (mediaElements.length > 1) {
+    const wrapped = document.createElement("div");
+    wrapped.className = "media-grid";
+
+    mediaElements.forEach(el => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "media-item";
+      el.style.cursor = "pointer";
+
+      el.onclick = () => openMediaPreview(el.src || el.querySelector("source")?.src);
+
+      const downloadLink = document.createElement("a");
+      downloadLink.href = el.src || el.querySelector("source")?.src;
+      downloadLink.download = true;
+      downloadLink.innerHTML = '<i class="fa fa-download" style="color:#fff;"></i>';
+      downloadLink.style.display = "block";
+      downloadLink.style.textAlign = "center";
+      downloadLink.style.marginTop = "5px";
+
+      wrapper.appendChild(el.cloneNode(true));
+      wrapper.appendChild(downloadLink);
+      wrapped.appendChild(wrapper);
+    });
+
+    content = wrapped.outerHTML;
+  }
+
+  // 🆕 Add reply preview block if present
+let replyHtml = "";
+if (reply && replyFrom && replyToId) {
+  replyHtml = `
+    <div 
+      class="reply-preview" 
+      style="padding: 6px 8px; margin-bottom: 6px; border-left: 3px solid #00bfff; background: rgba(0,0,0,0.1); font-size: 0.9em; cursor: pointer;" 
+      data-target-id="${replyToId}"
+      onclick="scrollToMessage('${replyToId}')"
+    >
+      <strong style="color: #00bfff;">${replyFrom}:</strong> ${reply}
+    </div>
+  `;
+}
+
+// avatar
+const avatarEl = document.createElement("img");
+avatarEl.className = "avatar";
+avatarEl.setAttribute("data-fallback", "fa-pa.png");
+
+// decide whose avatar to show
+const avatarUrl = sender === currentUser.username ? currentUser.avatar : user.avatar;
+setAvatarSafely(avatarEl, normalizeUrl(avatarUrl));
+
+// bubble
+const bubbleEl = document.createElement("div");
+bubbleEl.className = "bubble";
+bubbleEl.innerHTML = `
+  ${replyHtml}
+  ${content}
+  <span class="meta">
+    <span class="options"><i class="fa fa-ellipsis-v"></i></span>
+    <span class="timestamp">${time}</span>
+    <span class="status read"><i class="fa fa-check-double"></i></span>
+  </span>
+`;
+
+// build message
+msgDiv.appendChild(avatarEl);
+msgDiv.appendChild(bubbleEl);
+
+
+  messageContainer.appendChild(msgDiv);
+  const bubble = msgDiv.querySelector(".bubble");
+  truncateText(bubble);
+  attachOptions(msgDiv);
+  messageContainer.scrollTop = messageContainer.scrollHeight;
+}
+
+// SOCKET FILECARD HOPE
+socket.on("newMessage", msg => { 
+  if (seenMessageIds.has(msg._id)) return; 
+  seenMessageIds.add(msg._id);
+
+  const isMine = msg.sender === currentUser.username;
+  let content = "";
+
+    // 🌐 Unread message badge logic
+  const currentPage = localStorage.getItem("activePage");
+  if (!isMine && !currentPage.includes("conversation.html")) {
+    let unread = parseInt(localStorage.getItem("unreadCount") || "0");
+    unread += 1;
+    localStorage.setItem("unreadCount", unread);
+  }
+
+  // 📝 Text
+  if (msg.text) {
+    content = msg.text;
+
+  // 🎙️ Audio (including mic-recorded)
+  } else if (msg.audio && msg.audio.trim() !== "") {
+    content = `<audio controls src="${msg.audio}"></audio>`;
+
+  // 🖼️📹📎 Media Attachments
+  } else if (msg.media && msg.media.length > 0) {
+    content = buildMediaContent(msg.media);
+  }
+  if (content) {
+    addMessage(content, msg.sender, isMine, msg.timestamp, msg._id, msg.reply, msg.replyFrom, msg.replyToId);
+  }
+});
+
+
+// MEDIA PREVIEW
+function openMediaPreview(url) {
+  const ext = url.split('.').pop().toLowerCase();
+  const container = document.getElementById("previewContent");
+  container.innerHTML = ""; // clear previous
+
+  if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) {
+    const img = document.createElement("img");
+    img.src = url;
+    img.style.maxWidth = "100%";
+    img.style.maxHeight = "90vh";
+    container.appendChild(img);
+  } else if (["mp4", "webm"].includes(ext)) {
+    const video = document.createElement("video");
+    video.src = url;
+    video.controls = true;
+    video.style.maxWidth = "100%";
+    video.style.maxHeight = "90vh";
+    container.appendChild(video);
+  }
+  document.getElementById("mediaPreview").style.display = "flex";
+}
+function closeMediaPreview() {
+  document.getElementById("mediaPreview").style.display = "none";
+}
+
+
+// ✅ Send voice note to server and emit via socket
+function sendVoiceNote() {
+  if (!audioBlob) return;
+
+  const reader = new FileReader();
+  reader.onloadend = () => {
+    const base64Audio = reader.result;
+
+    const payload = {
+      sender: currentUser.username,
+      recipient: username,
+      audio: base64Audio,
+      text: ""
+    };
+
+    fetch(`${API}/api/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.message) {
+          // 🔊 Emit to receiver in real-time
+          socket.emit("newMessage", data.message);
+          // Clean up UI
+          audioPreview.style.display = "none";
+          audioBlob = null;
+          audioURL = null;
+          audioChunks = [];
+        }
+
+      })
+      .catch(err => console.error("❌ Failed to send voice note", err));
+  };
+
+  reader.readAsDataURL(audioBlob);
+}
+
+
+function cancelVoiceNote() {
+  // Stop previewing
+  audioPreview.style.display = "none";
+
+  // Clear audio data
+  audioBlob = null;
+  audioURL = null;
+  audioPlayer.src = "";
+
+  // Optionally reset chunks too
+  audioChunks = [];
+
+  console.log("🎤 Voice note cancelled.");
+}
+
+
+// ✅ UI tools
+function toggleEmojiPanel() {
+  emojiPanel.style.display = emojiPanel.style.display === "flex" ? "none" : "flex";
+}
+emojiPanel.addEventListener("click", e => {
+  if (e.target.tagName === "SPAN") {
+    messageInput.value += e.target.textContent;
+  }
+});
+
+function startMicRecording() {
+  ensurePermissions("audio").then(stream => {
+    if (!stream) return; // Stop if permission denied
+
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+    document.getElementById("stopBtn").style.display = "inline";
+
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+
+    mediaRecorder.onstop = () => {
+      audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+      audioURL = URL.createObjectURL(audioBlob);
+      audioPlayer.src = audioURL;
+      audioPreview.style.display = "flex";
+      stream.getTracks().forEach(t => t.stop());
+      document.getElementById("stopBtn").style.display = "none";
+    };
+
+    mediaRecorder.start();
+    countdownEl.textContent = "Recording... 🎙️";
+  });
+}
+
+function stopMicRecording() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+    countdownEl.textContent = "";
+  }
+}
+
+
+// ✅ Reuse UI options
+function attachOptions(msgDiv) {
+  const optionsIcon = msgDiv.querySelector(".options");
+  const isSent = msgDiv.classList.contains("sent"); // ✅ Only show edit/delete for sender
+
+  const menu = document.createElement("div");
+  menu.className = "options-menu";
+
+  // Always show forward and delete-for-me
+  let menuHtml = `
+    <button onclick="replyToMessage(this)">Reply</button>
+    <button onclick="forwardMessage(this)">Forward</button>
+    <button onclick="deleteForMe(this)">Delete for Me</button>
+  `;
+
+  // Only sender sees these
+  if (isSent) {
+    menuHtml += `
+      <button onclick="startEdit(this)">Edit</button>
+      <button onclick="deleteForEveryone(this)">Delete for Everyone</button>
+    `;
+  }
+
+  menu.innerHTML = menuHtml;
+
+  optionsIcon.onclick = e => {
+    e.stopPropagation();
+    document.querySelectorAll(".options-menu").forEach(m => m.style.display = "none");
+    menu.style.display = "flex";
+  };
+
+  document.addEventListener("click", () => menu.style.display = "none");
+  msgDiv.appendChild(menu);
+}
+
+
+
+// ✅ FORWARD MODEL FRIENDS
+function loadForwardFriends() {
+  const container = document.getElementById("forwardFriendList");
+  container.innerHTML = "<p style='color:#999;'>Loading friends...</p>";
+
+  fetch(`${API}/api/friends/${currentUser.username}`)
+    .then(res => res.json())
+    .then(friends => {
+      container.innerHTML = ""; // clear placeholder
+
+      if (!friends.length) {
+        container.innerHTML = "<p style='color:#999;'>No friends found.</p>";
+        return;
+      }
+
+      friends.forEach(friend => {
+        const div = document.createElement("div");
+        div.className = "friend";
+        div.textContent = friend.name;
+        div.onclick = () => completeForward(friend.username, friend.name);
+        container.appendChild(div);
+      });
+    })
+    .catch(err => {
+      console.error("Failed to load friends", err);
+      container.innerHTML = "<p style='color:red;'>Error loading friends.</p>";
+    });
+}
+
+
+// ✅ FORWARD MESSAGE
+function forwardMessage(btn) {
+  const bubble = btn.closest(".message").querySelector(".bubble");
+  forwardMessageContent = bubble.innerHTML;
+
+  forwardModal.style.display = "flex";
+  loadForwardFriends(); // 🆕 Load dynamic friends
+}
+
+// ✅ COMPLETE FORWARD MESSAGE
+function completeForward(friendUsername, friendDisplayName) {
+  const temp = document.createElement("div");
+  temp.innerHTML = forwardMessageContent;
+
+  const hasMedia = temp.querySelector("img, video, audio, .file-card");
+
+  let payload;
+  if (hasMedia) {
+    // ✅ Forward as media with same rich content (innerHTML)
+    payload = {
+      sender: currentUser.username,
+      recipient: friendUsername,
+      text: forwardMessageContent, // preserve full HTML block
+      audio: "",
+      media: [],
+      reply: "",
+      replyFrom: "",
+      replyToId: "",
+      isForwarded: true
+    };
+  } else {
+    // ✅ Fallback for pure text
+    const forwardedText = temp.textContent || temp.innerText || "Forwarded message";
+    payload = {
+      sender: currentUser.username,
+      recipient: friendUsername,
+      text: `<div style="color:#00bfff;font-size:13px;"><i class="fa fa-share"></i> Forwarded:</div>${forwardedText}`,
+      audio: "",
+      media: [],
+      reply: "",
+      replyFrom: "",
+      replyToId: "",
+      isForwarded: true
+    };
+  }
+
+  fetch(`${API}/api/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success && data.message) {
+        socket.emit("newMessage", data.message); // Notify recipient
+      }
+    })
+    .catch(err => {
+      console.error("Failed to forward message", err);
+      alert("Could not forward message.");
+    });
+
+  forwardModal.style.display = "none";
+}
+
+
+function deleteForMe(btn) {
+  const msgDiv = btn.closest(".message");
+  const messageId = msgDiv.dataset.id;
+
+  fetch(`${API}/api/messages/${messageId}/delete-for-me/${currentUser.username}`, {
+    method: "DELETE"
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) msgDiv.remove();
+    })
+    .catch(err => console.error("Delete-for-me failed", err));
+}
+
+function deleteForEveryone(btn) {
+  const msgDiv = btn.closest(".message");
+  const messageId = msgDiv.dataset.id;
+
+  fetch(`${API}/api/messages/${messageId}/delete-for-everyone`, {
+    method: "DELETE"
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        // Replace message content with placeholder
+        markMessageAsDeleted(messageId);
+        socket.emit("messageDeleted", { _id: messageId });
+      }
+    })
+    .catch(err => console.error("Delete-for-everyone failed", err));
+}
+
+function markMessageAsDeleted(messageId) {
+  const msgDiv = document.querySelector(`.message[data-id="${messageId}"]`);
+  if (!msgDiv) return;
+
+  const bubble = msgDiv.querySelector(".bubble");
+  bubble.innerHTML = `
+    <i style="color:#999;">🚫 This message was deleted.</i>
+    <span class="meta">
+      <span class="timestamp">${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+      <span class="status"><i class="fa fa-ban"></i></span>
+    </span>
+  `;
+
+  // Optional: remove menu actions
+  const menu = msgDiv.querySelector(".options-menu");
+  if (menu) menu.remove();
+}
+
+
+function startEdit(btn) {
+  const msgDiv = btn.closest(".message");
+  const bubble = msgDiv.querySelector(".bubble");
+  const meta = bubble.querySelector(".meta");
+  const originalText = bubble.childNodes[0].textContent.trim();
+  const messageId = msgDiv.dataset.id;
+
+  const input = document.createElement("input");
+  input.value = originalText;
+  input.style.width = "80%";
+  input.style.background = "#222";
+  input.style.border = "1px solid #444";
+  input.style.color = "white";
+  input.style.borderRadius = "5px";
+  input.style.padding = "4px 6px";
+  input.style.marginBottom = "4px";
+
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "Save";
+  saveBtn.style.marginLeft = "5px";
+  saveBtn.style.color = "#00bfff";
+  saveBtn.style.background = "transparent";
+  saveBtn.style.border = "none";
+  saveBtn.style.cursor = "pointer";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.style.marginLeft = "5px";
+  cancelBtn.style.color = "#ccc";
+  cancelBtn.style.background = "transparent";
+  cancelBtn.style.border = "none";
+  cancelBtn.style.cursor = "pointer";
+
+  const controls = document.createElement("div");
+  controls.appendChild(saveBtn);
+  controls.appendChild(cancelBtn);
+
+  bubble.innerHTML = "";
+  bubble.appendChild(input);
+  bubble.appendChild(controls);
+  bubble.appendChild(meta);
+
+  saveBtn.onclick = () => {
+  const newText = input.value.trim();
+  if (!newText) return;
+
+  fetch(`${API}/api/messages/${messageId}/edit`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: newText })
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        // Update sender's own UI
+        bubble.innerHTML = `
+          ${newText}
+          <span class="meta">
+            <span class="options"><i class="fa fa-ellipsis-v"></i></span>
+            <span class="timestamp">${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+            <span class="status read"><i class="fa fa-check-double"></i></span>
+          </span>
+        `;
+
+        // Emit to recipient via Socket.IO
+        socket.emit("editMessage", {
+          _id: messageId,
+          sender: currentUser.username,
+          recipient: username,
+          newText
+        });
+
+        truncateText(bubble);
+        attachOptions(msgDiv);
+      }
+    });
+};
+  cancelBtn.onclick = () => {
+    bubble.innerHTML = `
+      ${originalText}
+      <span class="meta">
+        <span class="timestamp">${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+        <span class="status read"><i class="fa fa-check-double"></i></span>
+      </span>
+    `;
+  };
+}
+function truncateText(bubble) {
+  const maxLength = 300;
+
+  // Find the first plain text element inside bubble
+  const textNodes = Array.from(bubble.childNodes).filter(node =>
+    node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== ""
+  );
+
+  if (textNodes.length === 0) return;
+
+  const textNode = textNodes[0];
+  const fullText = textNode.textContent.trim();
+
+  if (fullText.length > maxLength) {
+    const shortText = fullText.slice(0, maxLength) + "...";
+    let expanded = false;
+
+    const shortSpan = document.createElement("span");
+    shortSpan.textContent = shortText;
+
+    const toggle = document.createElement("span");
+    toggle.textContent = " Read more";
+    toggle.style.color = "#00bfff";
+    toggle.style.cursor = "pointer";
+    toggle.style.marginLeft = "5px";
+
+    toggle.onclick = () => {
+      expanded = !expanded;
+      shortSpan.textContent = expanded ? fullText : shortText;
+      toggle.textContent = expanded ? " Show less" : " Read more";
+    };
+
+    const container = document.createElement("div");
+    container.appendChild(shortSpan);
+    container.appendChild(toggle);
+
+    bubble.insertBefore(container, bubble.querySelector(".meta"));
+    bubble.removeChild(textNode);
+  }
+}
+
+// 🆕 Keep track of last message count
+const seenMessageIds = new Set();
+socket.on("messageEdited", ({ _id, newText }) => {
+  const msgDiv = document.querySelector(`.message[data-id="${_id}"]`);
+  if (msgDiv) {
+    const bubble = msgDiv.querySelector(".bubble");
+
+    bubble.innerHTML = `
+      ${newText}
+      <span class="meta">
+        <span class="options"><i class="fa fa-ellipsis-v"></i></span>
+        <span class="timestamp">${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+        <span class="status read"><i class="fa fa-check-double"></i></span>
+      </span>
+    `;
+
+    truncateText(bubble);
+    attachOptions(msgDiv);
+  }
+});
+
+socket.on("messageDeleted", ({ _id }) => {
+  markMessageAsDeleted(_id);
+});
+
+
+
+
+function toggleGlobalMenu() {
+  const menu = document.getElementById("globalOptionsMenu");
+  const visible = menu.style.display === "flex";
+  document.querySelectorAll(".options-menu").forEach(m => m.style.display = "none");
+  menu.style.display = visible ? "none" : "flex";
+}
+
+document.addEventListener("click", (e) => {
+  const globalOptions = document.querySelector(".global-options");
+  if (!globalOptions.contains(e.target)) {
+    const menu = document.getElementById("globalOptionsMenu");
+    if (menu) menu.style.display = "none";
+  }
+});
+
+// CLEAR CHAT
+async function clearChat() {
+  const confirmed = confirm("Are you sure you want to clear this chat for you?");
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`${API}/api/messages/clear`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user1: currentUser.username,
+        user2: username
+      })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById("messageContainer").innerHTML = "";
+    } else {
+      alert("Failed to clear chat");
+    }
+  } catch (err) {
+    console.error("Error clearing chat:", err);
+    alert("An error occurred");
+  }
+}
+
+let typingTimeout;
+
+messageInput.addEventListener("input", () => {
+  // Notify backend that user is typing
+  socket.emit("typing", {
+    from: currentUser.username,
+    to: username
+  });
+
+  // Reset timeout to emit stopTyping after inactivity
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    socket.emit("stopTyping", {
+      from: currentUser.username,
+      to: username
+    });
+  }, 1000);
+});
+
+
+
+
+// startCall Audio+Video NEWMEK
+const servers = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },  // Primary Google STUN
+    { urls: "stun:stun1.l.google.com:19302" }, // Backup STUN
+    {
+      urls: "turn:relay1.expressturn.com:3478",  // Public TURN (testing)
+      username: "ef1e29e9b5e2b6",
+      credential: "c6e02ad0a1b8b8"
+    }
+  ]
+};
+
+async function startCall(type = "audio") {
+  try {
+    callType = type; // Global flag: "audio" or "video"
+
+    // ✅ Request camera/mic permission safely
+    localStream = await ensurePermissions(type);
+    if (!localStream) return; // Stop if permission denied
+
+    // Attach local video (only for video calls)
+    if (type === "video") {
+      const localVideo = document.getElementById("localVideo");
+      if (localVideo) {
+        localVideo.srcObject = localStream;
+        localVideo.style.display = "block";
+      }
+      const remoteVideo = document.getElementById("remoteVideo");
+      if (remoteVideo) remoteVideo.style.display = "block";
+    }
+
+    // ✅ Create peer connection with TURN/STUN support
+    peerConnection = new RTCPeerConnection(servers);
+
+    // Add local tracks
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    // Handle remote stream
+    peerConnection.ontrack = event => {
+      if (type === "video") {
+        document.getElementById("remoteVideo").srcObject = event.streams[0];
+      } else {
+        document.getElementById("remoteAudio").srcObject = event.streams[0];
+      }
+    };
+
+    // Monitor ICE state for reconnection
+    setupConnectionMonitoring();
+
+    // Send ICE candidates to peer
+    peerConnection.onicecandidate = e => {
+      if (e.candidate) {
+        socket.emit("private-ice-candidate", { 
+          from: currentUser.username,
+          to: username,
+          candidate: e.candidate 
+        });
+      }
+    };
+
+    // Step 1: Notify receiver about incoming call (wait for accept)
+    socket.emit("start-call", {
+      from: currentUser.username,
+      to: username,
+      name: currentUser.name || currentUser.username,
+      avatar: currentUser.avatar || "fa-pa.png",
+      type
+    });
+
+    // Show the call modal (waiting state)
+    showCallModal("Calling...");
+
+    // Step 2: Wait for the receiver to accept
+    socket.once("call-accepted", async ({ from }) => {
+      console.log(`✅ ${from} accepted the call. Creating offer...`);
+
+      try {
+        const offer = await peerConnection.createOffer({ iceRestart: false });
+        await peerConnection.setLocalDescription(offer);
+
+        socket.emit("private-offer", {
+          from: currentUser.username,
+          to: username,
+          offer,
+          type
+        });
+
+        showCallModal("Connecting...");
+      } catch (offerErr) {
+        console.error("❌ Failed to create/send offer:", offerErr);
+        alert("Failed to initiate call. Please try again.");
+        endCall("offer_failed");
+      }
+    });
+
+  } catch (err) {
+    console.error("❌ Could not start call:", err);
+    alert(type === "video" ? 
+      "Camera/Microphone access denied or unavailable." : 
+      "Microphone access denied or unavailable."
+    );
+  }
+}
+
+
+// Backwards compatibility wrappers
+function startVoiceCall() {
+  startCall("audio");
+}
+
+function startVideoCall() {
+  startCall("video");
+}
+
+// END CALL NEWMEK
+function endCall(reason = "ended") {
+  try {
+    console.log(`🔴 Ending call. Reason: ${reason}`);
+
+    // --- 1. Close Peer Connection ---
+    if (peerConnection) {
+      try {
+        peerConnection.ontrack = null;
+        peerConnection.onicecandidate = null;
+        peerConnection.close();
+      } catch (e) {
+        console.warn("⚠️ Error closing peerConnection:", e);
+      }
+      peerConnection = null;
+    }
+
+    // --- 2. Stop Local Media Streams ---
+    if (localStream) {
+      try {
+        localStream.getTracks().forEach(track => track.stop());
+      } catch (e) {
+        console.warn("⚠️ Error stopping localStream tracks:", e);
+      }
+      localStream = null;
+    }
+
+    // --- 3. Stop Timer & Log the Call ---
+    stopCallTimer({
+      caller: currentUser.username,
+      receiver: username,
+      status: reason,
+      type: window.currentCallType || "audio"
+    });
+
+    // --- 4. Hide Modals ---
+    const callModal = document.getElementById("callModal");
+    const incomingModal = document.getElementById("incomingCallModal");
+    if (callModal) callModal.style.display = "none";
+    if (incomingModal) incomingModal.style.display = "none";
+
+    // --- 5. Clear Video & Audio Elements ---
+    const localVideo = document.getElementById("localVideo");
+    const remoteVideo = document.getElementById("remoteVideo");
+    const remoteAudio = document.getElementById("remoteAudio");
+    if (localVideo) {
+      localVideo.srcObject = null;
+      localVideo.style.display = "none";
+    }
+    if (remoteVideo) {
+      remoteVideo.srcObject = null;
+      remoteVideo.style.display = "none";
+    }
+    if (remoteAudio) {
+      remoteAudio.srcObject = null;
+    }
+
+    // --- 6. Stop Ringtone (if still playing) ---
+    if (window.ringtone) {
+      window.ringtone.pause();
+      window.ringtone.currentTime = 0;
+    }
+
+    // --- 7. Notify Remote Peer via PRIVATE CALL BLOCK ---
+    if (username) {
+      socket.emit("private-end-call", {
+        from: currentUser.username,
+        to: username,
+        reason
+      });
+    }
+
+    // --- 8. Reset Global State ---
+    window.pendingOffer = null;
+    window.currentCaller = null;
+    window.currentCallType = null;
+
+    console.log(`✅ Call ended locally (${reason}).`);
+  } catch (err) {
+    console.error("❌ Error ending call:", err);
+  }
+}
+
+// ===========================================
+// 📡 Handle Private Answer (Receiver → Caller) NEWMEK
+// ===========================================
+socket.on("private-answer", async ({ from, answer }) => {
+  try {
+    console.log(`📡 Received private-answer from ${from}`);
+
+    // Safety check: Ensure peerConnection exists
+    if (!peerConnection) {
+      console.warn("⚠️ No peerConnection found to handle private-answer.");
+      return;
+    }
+
+    // Apply the answer as the remote description
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+
+    // Show the call modal and start the call timer
+    showCallModal("Connected...");
+    startCallTimer();
+
+  } catch (err) {
+    console.error("❌ Error handling private-answer:", err);
+    alert("Call setup failed due to an error with the answer.");
+  }
+});
+
+// 👇 Handle when the other user ends or declines the call NEWMEK
+socket.on("private-end-call", ({ from, reason = "ended" }) => {
+  try {
+    console.log(`📞 Call ended by ${from}, reason: ${reason}`);
+
+    // --- 1. Close Peer Connection ---
+    if (peerConnection) {
+      try {
+        peerConnection.ontrack = null;
+        peerConnection.onicecandidate = null;
+        peerConnection.close();
+      } catch (e) {
+        console.warn("⚠️ Error closing peerConnection:", e);
+      }
+      peerConnection = null;
+    }
+
+    // --- 2. Stop Local Media ---
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      localStream = null;
+    }
+
+    // --- 3. Stop Timer & Log Call ---
+    stopCallTimer({
+      caller: from,
+      receiver: currentUser.username,
+      status: reason,
+      type: window.currentCallType || "audio"
+    });
+
+    // --- 4. Hide Call Modals ---
+    const callModal = document.getElementById("callModal");
+    const incomingModal = document.getElementById("incomingCallModal");
+    if (callModal) callModal.style.display = "none";
+    if (incomingModal) incomingModal.style.display = "none";
+
+    // --- 5. Clear Video/Audio Elements ---
+    const localVideo = document.getElementById("localVideo");
+    const remoteVideo = document.getElementById("remoteVideo");
+    const remoteAudio = document.getElementById("remoteAudio");
+    if (localVideo) {
+      localVideo.srcObject = null;
+      localVideo.style.display = "none";
+    }
+    if (remoteVideo) {
+      remoteVideo.srcObject = null;
+      remoteVideo.style.display = "none";
+    }
+    if (remoteAudio) remoteAudio.srcObject = null;
+
+    // --- 6. Stop Ringtone ---
+    if (window.ringtone) {
+      window.ringtone.pause();
+      window.ringtone.currentTime = 0;
+    }
+
+    // --- 7. Reset Global State ---
+    window.pendingOffer = null;
+    window.currentCaller = null;
+    window.currentCallType = null;
+
+    console.log("✅ Remote call ended, resources cleaned up.");
+  } catch (err) {
+    console.error("❌ Error cleaning up after call end:", err);
+  }
+});
+
+// Toggle Mute Audio  NEWMEK
+let isMuted = false;
+
+function toggleMute() {
+  try {
+    if (!localStream) return;
+
+    const audioTracks = localStream.getAudioTracks();
+    if (!audioTracks || audioTracks.length === 0) {
+      console.warn("No audio track found to mute/unmute.");
+      return;
+    }
+
+    // Toggle mute state
+    isMuted = !isMuted;
+    audioTracks.forEach(track => (track.enabled = !isMuted));
+
+    // Update button UI
+    const muteBtn = document.getElementById("muteButton");
+    if (muteBtn) {
+      muteBtn.textContent = isMuted ? "🔈 Unmute" : "🔇 Mute";
+      muteBtn.style.backgroundColor = isMuted ? "#555" : "#ff4081";
+      muteBtn.style.color = isMuted ? "#ddd" : "#fff";
+    }
+
+    console.log(isMuted ? "Microphone muted." : "Microphone unmuted.");
+  } catch (err) {
+    console.error("Error toggling mute:", err);
+  }
+}
+
+
+// Toggle Mute Video  NEWMEK
+let isVideoOff = false;
+
+function toggleVideo() {
+  try {
+    if (!localStream) {
+      console.warn("No local stream available to toggle video.");
+      return;
+    }
+
+    const videoTracks = localStream.getVideoTracks();
+    if (!videoTracks || videoTracks.length === 0) {
+      alert("No video track found. Your camera may be off or not accessible.");
+      return;
+    }
+
+    // Toggle video track
+    isVideoOff = !isVideoOff;
+    videoTracks.forEach(track => (track.enabled = !isVideoOff));
+
+    // Update button UI
+    const videoBtn = document.getElementById("videoToggleButton");
+    if (videoBtn) {
+      videoBtn.textContent = isVideoOff ? "📷 Start Video" : "📷 Stop Video";
+      videoBtn.style.backgroundColor = isVideoOff ? "#555" : "#ff4081";
+      videoBtn.style.color = isVideoOff ? "#ddd" : "#fff";
+    }
+
+    console.log(isVideoOff ? "Video turned OFF." : "Video turned ON.");
+  } catch (err) {
+    console.error("Error toggling video:", err);
+  }
+}
+
+// Show modal
+function showCallModal(status) {
+  document.getElementById("callStatus").textContent = status;
+  document.getElementById("callModal").style.display = "flex";
+}
+
+// Offer received (works for both audio & video) NEWMEK
+socket.on("private-offer", async ({ from, offer, type = "audio" }) => {
+  try {
+    console.log(`📡 Received private-offer from ${from} [${type}]`);
+
+    // --- 1. Store global context ---
+    window.pendingOffer = { from, offer, type };
+    window.currentCaller = from;
+    window.currentCallType = type;
+
+    // --- 2. Create peer connection with TURN/STUN ---
+    peerConnection = new RTCPeerConnection(servers);
+
+    // --- 3. Handle remote stream ---
+    peerConnection.ontrack = (e) => {
+      if (type === "video") {
+        const remoteVideo = document.getElementById("remoteVideo");
+        if (remoteVideo) {
+          remoteVideo.srcObject = e.streams[0];
+          remoteVideo.style.display = "block";
+        }
+      } else {
+        const remoteAudio = document.getElementById("remoteAudio");
+        if (remoteAudio) remoteAudio.srcObject = e.streams[0];
+      }
+    };
+
+    // --- 4. Setup connection monitoring for stability ---
+    setupConnectionMonitoring();
+
+    // --- 5. ICE candidate handling ---
+    peerConnection.onicecandidate = (e) => {
+      if (e.candidate) {
+        socket.emit("private-ice-candidate", { 
+          from: currentUser.username, 
+          to: from, 
+          candidate: e.candidate 
+        });
+      }
+    };
+
+    // --- 6. Get local media ---
+    localStream = await ensurePermissions(type);
+if (!localStream) return; // Stop if permission denied
+
+    if (type === "video") {
+      const localVideo = document.getElementById("localVideo");
+      if (localVideo) {
+        localVideo.srcObject = localStream;
+        localVideo.style.display = "block";
+      }
+    }
+
+    // --- 7. Add local tracks ---
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    // --- 8. Apply remote description ---
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+
+    // --- 9. Create and send answer ---
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit("private-answer", { from: currentUser.username, to: from, answer });
+
+    // --- 10. Show UI ---
+    showCallModal("Connecting...");
+    startCallTimer();
+
+  } catch (err) {
+    console.error("❌ Error handling private-offer:", err);
+    alert("Unable to start call. Check your camera/microphone permissions.");
+    endCall("offer_error");
+  }
+});
+// ===========================================
+// ❄️ Handle Incoming ICE Candidates
+// ===========================================
+socket.on("private-ice-candidate", ({ candidate }) => {
+  if (peerConnection && candidate) {
+    peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+      .then(() => console.log("✅ ICE candidate added successfully"))
+      .catch(err => console.error("❌ Error adding ICE candidate:", err));
+  }
+});
+
+// 🔔 Handle Incoming Call (Voice or Video) with Avatar + Name NEWMEK
+socket.on("incomingCall", async ({ from, name, avatar, type = "audio" }) => {
+  try {
+    // 🔒 Store call info globally
+    window.currentCaller = from;
+    window.currentCallType = type;
+
+    // Use caller info from event or fallback to API
+    let caller = { name: name || from, avatar: avatar || "fa-pa.png" };
+    if (!name || !avatar) {
+      try {
+        const res = await fetch(`${API}/api/users/user/${from}`);
+        if (res.ok) caller = await res.json();
+      } catch (err) {
+        console.warn("⚠️ Could not fetch caller info, using fallback.", err);
+      }
+    }
+
+    // Update incoming call modal UI
+    const avatarEl = document.getElementById("callerAvatar");
+    const nameEl = document.getElementById("callerName");
+    if (avatarEl) avatarEl.src = caller.avatar || "fa-pa.png";
+    if (nameEl) nameEl.textContent = `${caller.name || from} is calling...`;
+
+    const incomingModal = document.getElementById("incomingCallModal");
+    if (incomingModal) incomingModal.style.display = "flex";
+
+    // 🔊 Play ringtone
+    window.ringtone = document.getElementById("ringtone");
+    if (window.ringtone) {
+      try {
+        window.ringtone.pause();
+        window.ringtone.currentTime = 0;
+        await window.ringtone.play();
+      } catch (err) {
+        console.error("🔇 Ringtone play failed:", err);
+      }
+    }
+
+    // ⏳ Auto-decline after 30s if no response
+    if (window.callTimeout) clearTimeout(window.callTimeout);
+    window.callTimeout = setTimeout(() => {
+      console.warn("📞 Incoming call timed out.");
+      if (incomingModal) incomingModal.style.display = "none";
+      if (window.ringtone) {
+        window.ringtone.pause();
+        window.ringtone.currentTime = 0;
+      }
+
+      // Inform caller that the call was missed
+      socket.emit("private-end-call", {
+        from,
+        to: currentUser.username,
+        reason: "missed"
+      });
+
+      stopCallTimer({
+        caller: from,
+        receiver: currentUser.username,
+        status: "missed",
+        type
+      });
+
+      // Reset globals
+      window.currentCaller = null;
+      window.currentCallType = null;
+    }, 30000);
+
+  } catch (err) {
+    console.error("❌ Error showing incoming call:", err);
+  }
+});
+
+// ✅ Accept Call (Unified for audio & video) NEWMEK
+async function acceptCall() {
+  try {
+    console.log("📞 Accepting call...");
+
+    // --- 1. Clear timeout & hide incoming call modal ---
+    if (window.callTimeout) clearTimeout(window.callTimeout);
+    const incomingModal = document.getElementById("incomingCallModal");
+    if (incomingModal) incomingModal.style.display = "none";
+    showCallModal("Connecting...");
+
+    // --- 2. Stop ringtone ---
+    if (window.ringtone) {
+      window.ringtone.pause();
+      window.ringtone.currentTime = 0;
+    }
+
+    // --- 3. Extract call context ---
+    const { from, offer, type } = window.pendingOffer || {
+      from: window.currentCaller,
+      type: window.currentCallType || "audio"
+    };
+
+    const mediaOptions = type === "video" ? { video: true, audio: true } : { audio: true };
+
+    // --- 4. Get local media stream ---
+    localStream = await ensurePermissions(type);
+if (!localStream) return; // Stop if permission denied
+
+    // Show local video if it's a video call
+    if (type === "video") {
+      const localVideo = document.getElementById("localVideo");
+      if (localVideo) {
+        localVideo.srcObject = localStream;
+        localVideo.style.display = "block";
+      }
+      const remoteVideo = document.getElementById("remoteVideo");
+      if (remoteVideo) remoteVideo.style.display = "block";
+    }
+
+    // --- 5. Create peer connection with TURN/STUN ---
+    peerConnection = new RTCPeerConnection(servers);
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    // --- 6. Handle remote stream ---
+    peerConnection.ontrack = (e) => {
+      if (type === "video") {
+        document.getElementById("remoteVideo").srcObject = e.streams[0];
+      } else {
+        document.getElementById("remoteAudio").srcObject = e.streams[0];
+      }
+    };
+
+    // --- 7. Monitor ICE connection state ---
+    setupConnectionMonitoring();
+
+    // --- 8. Send ICE candidates ---
+    peerConnection.onicecandidate = (e) => {
+      if (e.candidate) {
+        socket.emit("private-ice-candidate", { 
+          from: currentUser.username,
+          to: from,
+          candidate: e.candidate 
+        });
+      }
+    };
+
+    // --- 9. Notify caller that call is accepted ---
+    socket.emit("accept-call", { from: currentUser.username, to: from });
+
+    // --- 10. Handle offer and create answer ---
+    const handleOffer = async (offerData) => {
+      const incomingOffer = offerData?.offer || offer;
+      if (incomingOffer) {
+        try {
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(incomingOffer));
+          const answer = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(answer);
+          socket.emit("private-answer", { from: currentUser.username, to: from, answer });
+
+          console.log("✅ Answer created and sent.");
+          showCallModal("Connected...");
+          startCallTimer();
+        } catch (err) {
+          console.error("❌ Failed to handle offer:", err);
+          alert("Could not accept the call due to an error.");
+          endCall("offer_error");
+        }
+      }
+    };
+
+    if (offer) {
+      await handleOffer({ offer });
+    } else {
+      socket.once("private-offer", handleOffer);
+    }
+
+    window.pendingOffer = null;
+
+  } catch (err) {
+    console.error("❌ Error in acceptCall:", err);
+    alert("Camera or microphone access denied.");
+    endCall("media_error");
+  }
+}
+
+// ✅ Monitor RECONNECT NEWMEK
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_INTERVAL = 3000; // 3 seconds between retries
+
+// ✅ Display reconnect status in UI (optional helper)
+function showReconnectStatus(message) {
+  const callStatusEl = document.getElementById("callStatus");
+  if (callStatusEl) callStatusEl.textContent = message || "Connected";
+}
+
+// ✅ Attempt ICE restart with exponential backoff
+function attemptReconnect() {
+  if (!peerConnection) return;
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.error("❌ Max reconnection attempts reached. Ending call.");
+    endCall("connection_failed");
+    return;
+  }
+
+  reconnectAttempts++;
+  console.log(`🔄 Attempting ICE restart (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+
+  try {
+    // Restart ICE on the existing connection
+    peerConnection.restartIce();
+
+    // Optionally create a new offer (for the caller side)
+    peerConnection.createOffer({ iceRestart: true })
+      .then(offer => {
+        return peerConnection.setLocalDescription(offer).then(() => {
+          socket.emit("private-offer", {
+            from: currentUser.username,
+            to: username,
+            offer,
+            type: window.currentCallType || "audio"
+          });
+        });
+      })
+      .catch(err => console.error("❌ ICE restart offer error:", err));
+
+    // Retry after RECONNECT_INTERVAL if needed
+    setTimeout(() => {
+      if (peerConnection.iceConnectionState !== "connected" && 
+          peerConnection.iceConnectionState !== "completed") {
+        attemptReconnect();
+      }
+    }, RECONNECT_INTERVAL);
+
+  } catch (e) {
+    console.error("❌ ICE restart failed:", e);
+  }
+}
+
+// ✅ Monitor peer connection states
+function setupConnectionMonitoring() {
+  if (!peerConnection) return;
+
+  peerConnection.oniceconnectionstatechange = () => {
+    const state = peerConnection.iceConnectionState;
+    console.log("ICE connection state:", state);
+
+    if (state === "disconnected" || state === "failed") {
+      console.warn("⚠️ Connection lost. Attempting to reconnect...");
+      showReconnectStatus("Reconnecting...");
+      attemptReconnect();
+    } else if (state === "connected" || state === "completed") {
+      console.log("✅ Connection stable.");
+      reconnectAttempts = 0; // Reset attempts
+      showReconnectStatus(""); // Clear any reconnect message
+    }
+  };
+
+  peerConnection.onconnectionstatechange = () => {
+    const state = peerConnection.connectionState;
+    console.log("Peer connection state:", state);
+    if (state === "connected") {
+      showReconnectStatus(""); // Clear reconnect message when connected
+      reconnectAttempts = 0;
+    }
+  };
+}
+
+
+// ✅ Attempt to reconnect the call
+async function attemptReconnect() {
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.error("Max reconnect attempts reached. Ending call.");
+    showReconnectStatus("Reconnection failed.");
+    endCall("network-failed");
+    return;
+  }
+
+  reconnectAttempts++;
+  console.log(`Reconnect attempt ${reconnectAttempts}...`);
+
+  try {
+    // Close the current peer connection
+    if (peerConnection) {
+      peerConnection.close();
+      peerConnection = null;
+    }
+
+    // Rebuild the call with the same type
+    const type = window.currentCallType || "audio";
+    await startCall(type);
+
+    console.log("Reconnection attempt successful (new offer sent).");
+  } catch (err) {
+    console.error("Reconnection attempt failed:", err);
+    setTimeout(attemptReconnect, RECONNECT_INTERVAL);
+  }
+}
+
+// ✅ Show reconnect status inside call modal
+function showReconnectStatus(message) {
+  const callStatus = document.getElementById("callStatus");
+  if (callStatus) {
+    callStatus.textContent = message || "Connected...";
+  }
+}
+
+// ❌ Decline Call NEWMEK
+function declineCall() {
+  try {
+    console.log("🔴 Declining incoming call...");
+
+    // --- 1. Clear any pending timeout ---
+    if (window.callTimeout) clearTimeout(window.callTimeout);
+
+    // --- 2. Hide incoming call modal ---
+    const incomingModal = document.getElementById("incomingCallModal");
+    if (incomingModal) incomingModal.style.display = "none";
+
+    // --- 3. Stop ringtone ---
+    if (window.ringtone) {
+      window.ringtone.pause();
+      window.ringtone.currentTime = 0;
+    }
+
+    // --- 4. Notify caller to end call ---
+    if (window.currentCaller) {
+      socket.emit("private-end-call", {
+        from: currentUser.username,
+        to: window.currentCaller,
+        reason: "declined"
+      });
+    } else {
+      console.warn("⚠️ No current caller set when declining call.");
+    }
+
+    // --- 5. Stop and log call as declined ---
+    stopCallTimer({
+      caller: window.currentCaller || "unknown",
+      receiver: currentUser.username,
+      status: "declined",
+      type: window.currentCallType || "audio"
+    });
+
+    // --- 6. Hide any active call modal ---
+    const callModal = document.getElementById("callModal");
+    if (callModal) callModal.style.display = "none";
+
+    // --- 7. Close peer connection if open ---
+    if (peerConnection) {
+      try {
+        peerConnection.ontrack = null;
+        peerConnection.onicecandidate = null;
+        peerConnection.close();
+      } catch (e) {
+        console.warn("⚠️ Error closing peerConnection:", e);
+      }
+      peerConnection = null;
+    }
+
+    // --- 8. Stop any active local media tracks ---
+    if (localStream) {
+      try {
+        localStream.getTracks().forEach(track => track.stop());
+      } catch (e) {
+        console.warn("⚠️ Error stopping localStream tracks:", e);
+      }
+      localStream = null;
+    }
+
+    // --- 9. Reset call-related globals ---
+    window.pendingOffer = null;
+    window.currentCaller = null;
+    window.currentCallType = null;
+
+    console.log("✅ Call declined and cleaned up on both parties.");
+  } catch (err) {
+    console.error("❌ Error while declining call:", err);
+  }
+}
+
+
+// CALL TIMER NEWMEK
+let callStartTime = null;
+let callTimerInterval = null;
+
+// ✅ Start Call Timer
+function startCallTimer() {
+  const timerEl = document.getElementById("callTimer");
+  if (!timerEl) {
+    console.warn("No #callTimer element found.");
+    return;
+  }
+
+  callStartTime = Date.now();
+
+  // Initialize display immediately
+  timerEl.textContent = "0:00";
+
+  // Clear any existing intervals
+  if (callTimerInterval) clearInterval(callTimerInterval);
+
+  callTimerInterval = setInterval(() => {
+    const elapsed = Date.now() - callStartTime;
+    const minutes = Math.floor(elapsed / 60000);
+    const seconds = Math.floor((elapsed % 60000) / 1000);
+    timerEl.textContent = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  }, 1000);
+}
+
+// ✅ Stop Call Timer and Log Call
+function stopCallTimer({ caller, receiver, status = "ended", type = "audio" }) {
+  // Stop interval
+  if (callTimerInterval) {
+    clearInterval(callTimerInterval);
+    callTimerInterval = null;
+  }
+
+  // Reset timer display
+  const timerEl = document.getElementById("callTimer");
+  if (timerEl) timerEl.textContent = "";
+
+  // Calculate duration safely
+  const duration = callStartTime ? Math.floor((Date.now() - callStartTime) / 1000) : 0;
+  callStartTime = null;
+
+  // Log call to backend
+  fetch("/api/calls", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      caller: caller || currentUser.username,
+      receiver: receiver || username,
+      duration,
+      status,   // "answered", "missed", "declined", etc.
+      type      // "audio" or "video"
+    }),
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        console.log("✅ Call log saved:", data.log);
+      } else {
+        console.error("❌ Failed to save call log:", data);
+      }
+    })
+    .catch(err => {
+      console.error("❌ Error saving call log:", err);
+    });
+}
+
+// ✅ Add "last seen" / online status
+const statusDiv = document.getElementById("friendStatus") || document.createElement("div");
+statusDiv.id = "friendStatus";
+statusDiv.style.fontSize = "14px";
+statusDiv.style.color = "#ccc";
+statusDiv.textContent = "Checking status...";
+document.querySelector(".conversation-header-left")?.appendChild(statusDiv);
+
+
+// ✅ Track live online status
+socket.on("update-online-users", (onlineUsers) => {
+  const statusDiv = document.getElementById("friendStatus");
+  if (!statusDiv) return;
+
+  if (onlineUsers.includes(username)) {
+    statusDiv.textContent = "Online now";
+    statusDiv.style.color = "#00ff00";
+  } else {
+    fetch(`${API}/api/users/last-seen/${username}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.lastSeen) {
+          const lastSeen = new Date(data.lastSeen);
+          const now = new Date();
+          const diff = Math.floor((now - lastSeen) / 1000);
+          let timeStr = "a while ago";
+          if (diff < 60) timeStr = `${diff}s ago`;
+          else if (diff < 3600) timeStr = `${Math.floor(diff / 60)}m ago`;
+          else if (diff < 86400) timeStr = `${Math.floor(diff / 3600)}h ago`;
+          else timeStr = `${Math.floor(diff / 86400)}d ago`;
+
+          statusDiv.textContent = `Last seen: ${timeStr}`;
+          statusDiv.style.color = "#aaa";
+        } else {
+          statusDiv.textContent = "Last seen: unknown";
+        }
+      })
+      .catch(() => {
+        statusDiv.textContent = "Last seen: unknown";
+      });
+  }
+});
+
+
+// ✅ GLOBAL SEARCH
+function openSearchModal() {
+  document.getElementById("searchModal").style.display = "flex";
+  document.getElementById("searchInput").focus();
+}
+
+function closeSearchModal() {
+  document.getElementById("searchModal").style.display = "none";
+  document.getElementById("searchResults").innerHTML = "";
+  document.getElementById("searchInput").value = "";
+}
+
+document.getElementById("searchInput").addEventListener("input", function () {
+  const query = this.value.toLowerCase().trim();
+  const resultsContainer = document.getElementById("searchResults");
+  resultsContainer.innerHTML = "";
+
+  if (!query) return;
+
+  const bubbles = document.querySelectorAll(".message .bubble");
+
+  let matches = 0;
+
+  bubbles.forEach(bubble => {
+    const text = bubble.innerText.toLowerCase();
+    if (text.includes(query)) {
+      const parent = bubble.closest(".message");
+      const msgId = parent.dataset.id;
+      const snippet = text.length > 120 ? text.slice(0, 120) + "..." : text;
+
+      const result = document.createElement("div");
+      result.innerHTML = `<i class="fa fa-search" style="color:#00bfff;"></i> ${snippet}`;
+      result.style.padding = "8px";
+      result.style.borderBottom = "1px solid #444";
+      result.style.cursor = "pointer";
+
+      result.onclick = () => {
+        closeSearchModal();
+        scrollToMessage(msgId);
+      };
+
+      resultsContainer.appendChild(result);
+      matches++;
+    }
+  });
+
+  if (matches === 0) {
+    resultsContainer.innerHTML = "<p style='color:#bbb;'>No matching messages found.</p>";
+  }
+});
+
+function autoExpand(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = (textarea.scrollHeight) + 'px';
+  }
+
+</script>
+<script src="theme.js" defer></script>
+<script src="permissions.js"></script>
+
+<!-- Upload/Download Progress Overlay -->
+<div id="progressOverlay">
+  <div class="progress-circle">
+    <svg viewBox="0 0 36 36">
+      <path class="bg" d="M18 2.0845
+        a 15.9155 15.9155 0 0 1 0 31.831
+        a 15.9155 15.9155 0 0 1 0 -31.831"/>
+      <path id="progressPath" class="progress" stroke-dasharray="0,100" d="M18 2.0845
+        a 15.9155 15.9155 0 0 1 0 31.831
+        a 15.9155 15.9155 0 0 1 0 -31.831"/>
+    </svg>
+    <div id="progressText">0%</div>
+  </div>
+  <button onclick="cancelTransfer()" class="progress-cancel">Cancel</button>
+</div>
+
+<style>
+/* Hidden by default */
+#progressOverlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 99999;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+/* Circle progress style */
+.progress-circle {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+.progress-circle svg {
+  transform: rotate(-90deg);
+  width: 100%;
+  height: 100%;
+}
+.progress-circle path.bg {
+  fill: none;
+  stroke: #444;
+  stroke-width: 3.8;
+}
+.progress-circle path.progress {
+  fill: none;
+  stroke: #ff4081;
+  stroke-width: 3.8;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.3s ease;
+}
+.progress-circle #progressText {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  font-weight: bold;
+  color: white;
+}
+
+/* Cancel button */
+.progress-cancel {
+  margin-top: 20px;
+  padding: 8px 15px;
+  border: none;
+  border-radius: 6px;
+  background: #ff4081;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+</style>
+
+
+</body>
+</html>

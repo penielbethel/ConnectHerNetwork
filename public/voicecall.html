@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Community Voice Call</title>
+  <style>
+  body {
+    margin: 0;
+    background: #1f1f1f;
+    font-family: "Segoe UI", Arial, sans-serif;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  header {
+    padding: 12px;
+    text-align: center;
+    font-size: 18px;
+    font-weight: bold;
+    border-bottom: 1px solid #333;
+    background: #2b2b2b;
+    letter-spacing: 0.5px;
+  }
+
+  #participants {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 14px;
+    padding: 15px;
+    overflow-y: auto;
+  }
+
+  .participant {
+    background: #2a2a2a;
+    border-radius: 14px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .participant:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
+  }
+
+  /* 🔊 Speaking Animation Border */
+  .participant.speaking {
+    border: 2px solid #00ff99;
+    box-shadow: 0 0 10px rgba(0, 255, 153, 0.6);
+    animation: pulse 1s infinite;
+  }
+
+  @keyframes pulse {
+    0% {
+      box-shadow: 0 0 8px rgba(0, 255, 153, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 16px rgba(0, 255, 153, 0.9);
+    }
+    100% {
+      box-shadow: 0 0 8px rgba(0, 255, 153, 0.4);
+    }
+  }
+
+  .name {
+    margin-bottom: 10px;
+    font-weight: 600;
+    font-size: 14px;
+    color: #77ff77;
+    text-align: center;
+  }
+
+  .avatar {
+    width: 65px;
+    height: 65px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: 8px;
+    border: 2px solid #444;
+    transition: transform 0.2s;
+  }
+
+  .participant.speaking .avatar {
+    transform: scale(1.05);
+    border-color: #00ff99;
+  }
+
+  .voice-wave {
+    height: 5px;
+    background: linear-gradient(90deg, #888, #555);
+    border-radius: 3px;
+    width: 80%;
+    margin-top: auto;
+    transition: background 0.3s;
+  }
+
+  .muted .voice-wave {
+    background: #333;
+  }
+
+  .muted .name::after {
+    content: " 🔇";
+    font-size: 14px;
+    color: #bbb;
+    margin-left: 4px;
+  }
+
+  footer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 18px;
+    padding: 15px;
+    border-top: 1px solid #333;
+    background: #2b2b2b;
+    position: sticky;
+    bottom: 0;
+  }
+
+  footer button {
+    background: #333;
+    border: none;
+    border-radius: 50%;
+    width: 55px;
+    height: 55px;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.2s ease;
+  }
+
+  footer button:hover {
+    background: #444;
+    transform: scale(1.05);
+  }
+
+  footer button.end {
+    background: #e53935;
+  }
+
+  footer button.end:hover {
+    background: #ff2b27;
+  }
+
+  @media (max-width: 600px) {
+    header {
+      font-size: 16px;
+      padding: 8px;
+    }
+
+    .avatar {
+      width: 50px;
+      height: 50px;
+    }
+
+    footer button {
+      width: 45px;
+      height: 45px;
+      font-size: 18px;
+    }
+  }
+</style>
+
+</head>
+<body>
+
+<header id="call-title">Connecting...</header>
+<main id="participants"></main>
+
+<footer>
+  <button title="More">⋯</button>
+  <button title="Audio Output">🎧</button>
+  <button title="Toggle Mute" onclick="toggleMute()">🎙️</button>
+  <button title="End Call" class="end" onclick="leaveCall()">🔴</button>
+</footer>
+
+
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', async () => {
+    try {
+      const { Camera, Microphone, Filesystem, Permissions } = Capacitor.Plugins;
+
+      await Permissions.requestPermissions({
+        permissions: ['camera', 'microphone', 'photos', 'mediaLibrary']
+      });
+
+      await Camera.requestPermissions();
+      await Microphone.requestPermissions();
+      await Filesystem.requestPermissions();
+
+      console.log("✅ All native permissions granted.");
+    } catch (e) {
+      console.warn("❌ Permission error:", e);
+    }
+  });
+</script>
+
+<script>
+  const socket = io("https://connecther.network");
+  const participantsContainer = document.getElementById("participants");
+  const callTitle = document.getElementById("call-title");
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const communityId = urlParams.get("communityId");
+  const communityName = urlParams.get("name") || "Group Call";
+
+  const currentUser = JSON.parse(localStorage.getItem("currentUser")) || {};
+  const currentUsername = currentUser.username;
+  const currentAvatar = currentUser.avatar || "default-avatar.png";
+  const currentName = currentUser.name || "You";
+
+  let localStream = null;
+  const peerConnections = {}; // { username: RTCPeerConnection }
+  let callStartTimestamp = null;
+  let callDurationInterval = null;
+
+  // ================================
+  // 🕒 Display global timer
+  // ================================
+  function startTimer(startTimestamp) {
+    callStartTimestamp = startTimestamp;
+
+    function updateTimer() {
+      const elapsed = Date.now() - callStartTimestamp;
+      const seconds = Math.floor((elapsed / 1000) % 60);
+      const minutes = Math.floor((elapsed / 1000 / 60) % 60);
+      const hours = Math.floor(elapsed / 1000 / 60 / 60);
+
+      const formatted = [
+        hours > 0 ? String(hours).padStart(2, '0') : null,
+        String(minutes).padStart(2, '0'),
+        String(seconds).padStart(2, '0')
+      ].filter(Boolean).join(":");
+
+      callTitle.textContent = `${communityName} — ${formatted}`;
+    }
+
+    updateTimer();
+    callDurationInterval = setInterval(updateTimer, 1000);
+  }
+
+  function stopTimer() {
+    clearInterval(callDurationInterval);
+    callDurationInterval = null;
+  }
+
+  // ================================
+  // 👤 Add user UI
+  // ================================
+  function addParticipant({ id, name, avatar, isMuted = false }) {
+    let participantEl = document.getElementById(`participant-${id}`);
+    if (!participantEl) {
+      participantEl = document.createElement("div");
+      participantEl.className = `participant ${id === currentUsername ? 'you' : ''}`;
+      participantEl.id = `participant-${id}`;
+      participantEl.innerHTML = `
+        <img class="avatar" src="${avatar}" alt="avatar">
+        <div class="name">${name}</div>
+        <div class="voice-wave"></div>
+      `;
+      participantsContainer.appendChild(participantEl);
+    }
+    participantEl.classList.toggle("muted", isMuted);
+  }
+
+  // ================================
+  // 🎙️ Toggle mute/unmute
+  // ================================
+  function toggleMute() {
+    if (!localStream) return;
+    const audioTrack = localStream.getAudioTracks()[0];
+    audioTrack.enabled = !audioTrack.enabled;
+
+    const me = document.querySelector("#participants .you");
+    if (me) me.classList.toggle("muted", !audioTrack.enabled);
+
+    socket.emit("toggle-mute-status", {
+      communityId,
+      username: currentUsername,
+      isMuted: !audioTrack.enabled
+    });
+  }
+
+  // ================================
+  // 🚪 Leave the call
+  // ================================
+  function leaveCall() {
+    socket.emit("leave-group-call", { communityId, username: currentUsername });
+    socket.emit("call-ended", { communityId });
+
+    cleanupCall();
+    localStorage.setItem("lastCall", JSON.stringify({ communityId, communityName }));
+    window.location.replace("community.html");
+  }
+
+  // ================================
+  // 🔄 Cleanup Call
+  // ================================
+  function cleanupCall() {
+    stopTimer();
+    Object.values(peerConnections).forEach(pc => pc?.close?.());
+    for (const key in peerConnections) delete peerConnections[key];
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      localStream = null;
+    }
+  }
+
+  // ================================
+  // 📞 Start microphone and connect
+  // ================================
+  async function startCall() {
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      addParticipant({
+        id: currentUsername,
+        name: currentName,
+        avatar: currentAvatar,
+        isMuted: false
+      });
+
+      // 🎙️ Monitor local speaking
+      monitorSpeaking();
+
+      socket.emit("join-group-call", {
+        communityId,
+        username: currentUsername,
+        name: currentName,
+        avatar: currentAvatar
+      });
+
+      localStorage.removeItem("lastCall");
+    } catch (err) {
+      alert("❌ Microphone access denied");
+      console.error(err);
+    }
+  }
+
+  // ================================
+  // 🌐 Monitor Local Speaking
+  // ================================
+  function monitorSpeaking() {
+    if (!localStream) return;
+
+    const audioContext = new AudioContext();
+    const analyser = audioContext.createAnalyser();
+    const source = audioContext.createMediaStreamSource(localStream);
+    source.connect(analyser);
+    analyser.fftSize = 256;
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    function checkVolume() {
+      analyser.getByteFrequencyData(dataArray);
+      const volume = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+      const me = document.querySelector("#participants .you");
+
+      if (me) {
+        if (volume > 10) {
+          me.classList.add("speaking");
+        } else {
+          me.classList.remove("speaking");
+        }
+      }
+      requestAnimationFrame(checkVolume);
+    }
+
+    checkVolume();
+  }
+
+  // ================================
+  // 🌐 Monitor Remote Speaking
+  // ================================
+  function monitorRemoteSpeaking(username, stream) {
+    try {
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      analyser.fftSize = 256;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      function checkVolume() {
+        analyser.getByteFrequencyData(dataArray);
+        const volume = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+        const participant = document.getElementById(`participant-${username}`);
+        if (participant) {
+          if (volume > 10) participant.classList.add("speaking");
+          else participant.classList.remove("speaking");
+        }
+        requestAnimationFrame(checkVolume);
+      }
+      checkVolume();
+    } catch (err) {
+      console.warn(`⚠️ Could not monitor remote audio for ${username}:`, err);
+    }
+  }
+
+  // ================================
+  // 🌐 Create WebRTC peer connection
+  // ================================
+  function createPeerConnection(remoteUser) {
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    });
+
+    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+    const remoteStream = new MediaStream();
+    const audio = new Audio();
+    audio.srcObject = remoteStream;
+    audio.autoplay = true;
+
+    pc.ontrack = (event) => {
+      event.streams[0].getTracks().forEach(t => remoteStream.addTrack(t));
+
+      // 🎙️ Monitor remote user's voice
+      monitorRemoteSpeaking(remoteUser, remoteStream);
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit("ice-candidate", {
+          to: remoteUser,
+          candidate: event.candidate,
+          from: currentUsername
+        });
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+        console.warn(`Peer ${remoteUser} disconnected`);
+        peerConnections[remoteUser]?.close?.();
+        delete peerConnections[remoteUser];
+        document.getElementById(`participant-${remoteUser}`)?.remove();
+      }
+    };
+
+    return pc;
+  }
+
+  // ================================
+  // 🔁 Socket Events
+  // ================================
+  socket.on("call-start-time", ({ timestamp }) => {
+    if (timestamp) startTimer(timestamp);
+  });
+
+  socket.on("group-call-participants", (users) => {
+    users.forEach(user => {
+      if (user.username === currentUsername) return;
+      addParticipant(user);
+
+      const pc = createPeerConnection(user.username);
+      peerConnections[user.username] = pc;
+
+      pc.createOffer().then(offer => {
+        pc.setLocalDescription(offer);
+        socket.emit("offer", {
+          to: user.username,
+          from: currentUsername,
+          sdp: offer
+        });
+      }).catch(err => console.error("Offer error:", err));
+    });
+  });
+
+  socket.on("group-call-joined", (user) => {
+    if (user.username === currentUsername) return;
+    addParticipant(user);
+
+    const pc = createPeerConnection(user.username);
+    peerConnections[user.username] = pc;
+  });
+
+  socket.on("group-call-left", ({ username }) => {
+    document.getElementById(`participant-${username}`)?.remove();
+    peerConnections[username]?.close?.();
+    delete peerConnections[username];
+  });
+
+  socket.on("toggle-mute-status", ({ username, isMuted }) => {
+    const el = document.getElementById(`participant-${username}`);
+    if (el) el.classList.toggle("muted", isMuted);
+  });
+
+  socket.on("offer", async ({ from, sdp }) => {
+    try {
+      const pc = createPeerConnection(from);
+      peerConnections[from] = pc;
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit("answer", { to: from, from: currentUsername, sdp: answer });
+    } catch (err) {
+      console.error("Offer handling error:", err);
+    }
+  });
+
+  socket.on("answer", async ({ from, sdp }) => {
+    try {
+      const pc = peerConnections[from];
+      if (pc) await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    } catch (err) {
+      console.error("Answer handling error:", err);
+    }
+  });
+
+  socket.on("ice-candidate", ({ from, candidate }) => {
+    const pc = peerConnections[from];
+    if (pc && candidate) {
+      pc.addIceCandidate(new RTCIceCandidate(candidate))
+        .catch(err => console.error("ICE candidate error:", err));
+    }
+  });
+
+  socket.on("call-ended", ({ communityId }) => {
+    alert("🔴 The call has ended.");
+    cleanupCall();
+    window.location.replace("dashboard.html");
+  });
+
+  // ================================
+  // 🟢 Start the call
+  // ================================
+  startCall();
+</script>
+
+</body>
+</html>

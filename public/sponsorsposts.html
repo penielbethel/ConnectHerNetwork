@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sponsor Posts</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    body {
+      background-color: #121212;
+      color: #fff;
+      padding: 10px;
+      max-width: 480px;
+      margin: auto;
+    }
+body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+    .sponsor-header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .sponsor-header img {
+      width: 80px;
+      height: 80px;
+      object-fit: cover;
+      border-radius: 50%;
+      margin-bottom: 10px;
+    }
+
+    .sponsor-header h2 {
+      font-size: 18px;
+    }
+
+    .post-card {
+      background: #b31574;
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 15px;
+    }
+
+    .post-card img, .post-card video {
+      width: 100%;
+      border-radius: 6px;
+      margin-bottom: 10px;
+    }
+
+    .post-card p {
+      font-size: 14px;
+      color: #ccc;
+      margin-bottom: 8px;
+    }
+
+    .post-card a {
+      color: #00bfff;
+      font-size: 14px;
+      text-decoration: none;
+    }
+
+    .back-btn {
+      display: inline-block;
+      margin-bottom: 15px;
+      color: #ff3b3b;
+      text-decoration: none;
+    }
+
+    .media-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 2;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #000;
+  cursor: pointer;
+}
+
+.media-wrapper img,
+.media-wrapper video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+  display: block;
+}
+
+#mediaPreviewOverlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.95);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+#mediaPreviewOverlay img,
+#mediaPreviewOverlay video {
+  max-width: 90%;
+  max-height: 90%;
+  border-radius: 10px;
+}
+
+.view-job-btn {
+  display: inline-block;
+  background: #e81fc0;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  text-decoration: none;
+  transition: background 0.3s ease;
+  margin-top: 6px;
+}
+
+.view-job-btn:hover {
+  background: #ffffff;
+}
+
+.read-more, .read-less {
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.sponsor-card {
+  background-color: #b31574;
+  border-radius: 12px;
+  padding: 20px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  max-width: 100%;
+  margin-bottom: 20px;
+  transition: transform 0.2s ease;
+}
+
+.sponsor-card:hover {
+  transform: scale(1.01);
+}
+
+.sponsor-card img {
+  width: 90px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 50%;
+  margin-bottom: 12px;
+  border: 5px solid #ed5ddf;
+}
+
+.sponsor-card h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+}
+
+
+#avatarPreviewOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+#avatarPreviewOverlay img {
+  max-width: 90%;
+  max-height: 90%;
+  border-radius: 10px;
+  box-shadow: 0 0 20px rgba(255,255,255,0.2);
+  transition: transform 0.3s ease;
+}
+
+.avatar-click {
+  cursor: pointer;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-block;
+}
+
+.avatar-click img:hover {
+  transform: scale(1.05);
+  transition: transform 0.2s ease;
+}
+
+
+  </style>
+</head>
+<body>
+
+  <a href="sponsors.html" class="back-btn"><i class="fas fa-arrow-left"></i> Back</a>
+
+  <div class="sponsor-header" id="sponsorHeader">
+    <p>Loading sponsor info...</p>
+  </div>
+
+  <div id="postsContainer">
+    <p>Loading posts...</p>
+  </div>
+
+  <script>
+  const urlParams = new URLSearchParams(window.location.search);
+  const sponsorId = urlParams.get("id");
+  const postId = urlParams.get("post");
+
+  if (!sponsorId) {
+    document.getElementById("postsContainer").innerHTML = "<p>❌ Sponsor ID missing</p>";
+    throw new Error("Missing sponsor ID");
+  }
+
+  async function loadSponsorInfo() {
+    const header = document.getElementById("sponsorHeader");
+
+    try {
+      const res = await fetch("/api/sponsors", {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`
+        }
+      });
+
+      if (!res.ok) throw new Error(`Failed to load sponsor info: ${res.status}`);
+
+      const sponsors = await res.json();
+      const sponsor = sponsors.find(s => s._id === sponsorId);
+
+      if (!sponsor) {
+        header.innerHTML = "<p>❌ Sponsor not found</p>";
+        return;
+      }
+
+      // ✅ Clear any previous error message
+header.innerHTML = `
+  <div class="sponsor-card">
+    <div class="avatar-click" onclick="previewSponsorAvatar('${sponsor.logo}')">
+      <img src="${sponsor.logo}" alt="${sponsor.companyName}" />
+    </div>
+    <h2>${sponsor.companyName}</h2>
+  </div>
+`;
+
+
+    } catch (err) {
+      console.error("Error loading sponsor", err);
+      header.innerHTML = "<p>❌ Error loading sponsor</p>";
+    }
+  }
+
+  async function loadSponsorPosts() {
+    const container = document.getElementById("postsContainer");
+
+    try {
+      const res = await fetch(`/api/sponsors/${sponsorId}/posts`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to fetch posts: ${res.status}`);
+      }
+
+      const posts = await res.json();
+      container.innerHTML = "";
+
+      if (Array.isArray(posts) && posts.length > 0) {
+  posts.forEach(post => {
+  const div = document.createElement("div");
+  div.className = "post-card";
+  div.id = `post-${post._id}`; // 🔑 for scrolling
+
+  const isVideo = post.media?.endsWith(".mp4");
+const mediaTag = isVideo
+  ? `<video src="${post.media}" muted></video>`
+  : `<img src="${post.media}" alt="Post Media" />`;
+
+const mediaHtml = `
+  <div class="media-wrapper" onclick="previewMedia('${post.media}', ${isVideo})">
+    ${mediaTag}
+  </div>
+`;
+
+
+  const shortCaption = shortenCaption(post.caption);
+div.innerHTML = `
+  ${mediaHtml}
+  <p class="caption" data-full="${post.caption}">${shortenCaption(post.caption)}</p>
+  <a href="${post.jobLink}" target="_blank" class="view-job-btn"
+     onclick="trackClick('${sponsorId}', '${post._id}')">🔗 View Job Link</a>
+`;
+
+
+  container.appendChild(div);
+
+  // ✅ Auto-scroll to post if ID matches
+  if (post._id === postId) {
+    setTimeout(() => {
+      document.getElementById(`post-${post._id}`).scrollIntoView({ behavior: "smooth", block: "start" });
+      document.getElementById(`post-${post._id}`).style.border = "2px solid yellow";
+    }, 300); // Wait for DOM
+  }
+});
+
+// ✅ Expand caption on click
+container.querySelectorAll(".caption").forEach(p => {
+  p.addEventListener("click", () => {
+    const isExpanded = p.classList.toggle("expanded");
+    if (isExpanded) {
+      p.innerHTML = p.dataset.full + " <span class='read-less'>...read less</span>";
+    } else {
+      p.innerHTML = p.dataset.short;
+    }
+  });
+});
+
+
+
+      } else {
+        container.innerHTML = "<p style='color: pink;'>No posts yet for this sponsor.</p>";
+      }
+
+    } catch (err) {
+      console.error("Error loading posts", err);
+      container.innerHTML = "<p>❌ Failed to load posts</p>";
+    }
+  }
+
+
+  loadSponsorInfo();
+  loadSponsorPosts();
+
+function previewMedia(src, isVideo) {
+    const overlay = document.getElementById("mediaPreviewOverlay");
+    overlay.innerHTML = isVideo
+      ? `<video src="${src}" controls autoplay></video>`
+      : `<img src="${src}" alt="Preview" />`;
+    overlay.style.display = "flex";
+  }
+
+ function shortenCaption(caption) {
+    const words = caption.trim().split(/\s+/);
+    if (words.length <= 60) return caption;
+    return words.slice(0, 60).join(" ") + " <span class='read-more'>...read more</span>";
+  }
+
+function previewSponsorAvatar(src) {
+  document.getElementById("avatarPreviewImage").src = src;
+  document.getElementById("avatarPreviewOverlay").style.display = "flex";
+}
+
+function closeAvatarPreview() {
+  document.getElementById("avatarPreviewOverlay").style.display = "none";
+  document.getElementById("avatarPreviewImage").src = "";
+}
+
+async function trackClick(sponsorId, postId) {
+  try {
+    await fetch(`/api/post/${sponsorId}/${postId}/click`, {
+      method: "POST"
+    });
+  } catch (err) {
+    console.warn("Click tracking failed", err);
+  }
+}
+
+
+</script>
+
+<div id="mediaPreviewOverlay" onclick="this.style.display='none'; this.innerHTML=''"></div>
+<div id="avatarPreviewOverlay" onclick="closeAvatarPreview()" style="display:none;">
+  <img id="avatarPreviewImage" src="" alt="Sponsor Avatar" />
+</div>
+<script src="theme.js" defer></script>
+
+</body>
+</html>

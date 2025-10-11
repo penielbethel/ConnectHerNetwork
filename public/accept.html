@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Join Community</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    body {
+      background-color: #121212;
+      color: #fff;
+      font-family: 'Segoe UI', sans-serif;
+      max-width: 480px;
+      margin: auto;
+      padding: 20px;
+      text-align: center;
+    }
+
+    body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+    .avatar {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      object-fit: cover;
+      margin-bottom: 15px;
+    }
+
+    h1 { font-size: 22px; margin-bottom: 10px; }
+    p { color: #ccc; font-size: 14px; margin-bottom: 20px; }
+
+    .info-box {
+      background-color: #1f1f1f;
+      padding: 15px;
+      border-radius: 10px;
+      text-align: left;
+      margin-bottom: 20px;
+    }
+
+    .btn {
+      background-color: #25d366;
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+
+    .btn:disabled {
+      background-color: #555;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+
+  <img id="avatar" src="" alt="Community Avatar" class="avatar" />
+  <h1 id="name">Community Name</h1>
+  <p id="purpose">Purpose of the community...</p>
+
+  <div class="info-box">
+    <p><strong>Owner:</strong> <span id="owner">--</span></p>
+    <p><strong>Category:</strong> <span id="category">--</span></p>
+    <p><strong>Created:</strong> <span id="createdAt">--</span></p>
+  </div>
+
+  <button id="joinBtn" class="btn">Join Community</button>
+
+  <script>
+  const params = new URLSearchParams(window.location.search);
+const communityIdParam = params.get("id");
+const inviteId = params.get("inviteId");
+const username = localStorage.getItem("username");
+
+const avatar = document.getElementById("avatar");
+const name = document.getElementById("name");
+const purpose = document.getElementById("purpose");
+const owner = document.getElementById("owner");
+const category = document.getElementById("category");
+const createdAt = document.getElementById("createdAt");
+const joinBtn = document.getElementById("joinBtn");
+
+let communityId = null;
+
+// 🚀 Load community info via invite or direct link
+if (inviteId) {
+  fetch(`https://connecther.network/api/community-invites/invite/${inviteId}`)
+    .then(res => res.json())
+    .then(data => {
+      if (!data.success || !data.invite) throw new Error("Invalid invite");
+
+      const c = data.invite.communityId;
+      communityId = c._id;
+
+      avatar.src = c.avatar || "https://via.placeholder.com/100?text=C";
+      name.textContent = c.name;
+      purpose.textContent = c.description || "No description provided.";
+      owner.textContent = c.creator || "Unknown";
+      category.textContent = "General";
+      createdAt.textContent = new Date(c.createdAt).toLocaleDateString();
+
+      if (c.members.includes(username)) {
+        joinBtn.textContent = "Already Joined";
+        joinBtn.disabled = true;
+      }
+    })
+    .catch(err => {
+      console.error("❌ Invite fetch error:", err);
+      document.body.innerHTML = "<h2>Invalid or expired invite.</h2>";
+    });
+} else if (communityIdParam) {
+  communityId = communityIdParam;
+  fetch(`https://connecther.network/api/communities/${communityId}`)
+    .then(res => res.json())
+    .then(data => {
+      if (!data.success || !data.community) throw new Error("Community not found");
+
+      const c = data.community;
+      avatar.src = c.avatar || "https://via.placeholder.com/100?text=C";
+      name.textContent = c.name;
+      purpose.textContent = c.description || "No description provided.";
+      owner.textContent = c.creator || "Unknown";
+      category.textContent = "General";
+      createdAt.textContent = new Date(c.createdAt).toLocaleDateString();
+
+      if (c.members.includes(username)) {
+        joinBtn.textContent = "Already Joined";
+        joinBtn.disabled = true;
+      }
+    })
+    .catch(err => {
+      console.error("❌ Community fetch error:", err);
+      document.body.innerHTML = "<h2>Community not found.</h2>";
+    });
+} else {
+  document.body.innerHTML = "<h2>Missing invite or community ID.</h2>";
+}
+
+// ✅ Join button logic
+joinBtn.addEventListener("click", () => {
+  if (!communityId || !username) return;
+
+  joinBtn.disabled = true;
+  joinBtn.textContent = "Joining...";
+
+  fetch(`https://connecther.network/api/communities/${communityId}/join`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username })
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        alert("🎉 You have joined the community!");
+        localStorage.setItem("currentCommunityId", communityId);
+        window.location.href = "community.html";
+      } else {
+        alert("Failed to join: " + data.message);
+        joinBtn.disabled = false;
+        joinBtn.textContent = "Join Community";
+      }
+    })
+    .catch(err => {
+      console.error("❌ Join error:", err);
+      alert("Server error joining community.");
+      joinBtn.disabled = false;
+      joinBtn.textContent = "Join Community";
+    });
+});
+
+</script>
+<script src="theme.js" defer></script>
+
+</body>
+</html>

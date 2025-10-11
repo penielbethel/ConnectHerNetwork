@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Registered Sponsors</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="stylesheet" href="theme.css">
+  <style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', sans-serif;
+  }
+
+  body {
+    background-color: #121212;
+    color: #fff;
+    padding: 10px;
+    max-width: 480px;
+    margin: auto;
+  }
+body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+  h1 {
+    font-size: 20px;
+    margin-bottom: 15px;
+    text-align: center;
+  }
+
+  .sponsor-card {
+    background: #1e1e1e;
+    border-radius: 10px;
+    padding: 12px 15px;
+    margin-bottom: 15px;
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.3s;
+  }
+
+  .sponsor-card:hover {
+    background: #292929;
+  }
+
+.sponsor-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  position: relative;
+}
+
+.sponsor-logo {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #555;
+}
+
+.sponsor-name-wrapper {
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+}
+  .sponsor-name {
+    font-size: 16px;
+    font-weight: bold;
+  }
+
+  .sponsor-objective {
+    font-size: 14px;
+    color: #ccc;
+    line-height: 1.4;
+    margin-left: 62px; /* aligns with text under logo */
+  }
+.notification-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.notification-dot {
+  width: 10px;
+  height: 10px;
+  background-color: #1ed760; /* Green */
+  border-radius: 50%;
+  margin-left: 10px;
+}
+
+
+</style>
+
+</head>
+<body>
+
+  <h1 style="color: #fe73bb;">Registered Sponsors</h1>
+
+  <div style="margin: 10px 0; display: flex; align-items: center; gap: 8px;">
+  <i class="fa fa-search" style="color: rgb(222, 63, 239);"></i>
+  <input 
+    type="text" 
+    id="sponsorSearch" 
+    placeholder="Search sponsors..." 
+    style="flex: 1; padding: 8px 12px; border-radius: 20px; border: none; background-color: #222; color: white; outline: none; font-size: 14px;"
+  />
+</div>
+
+  <div id="sponsorContainer" style="color: #ff69b4;">Loading sponsors...</div>
+
+<script>
+let allSponsors = [];
+
+async function fetchSponsors() {
+  const token = localStorage.getItem("token");
+
+  if (!token) {
+    window.location.href = "login.html";
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/sponsors", {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+
+    const sponsors = await res.json();
+    allSponsors = sponsors; // 🔁 Store for filtering
+    renderSponsors(sponsors);
+
+  } catch (err) {
+    console.error("Failed to fetch sponsors", err);
+    document.getElementById("sponsorContainer").innerHTML = '<span style="color:#ff69b4;">❌ Error loading sponsors.</span>';
+  }
+}
+
+function renderSponsors(sponsors) {
+  const container = document.getElementById("sponsorContainer");
+  container.innerHTML = "";
+
+  if (!sponsors.length) {
+    container.innerHTML = "<p style='color: #ff69b4;'>No sponsors match your search.</p>";
+    return;
+  }
+
+  sponsors.forEach(s => {
+    const hasSeen = localStorage.getItem(`sponsor_seen_${s._id}`) === "true";
+
+    const card = document.createElement("a");
+    card.href = `sponsorsposts.html?id=${s._id}`;
+    card.className = "sponsor-card";
+    card.innerHTML = `
+      <div class="sponsor-header">
+        <img src="${s.logo}" alt="${s.companyName}" class="sponsor-logo" />
+        <div class="sponsor-name-wrapper">
+          <div class="sponsor-name">${s.companyName}</div>
+          ${!hasSeen ? '<span class="notification-dot"></span>' : ''}
+        </div>
+      </div>
+      <div class="sponsor-objective">${s.objectives}</div>
+    `;
+
+    card.addEventListener("click", () => {
+      localStorage.setItem(`sponsor_seen_${s._id}`, "true");
+    });
+
+    container.appendChild(card);
+  });
+}
+
+// 🔍 Filter on input
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("sponsorSearch").addEventListener("input", e => {
+    const query = e.target.value.toLowerCase().trim();
+
+    const filtered = allSponsors.filter(s =>
+      s.companyName.toLowerCase().includes(query) ||
+      s.objectives.toLowerCase().includes(query)
+    );
+
+    renderSponsors(filtered);
+  });
+});
+
+fetchSponsors();
+</script>
+<script src="theme.js" defer></script>
+
+</body>
+</html>

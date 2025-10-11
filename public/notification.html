@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Notifications</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    body {
+      background: #121212;
+      color: white;
+      font-family: 'Segoe UI', sans-serif;
+      padding: 20px;
+      max-width: 480px;
+      margin: auto;
+    }
+
+    body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+    h2 {
+      text-align: center;
+      color: #ff4081;
+      margin-bottom: 20px;
+    }
+
+    .tabs {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      border-bottom: 1px solid #333;
+    }
+
+    .tab {
+      flex: 1;
+      text-align: center;
+      padding: 10px;
+      cursor: pointer;
+      color: #ccc;
+      border-bottom: 3px solid transparent;
+    }
+
+    .tab.active {
+      color: #ff4081;
+      font-weight: bold;
+      border-bottom-color: #ff4081;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .request {
+      background: #1e1e1e;
+      border-radius: 10px;
+      padding: 15px;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .request-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .request-info img {
+      width: 45px;
+      height: 45px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .request-info .name {
+      font-size: 16px;
+      font-weight: bold;
+      color: #fff;
+    }
+
+    .actions button {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .accept {
+      background: #4caf50;
+      color: white;
+      margin-right: 5px;
+    }
+
+    .decline {
+      background: #f44336;
+      color: white;
+    }
+
+    .status {
+      font-size: 14px;
+      color: #aaa;
+      text-align: center;
+    }
+
+    .clickable:hover {
+  background-color: #222;
+  transition: 0.3s;
+}
+  </style>
+</head>
+<body>
+  <h2>Notifications</h2>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('friend')">Friend Requests</div>
+    <div class="tab" onclick="switchTab('calls')">Calls</div>
+    <div class="tab" onclick="switchTab('likes')">Likes & Comments</div>
+    <div class="tab" onclick="switchTab('sponsors')">Sponsors Alert</div>
+  </div>
+
+  <div id="friend" class="tab-content active">
+    <div id="requestList"></div>
+  </div>
+
+  <div id="calls" class="tab-content">
+    <p class="status">Call notifications will appear here.</p>
+    <div id="groupCallControls" style="display: none; margin-bottom: 10px;">
+  <label>
+    <input type="checkbox" id="selectAllCalls" />
+    Select All
+  </label>
+  <button id="deleteSelectedCalls" class="decline" style="margin-left: 10px;">🗑️ Delete Selected</button>
+</div>
+  </div>
+
+  <div id="likes" class="tab-content">
+    <p class="status">Likes and comments notifications will appear here.</p>
+  </div>
+
+  <div id="sponsors" class="tab-content">
+    <p class="status">Sponsor alerts will appear here.</p>
+  </div>
+
+  <script>
+function switchTab(tabId) {
+  document.querySelectorAll(".tab").forEach(tab => tab.classList.remove("active"));
+  document.querySelectorAll(".tab-content").forEach(content => content.classList.remove("active"));
+
+  document.querySelector(`.tab[onclick*="${tabId}"]`).classList.add("active");
+  document.getElementById(tabId).classList.add("active");
+}
+
+const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+if (!currentUser) {
+  alert("You must be logged in.");
+  window.location.href = "index.html";
+}
+
+const requestList = document.getElementById("requestList");
+
+// ✅ Load normal friend requests
+fetch(`https://connecther.network/friend-requests/${currentUser.username}`)
+  .then(res => res.json())
+  .then(requests => {
+    if (!Array.isArray(requests) || requests.length === 0) {
+      requestList.innerHTML = "<p class='status'>No incoming friend requests.</p>";
+    } else {
+      requests.forEach(username => {
+        
+        
+      fetch(`https://connecther.network/api/users/${username}`)
+  .then(res => res.json())
+  .then(data => {
+    console.log("User response:", data); // ✅ Add this
+
+    const user = data.user; // ✅ Must match how your backend sends it
+    if (!user) return;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "request";
+
+    wrapper.innerHTML = `
+      <div class="request-info">
+        <img src="${user.avatar}" alt="${user.firstName}">
+        <div class="name">${user.firstName} ${user.surname}</div>
+      </div>
+      <div class="actions">
+        <button class="accept" onclick="acceptRequest('${user.username}')">Accept</button>
+        <button class="decline" onclick="declineRequest('${user.username}')">Decline</button>
+      </div>
+    `;
+    requestList.appendChild(wrapper);
+  })
+  .catch(err => {
+    console.error("❌ Error fetching user info:", err);
+          });
+      });
+    }
+
+    // ✅ Then load pending community invites
+    fetch(`https://connecther.network/api/community-invites/${currentUser.username}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.invites.length) {
+          data.invites.forEach(invite => {
+            const community = invite.communityId;
+            const wrapper = document.createElement("div");
+            wrapper.className = "request";
+            wrapper.innerHTML = `
+              <div class="request-info">
+                <img src="${community.avatar}" alt="${community.name}">
+                <div class="name">${invite.sender} invited you to join <strong>${community.name}</strong></div>
+              </div>
+              <div class="actions">
+                <button class="accept" onclick="acceptCommunityInvite('${invite._id}')">Accept</button>
+                <button class="decline" onclick="declineCommunityInvite('${invite._id}')">Decline</button>
+              </div>
+            `;
+            requestList.appendChild(wrapper);
+          });
+        }
+      })
+      .catch(err => {
+        console.error("❌ Failed to load community invites:", err);
+      });
+  })
+  .catch(err => {
+    console.error(err);
+    requestList.innerHTML = "<p class='status'>Failed to load friend requests.</p>";
+  });
+
+// ✅ Handle friend accept/decline
+function acceptRequest(username) {
+  fetch('https://connecther.network/friend-accept', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user1: currentUser.username,
+      user2: username
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      alert("Friend request accepted.");
+      location.reload();
+    } else {
+      alert("Could not accept request.");
+    }
+  });
+}
+
+function declineRequest(username) {
+  fetch('https://connecther.network/friend-decline', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: username, to: currentUser.username })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      alert("Friend request declined.");
+      location.reload();
+    } else {
+      alert("Something went wrong.");
+    }
+  });
+}
+
+// ✅ Handle community invite accept/decline
+function acceptCommunityInvite(inviteId) {
+  fetch(`https://connecther.network/api/community-invites/${inviteId}/accept`, {
+    method: "POST"
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      alert("You’ve joined the community!");
+      location.reload();
+    } else {
+      alert("Could not join community.");
+    }
+  })
+  .catch(err => {
+    console.error("❌ Accept failed:", err);
+    alert("Error contacting server.");
+  });
+}
+
+function declineCommunityInvite(inviteId) {
+  fetch(`https://connecther.network/api/community-invites/${inviteId}/decline`, {
+    method: "POST"
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      alert("Community invite declined.");
+      location.reload();
+    } else {
+      alert("Could not decline invite.");
+    }
+  })
+  .catch(err => {
+    console.error("❌ Decline failed:", err);
+    alert("Error contacting server.");
+  });
+}
+
+
+//✅ CALLS TAB HANDLING (structured & unified for group + personal logs)
+const callList = document.getElementById("calls");
+callList.innerHTML = "<p class='status'>Loading call logs...</p>";
+
+// 🔘 Insert bulk delete controls for personal + group logs
+const bulkControls = document.createElement("div");
+bulkControls.id = "bulkControls";
+bulkControls.style.display = "none";
+bulkControls.style.marginBottom = "10px";
+bulkControls.innerHTML = `
+  <label><input type="checkbox" id="selectAllCallLogs" /> Select All</label>
+  <button id="deleteSelectedLogs" class="decline" style="margin-left: 10px;">🗑️ Delete Selected</button>
+`;
+callList.appendChild(bulkControls);
+
+// ✅ Storage for all call checkboxes
+const allLogCheckboxes = [];
+
+// ✅ Fetch Personal Call Logs
+fetch(`https://connecther.network/api/calls/${currentUser.username}`)
+  .then(res => res.json())
+  .then(logs => {
+    if (logs.length) {
+      bulkControls.style.display = "block";
+    }
+
+    logs.forEach(log => {
+      const otherUser = log.caller === currentUser.username ? log.receiver : log.caller;
+
+      fetch(`https://connecther.network/api/users/user/${otherUser}`)
+        .then(res => res.json())
+        .then(userData => {
+          const item = document.createElement("div");
+          item.className = "request";
+
+          const direction = log.caller === currentUser.username ? "Outgoing" : "Incoming";
+          const statusColor = {
+            answered: "#4caf50",
+            declined: "#ff9800",
+            missed: "#f44336",
+            ended: "#2196f3"
+          };
+          const time = new Date(log.timestamp).toLocaleString();
+          const icon = log.type === "video" ? "📹" : "📞";
+
+          item.innerHTML = `
+            <div class="request-info">
+              <input type="checkbox" class="call-log-checkbox" value="${log._id}" style="margin-right: 10px;" />
+              <img src="${userData.avatar}" alt="${userData.name}">
+              <div>
+                <div class="name">${userData.name}</div>
+                <div style="font-size: 13px; color: ${statusColor[log.status] || '#ccc'};">
+                  ${icon} ${direction} – ${log.status} ${log.duration ? `(${log.duration}s)` : ""}
+                </div>
+                <div style="font-size: 12px; color: #999;">${time}</div>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="decline" onclick="deleteCall('${log._id}')">Delete</button>
+            </div>
+          `;
+
+          callList.appendChild(item);
+          allLogCheckboxes.push(log._id);
+        });
+    });
+  });
+
+// ✅ Fetch Group Call Notifications
+fetch(`https://connecther.network/api/notifications/group-call/${currentUser.username}`)
+  .then(res => res.json())
+  .then(notifications => {
+    if (notifications.length) {
+      bulkControls.style.display = "block";
+    }
+
+    notifications.forEach(log => {
+      const time = new Date(log.createdAt).toLocaleString();
+      const icon = "👥";
+      const item = document.createElement("div");
+      item.className = "request";
+
+      item.innerHTML = `
+        <div class="request-info">
+          <input type="checkbox" class="call-log-checkbox" value="${log._id}" style="margin-right: 10px;" />
+          <img src="https://cdn-icons-png.flaticon.com/512/847/847969.png" alt="group call" />
+          <div>
+            <div class="name">${log.title}</div>
+            <div style="font-size: 13px; color: #ff9800;">
+              ${icon} ${log.content}
+            </div>
+            <div style="font-size: 12px; color: #999;">${time}</div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="decline" onclick="deleteNotification('${log._id}')">Delete</button>
+        </div>
+      `;
+
+      callList.appendChild(item);
+      allLogCheckboxes.push(log._id);
+    });
+  })
+  .catch(err => {
+    console.error("❌ Group call notifications error:", err);
+  });
+
+// ✅ Single delete handler for personal calls
+function deleteCall(id) {
+  fetch(`https://connecther.network/api/calls/${id}`, {
+    method: "DELETE"
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      alert("Call log deleted.");
+      location.reload();
+    } else {
+      alert("Failed to delete call log.");
+    }
+  })
+  .catch(err => {
+    console.error("❌ Delete failed:", err);
+    alert("Server error.");
+  });
+}
+
+// ✅ Shared delete function (already used by group call)
+function deleteNotification(id) {
+  fetch(`https://connecther.network/api/notifications/${id}`, {
+    method: "DELETE"
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      alert("Notification deleted.");
+      location.reload();
+    } else {
+      alert("Failed to delete notification.");
+    }
+  })
+  .catch(err => {
+    console.error("❌ Delete failed:", err);
+    alert("Error deleting.");
+  });
+}
+
+// ✅ Select All Logic
+document.addEventListener("DOMContentLoaded", () => {
+  const selectAll = document.getElementById("selectAllCallLogs");
+  const deleteSelected = document.getElementById("deleteSelectedLogs");
+
+  if (selectAll && deleteSelected) {
+    selectAll.addEventListener("change", () => {
+      const checked = selectAll.checked;
+      document.querySelectorAll(".call-log-checkbox").forEach(cb => cb.checked = checked);
+    });
+
+    deleteSelected.addEventListener("click", () => {
+      const selectedCheckboxes = Array.from(document.querySelectorAll(".call-log-checkbox:checked"));
+
+      if (!selectedCheckboxes.length) {
+        alert("Please select at least one log.");
+        return;
+      }
+
+      const confirmDelete = confirm(`Delete ${selectedCheckboxes.length} selected call logs?`);
+      if (!confirmDelete) return;
+
+      const notificationIds = [];
+      const personalCallIds = [];
+
+      selectedCheckboxes.forEach(cb => {
+        const parent = cb.closest(".request-info");
+        const img = parent.querySelector("img");
+
+        if (img && img.src.includes("847969.png")) {
+          // It's a group notification
+          notificationIds.push(cb.value);
+        } else {
+          // It's a personal call log
+          personalCallIds.push(cb.value);
+        }
+      });
+
+      const deletions = [];
+
+      if (notificationIds.length) {
+        deletions.push(
+          fetch("https://connecther.network/api/notifications/bulk-delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: notificationIds })
+          })
+        );
+      }
+
+      if (personalCallIds.length) {
+        deletions.push(
+          fetch("https://connecther.network/api/calls/bulk-delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: personalCallIds })
+          })
+        );
+      }
+
+      Promise.all(deletions)
+        .then(responses => Promise.all(responses.map(res => res.json())))
+        .then(results => {
+          const failed = results.some(r => !r.success);
+          if (failed) {
+            alert("Some logs failed to delete.");
+          } else {
+            alert("Selected call logs deleted.");
+          }
+          location.reload();
+        })
+        .catch(err => {
+          console.error("❌ Bulk delete error:", err);
+          alert("Server error during deletion.");
+        });
+    });
+  }
+});
+
+
+
+// ✅ SPONSOR ALERTS TAB
+ const sponsorTab = document.getElementById("sponsors");
+  sponsorTab.innerHTML = "<p class='status'>Loading sponsor alerts...</p>";
+
+  fetch("/api/notifications/sponsor-alerts")
+    .then(res => res.json())
+    .then(alerts => {
+      if (!alerts.length) {
+        sponsorTab.innerHTML = "<p class='status'>No sponsor alerts yet.</p>";
+        return;
+      }
+
+      sponsorTab.innerHTML = "";
+
+    alerts.forEach(alert => {
+  const div = document.createElement("div");
+  div.className = "request clickable";
+  div.style.cursor = "pointer";
+
+  div.onclick = () => {
+    // ✅ Optional: mark as read
+    fetch(`/api/notifications/${alert._id}/read`, { method: "PUT" });
+
+    const sponsorId = alert.sponsorId;
+    const postId = alert.postId; // only works if you saved postId in notification
+    if (sponsorId) {
+      window.location.href = `sponsorsposts.html?id=${sponsorId}&post=${postId || ''}`;
+    }
+  };
+
+  div.innerHTML = `
+    <div class="request-info">
+      <img src="https://cdn-icons-png.flaticon.com/512/893/893257.png" style="background:#292929;" />
+      <div class="name">${alert.title}</div>
+    </div>
+    <div style="margin-top: 10px; font-size: 13px; color: #ccc;">
+      ${alert.content}
+    </div>
+  `;
+
+  sponsorTab.appendChild(div);
+});
+
+
+    })
+    .catch(err => {
+      console.error("❌ Failed to load sponsor alerts:", err);
+      sponsorTab.innerHTML = "<p class='status'>Could not load sponsor alerts.</p>";
+    });
+
+
+const likesTab = document.getElementById("likes");
+likesTab.innerHTML = "<p class='status'>Loading...</p>";
+
+fetch(`https://connecther.network/api/notifications/likes-comments/${currentUser.username}`)
+  .then(res => res.json())
+  .then(notifications => {
+    if (!notifications.length) {
+      likesTab.innerHTML = "<p class='status'>No likes/comments yet.</p>";
+      return;
+    }
+
+    likesTab.innerHTML = "";
+    notifications.forEach(notif => {
+
+const item = document.createElement("div");
+item.className = "request clickable";
+
+item.onclick = () => {
+  // ✅ 1. Delete notification
+  fetch(`https://connecther.network/api/notifications/${notif._id}`, {
+    method: "DELETE"
+  });
+
+  // ✅ 2. Redirect to dashboard with postId
+  if (notif.postId) {
+    window.location.href = `dashboard.html?post=${notif.postId}`;
+  } else {
+    alert("Post not found.");
+  }
+};
+
+item.innerHTML = `
+  <div class="request-info">
+    <img src="https://cdn-icons-png.flaticon.com/512/1077/1077114.png" />
+    <div class="name">${notif.title}</div>
+  </div>
+  <div style="margin-top: 10px; font-size: 13px; color: #ccc;">
+    ${notif.content}
+  </div>
+`;
+likesTab.appendChild(item);
+
+    });
+  })
+  .catch(err => {
+    console.error("❌ Error loading likes/comments notifications:", err);
+    likesTab.innerHTML = "<p class='status'>Failed to load notifications.</p>";
+  });
+
+  
+// ✅ Add Socket.IO real-time notification handler
+const socket = io("https://connecther.network");
+
+if (currentUser?.username) {
+  // ✅ CLEAR new notification indicator when user enters this page
+  localStorage.setItem("hasNewNotif", "false");
+
+  socket.emit("register", currentUser.username);
+  socket.on("new-notification", (notif) => {
+    if (notif.type === "like" || notif.type === "comment") {
+      alert(notif.content); // ✅ Replace with toast later
+    }
+  });
+}
+
+  
+</script>
+
+<script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+
+
+<script type="module"> // ✅ FIREBASE SDK
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCsQwg0D4gH1xCUiBmVi-nKoSEGHNy40yY",
+    authDomain: "connecther-76f65.firebaseapp.com",
+    projectId: "connecther-76f65",
+    storageBucket: "connecther-76f65.firebaseapp.com",
+    messagingSenderId: "745841685228",
+    appId: "1:745841685228:web:d9b0dda1a964c9a564ebc9",
+    measurementId: "G-4G8THWFDY5"
+  };
+
+  // ✅ Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const messaging = getMessaging(app);
+
+  // ✅ Register Service Worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/firebase-messaging-sw.js')
+      .then(async (registration) => {
+        console.log('✅ Service Worker registered:', registration.scope);
+
+        // ✅ Get FCM Token
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          const token = await getToken(messaging, {
+            vapidKey: 'BDzsFAUo-AoHxsyWwRXNVhBEs1HYK-XljgNWux7i15HvU6dWt6UOyhCisxAYp4T12KxWkCqRIEm9spyM-bvrLMg',
+            serviceWorkerRegistration: registration
+          });
+
+          console.log('✅ FCM Token:', token);
+
+          // ✅ Save to backend
+          const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+          if (currentUser && currentUser.username) {
+            await fetch("https://connecther.network/api/save-fcm-token", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ username: currentUser.username, token })
+            });
+          }
+
+        } else {
+          console.warn("🚫 Notification permission denied.");
+        }
+      })
+      .catch((err) => {
+        console.error("❌ Service Worker registration failed:", err);
+      });
+  }
+
+  // ✅ Handle Foreground Message + Play Sound
+  onMessage(messaging, (payload) => {
+    console.log("🔔 Foreground message received:", payload);
+
+    const title = payload.notification?.title || "New Notification";
+    const body = payload.notification?.body || "";
+    const options = {
+      body,
+      icon: "/logo.png"
+    };
+
+    // ✅ Play tone
+    const audio = document.getElementById("notiTone");
+    if (audio) {
+      audio.currentTime = 0;
+      audio.play().catch(err => {
+        console.warn("🔇 Sound play failed:", err);
+      });
+    }
+
+    // ✅ Show browser notification (optional if browser already handles it)
+    if (Notification.permission === "granted") {
+      new Notification(title, options);
+    }
+  });
+</script>
+
+<!-- 🔔 Notification Sound -->
+<audio id="notiTone" src="/notify.mp3" preload="auto"></audio>
+<script src="theme.js" defer></script>
+
+</body>
+</html>

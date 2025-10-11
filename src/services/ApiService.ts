@@ -1,0 +1,1668 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform, NativeModules } from 'react-native';
+import RNFS from 'react-native-fs';
+
+// In development, infer the host running Metro and point API to local server
+const getDevHost = (): string | null => {
+  try {
+    const scriptURL: string | undefined = (NativeModules as any)?.SourceCode?.scriptURL;
+    if (scriptURL) {
+      const m = scriptURL.match(/https?:\/\/([^:\/]+)/);
+      if (m && m[1]) return m[1];
+    }
+  } catch (_e) {}
+  return null;
+};
+
+export class ApiService {
+  private baseUrl: string;
+  private rootUrl: string;
+  private devHost: string | null = null;
+
+  constructor() {
+    // Prefer local dev server during development for faster iteration on device
+    this.devHost = getDevHost();
+    if (__DEV__) {
+      const host = this.devHost;
+      if (host && host !== 'localhost' && host !== '127.0.0.1') {
+        // Use the Metro host IP so physical devices can reach the dev server
+        this.rootUrl = `http://${host}:3000`;
+        this.baseUrl = `${this.rootUrl}/api`;
+      } else {
+        // If we cannot infer a reachable dev host (common on physical devices),
+        // default to production to avoid "Network request failed" during development.
+        this.baseUrl = 'https://connecther.network/api';
+        this.rootUrl = 'https://connecther.network';
+      }
+    } else {
+      // Production endpoints for distributed builds so users have live access
+      this.baseUrl = 'https://connecther.network/api';
+      this.rootUrl = 'https://connecther.network';
+    }
+    console.log('ApiService baseUrl:', this.baseUrl);
+  }
+
+  // Normalize helpers to map backend post shape to app-friendly shape
+  private normalizeAvatar(avatar?: string): string | undefined {
+    if (!avatar) return avatar;
+    if (/^https?:\/\//i.test(avatar)) return avatar;
+    const trimmed = avatar.replace(/^\/+/, '');
+    return `${this.rootUrl}/${trimmed}`;
+  }
+
+  private getCloudinaryVideoThumbnail(url: string): string | undefined {
+    try {
+      const u = new URL(url);
+      if (!u.hostname.includes('res.cloudinary.com')) return undefined;
+      // Replace extension with .jpg to get a generated thumbnail from Cloudinary
+      return url.replace(/\.[a-z0-9]+$/i, '.jpg');
+    } catch (_e) {
+      return undefined;
+    }
+  }
+
+  private normalizeMedia(media: any): { url: string; type?: string; thumbnailUrl?: string }[] {
+    const list = Array.isArray(media) ? media : [];
+    return list
+      .map((file: any) => {
+        const url =
+          file?.secure_url ||
+          file?.url ||
+          (file?.path ? `${this.rootUrl}/${String(file.path).replace(/^\/+/, '')}` : undefined);
+        if (!url) return null;
+        const type = file?.type || file?.resource_type || undefined;
+        const isVideo = String(type || '').toLowerCase().includes('video') || /\/video\//.test(url);
+        const thumbnailUrl = isVideo ? (this.getCloudinaryVideoThumbnail(url) || undefined) : undefined;
+        return { url, type, thumbnailUrl };
+      })
+      .filter(Boolean) as { url: string; type?: string; thumbnailUrl?: string }[];
+  }
+
+  private normalizeComment(c: any) {
+    const user = c?.user || c?.author || {};
+    return {
+      author: {
+        username: user?.username,
+        name: user?.name,
+        avatar: this.normalizeAvatar(user?.avatar),
+      },
+      content: c?.text ?? c?.content ?? '',
+      createdAt: c?.createdAt,
+      replies: Array.isArray(c?.replies)
+        ? c.replies.map((r: any) => {
+            const ru = r?.user || r?.author || {};
+            return {
+              author: {
+                username: ru?.username,
+                name: ru?.name,
+                avatar: this.normalizeAvatar(ru?.avatar),
+              },
+              content: r?.text ?? r?.content ?? '',
+              createdAt: r?.createdAt,
+            };
+          })
+        : [],
+    };
+  }
+
+  private normalizePost(p: any) {
+    if (!p || typeof p !== 'object') return p;
+    const likedBy = Array.isArray(p?.likedBy)
+      ? p.likedBy
+      : Array.isArray(p?.likes)
+      ? p.likes
+      : [];
+
+    return {
+      _id: p._id,
+      author: {
+        username: p?.username,
+        name: p?.name || `${p?.firstName || ''} ${p?.surname || ''}`.trim() || p?.username,
+        avatar: this.normalizeAvatar(p?.avatar),
+        // Provide location used for flag rendering across the app
+        location: p?.location ?? p?.author?.location ?? p?.user?.location,
+      },
+      content: p?.caption ?? p?.content ?? '',
+      files: this.normalizeMedia(p?.media),
+      // Preserve numeric likes if backend uses a counter; UI is defensive
+      likes: typeof p?.likes === 'number' ? p.likes : likedBy,
+      likedBy,
+      comments: Array.isArray(p?.comments) ? p.comments.map((c: any) => this.normalizeComment(c)) : [],
+      createdAt: p?.createdAt,
+    };
+  }
+
+  private async getAuthToken(): Promise<string | null> {
+    try {
+      return await AsyncStorage.getItem('authToken');
+    } catch (error) {
+      console.error('Error getting auth token:', error);
+      return null;
+    }
+  }
+
+  private async makeRequest(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<any> {
+    const token = await this.getAuthToken();
+    
+    const isFormData = typeof FormData !== 'undefined' && (options.body as any) instanceof FormData;
+    const defaultHeaders: HeadersInit = isFormData
+      ? {}
+      : {
+          'Content-Type': 'application/json',
+        };
+
+    if (token) {
+      defaultHeaders.Authorization = `Bearer ${token}`;
+    }
+
+    const config: RequestInit = {
+      ...options,
+      headers: {
+        ...defaultHeaders,
+        ...options.headers,
+      },
+    };
+
+    const doFetch = async (base: string) => {
+      const response = await fetch(`${base}${endpoint}`, config);
+
+      const contentType = response.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      const payload = isJson ? await response.json() : await response.text();
+
+      if (!response.ok) {
+        const message =
+          typeof payload === 'object' && payload && 'message' in payload
+            ? (payload as any).message
+            : `HTTP error ${response.status}`;
+        const err = new Error(message);
+        // Attach status and payload for callers to inspect
+        (err as any).status = response.status;
+        (err as any).payload = payload;
+        throw err;
+      }
+
+      return payload;
+    };
+
+    try {
+      return await doFetch(this.baseUrl);
+    } catch (error: any) {
+      // Fallback for Android emulator: if dev host is localhost and network fails, try 10.0.2.2
+      const networkFailed = String(error?.message || '').includes('Network request failed');
+      const isAndroidEmuDev = __DEV__ && Platform.OS === 'android' && (this.devHost === 'localhost' || !this.devHost);
+      if (networkFailed && isAndroidEmuDev) {
+        const altRoot = 'http://10.0.2.2:3000';
+        const altBase = `${altRoot}/api`;
+        try {
+          const result = await doFetch(altBase);
+          // If alt host works, pin baseUrl/rootUrl so subsequent calls use it
+          this.rootUrl = altRoot;
+          this.baseUrl = altBase;
+          return result;
+        } catch (_e) {
+          // fall through to original error
+        }
+      }
+      // Secondary fallback: if localhost dev server is unreachable on device, try production
+      if (networkFailed) {
+        const prodRoot = 'https://connecther.network';
+        const prodBase = `${prodRoot}/api`;
+        try {
+          const result = await doFetch(prodBase);
+          // Pin to production base if it succeeds so subsequent calls use it
+          this.rootUrl = prodRoot;
+          this.baseUrl = prodBase;
+          return result;
+        } catch (_e) {
+          // ignore and rethrow original
+        }
+      }
+      // Suppress noisy logs for expected client-handled statuses
+      const status = (error as any)?.status;
+      if (status !== 404) {
+        console.error('API request error:', error);
+      }
+      throw error;
+    }
+  }
+
+  // Some legacy endpoints live at the root (not under /api)
+  private async makeRootRequest(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<any> {
+    const token = await this.getAuthToken();
+
+    const isFormData = typeof FormData !== 'undefined' && (options.body as any) instanceof FormData;
+    const defaultHeaders: HeadersInit = isFormData
+      ? {}
+      : {
+          'Content-Type': 'application/json',
+        };
+
+    if (token) {
+      defaultHeaders.Authorization = `Bearer ${token}`;
+    }
+
+    const config: RequestInit = {
+      ...options,
+      headers: {
+        ...defaultHeaders,
+        ...options.headers,
+      },
+    };
+
+    const doFetch = async (root: string) => {
+      const response = await fetch(`${root}${endpoint}`, config);
+
+      const contentType = response.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      const payload = isJson ? await response.json() : await response.text();
+
+      if (!response.ok) {
+        const message =
+          typeof payload === 'object' && payload && 'message' in payload
+            ? (payload as any).message
+            : `HTTP error ${response.status}`;
+        const err = new Error(message);
+        (err as any).status = response.status;
+        (err as any).payload = payload;
+        throw err;
+      }
+
+      return payload;
+    };
+
+    try {
+      return await doFetch(this.rootUrl);
+    } catch (error: any) {
+      const networkFailed = String(error?.message || '').includes('Network request failed');
+      const isAndroidEmuDev = __DEV__ && Platform.OS === 'android' && (this.devHost === 'localhost' || !this.devHost);
+      if (networkFailed && isAndroidEmuDev) {
+        const altRoot = 'http://10.0.2.2:3000';
+        try {
+          const result = await doFetch(altRoot);
+          // Pin base/root to alt for subsequent calls
+          this.rootUrl = altRoot;
+          this.baseUrl = `${altRoot}/api`;
+          return result;
+        } catch (_e) {
+          // ignore and rethrow original
+        }
+      }
+      // Secondary fallback: if localhost dev server is unreachable on device, try production
+      if (networkFailed) {
+        const prodRoot = 'https://connecther.network';
+        try {
+          const result = await doFetch(prodRoot);
+          this.rootUrl = prodRoot;
+          this.baseUrl = `${prodRoot}/api`;
+          return result;
+        } catch (_e) {
+          // ignore and rethrow original
+        }
+      }
+      console.error('API root request error:', error);
+      throw error;
+    }
+  }
+
+  // Expose a generic request method for other services
+  public request(endpoint: string, options: RequestInit = {}) {
+    return this.makeRequest(endpoint, options);
+  }
+
+  // Convenience helper for POST requests with JSON body
+  public post(endpoint: string, data: any) {
+    return this.makeRequest(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Auth methods
+  async login(usernameOrEmail: string, password: string) {
+    // Backend expects an 'identifier' which can be username or email
+    return this.makeRequest('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ identifier: usernameOrEmail, password }),
+    });
+  }
+
+  async register(userData: {
+    firstName: string;
+    surname: string;
+    username: string;
+    email: string;
+    password: string;
+    avatar?: string;
+  }) {
+    return this.makeRequest('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async verifyEmail(token: string) {
+    return this.makeRequest('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({token}),
+    });
+  }
+
+  // User methods
+  async getUserProfile(username: string) {
+    const fetchByUsername = async (u: string) => {
+      const slug = encodeURIComponent(u.trim());
+      const data = await this.makeRequest(`/users/${slug}`);
+      return {
+        success: true,
+        profile: (data as any)?.user || data || null,
+      };
+    };
+
+    const resolveUser = async (identifier: string) => {
+      const slug = encodeURIComponent(identifier.trim());
+      const data = await this.makeRequest(`/users/resolve/${slug}`);
+      return (data as any)?.user || data || null;
+    };
+
+    try {
+      // Try by username first (original case)
+      return await fetchByUsername(username);
+    } catch (error: any) {
+      // If not found, try lowercase username, then resolve by name
+      const lower = username.trim().toLowerCase();
+      const notFound = error?.status === 404 || /not found/i.test(String(error?.message));
+      if (notFound) {
+        // Lowercase username
+        if (lower !== username) {
+          try {
+            return await fetchByUsername(lower);
+          } catch (_) {}
+        }
+        // Resolve by full name or display name
+        try {
+          const resolved = await resolveUser(username);
+          if (resolved?.username) {
+            return await fetchByUsername(resolved.username);
+          }
+        } catch (_) {}
+      }
+      console.error('getUserProfile error:', error);
+      throw error;
+    }
+  }
+
+  // Fetch posts created by a specific user
+  async getUserPosts(username: string) {
+    const fetchPosts = async (u: string) => {
+      const data = await this.makeRequest(`/posts/user/${encodeURIComponent(u.trim())}`);
+      const raw = Array.isArray(data) ? data : (data as any)?.posts || [];
+      const posts = raw.map((p: any) => this.normalizePost(p));
+      return { success: true, posts };
+    };
+
+    try {
+      return await fetchPosts(username);
+    } catch (err: any) {
+      if (err?.status === 404) {
+        // Retry with lowercase for case-insensitive lookup
+        const lower = username.trim().toLowerCase();
+        if (lower !== username) {
+          try {
+            return await fetchPosts(lower);
+          } catch (_) {
+            // ignore and fall through
+          }
+        }
+        // Return empty list for 404 even after retry
+        return { success: true, posts: [] };
+      }
+      console.error('getUserPosts error:', err);
+      throw err;
+    }
+  }
+
+  async updateProfile(userData: any) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+
+      const formData = new FormData();
+      if (username) formData.append('username', username);
+      if (userData?.email !== undefined) formData.append('email', userData.email);
+      if (userData?.bio !== undefined) formData.append('bio', userData.bio);
+      if (userData?.category !== undefined) formData.append('category', userData.category);
+      if (userData?.location !== undefined) formData.append('location', userData.location);
+      if (userData?.website !== undefined) formData.append('website', userData.website);
+      if (userData?.workplace !== undefined) formData.append('workplace', userData.workplace);
+      if (userData?.education !== undefined) formData.append('education', userData.education);
+      if (userData?.dob !== undefined) formData.append('dob', userData.dob);
+      if (userData?.firstName !== undefined) formData.append('firstName', userData.firstName);
+      if (userData?.surname !== undefined) formData.append('surname', userData.surname);
+      if (userData?.name !== undefined) formData.append('name', userData.name);
+      if (userData?.joined !== undefined) formData.append('joined', userData.joined);
+      if (userData?.avatar !== undefined) formData.append('avatar', userData.avatar);
+
+      return this.makeRequest('/auth/update', {
+        method: 'PUT',
+        // Let fetch set proper multipart boundary automatically
+        body: formData,
+      });
+    } catch (err) {
+      console.error('updateProfile error:', err);
+      throw err;
+    }
+  }
+
+  async updateAvatar(formData: FormData) {
+    try {
+      const res = await this.makeRequest('/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        body: formData,
+      });
+      const files = (res as any)?.files || [];
+      const url = files[0]?.url ? this.normalizeAvatar(files[0].url) : undefined;
+      return { success: !!url, avatarUrl: url };
+    } catch (err) {
+      console.error('updateAvatar error:', err);
+      return { success: false } as any;
+    }
+  }
+
+  async searchUsers(query: string) {
+    return this.makeRequest(`/users/search?q=${encodeURIComponent(query)}`);
+  }
+
+  // Update an existing post (caption/content and optionally media)
+  async updatePost(postId: string, payload: { caption?: string; content?: string; media?: any[] }) {
+    try {
+      const body: any = {};
+      if (payload.caption !== undefined) body.caption = payload.caption;
+      if (payload.content !== undefined && payload.caption === undefined) body.caption = payload.content;
+      if (payload.media !== undefined) body.media = payload.media;
+      const res = await this.makeRequest(`/posts/${postId}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      });
+      return res;
+    } catch (err) {
+      console.error('updatePost error:', err);
+      throw err;
+    }
+  }
+
+  async getFriends(username?: string) {
+    try {
+      let user = username;
+      if (!user) {
+        const stored = await AsyncStorage.getItem('currentUser');
+        if (stored) {
+          const parsed = JSON.parse(stored || '{}');
+          user = parsed?.username;
+        }
+      }
+
+      if (!user) {
+        throw new Error('Missing username for friends request');
+      }
+
+      // Prefer new backend route: /api/friends/:username
+      try {
+        const data = await this.makeRequest(`/friends/${encodeURIComponent(user)}`);
+        const users = Array.isArray(data)
+          ? data
+          : Array.isArray((data as any)?.users)
+            ? (data as any).users
+            : [];
+        return { users };
+      } catch (err: any) {
+        // Fallback to legacy route: /api/users/:username/friends
+        try {
+          const legacy = await this.makeRequest(`/users/${encodeURIComponent(user)}/friends`);
+          const users = Array.isArray(legacy)
+            ? legacy
+            : Array.isArray((legacy as any)?.users)
+              ? (legacy as any).users
+              : [];
+          return { users };
+        } catch (innerErr: any) {
+          // Gracefully handle 404s (e.g., user not found) by returning empty list
+          if (innerErr?.status === 404) {
+            return { users: [] };
+          }
+          throw innerErr;
+        }
+      }
+    } catch (err) {
+      console.error('getFriends error:', err);
+      throw err;
+    }
+  }
+
+  // Friends-of-friends suggestions for "People You May Know"
+  async getUserSuggestions(username: string) {
+    try {
+      const res = await this.makeRootRequest(`/api/users/suggestions/${encodeURIComponent(username)}`);
+      return Array.isArray(res) ? res : [];
+    } catch (error) {
+      console.error('getUserSuggestions error:', error);
+      return [];
+    }
+  }
+
+  // Latest chats for a user, restricted to confirmed friends
+  async getLatestChats(username: string) {
+    try {
+      const res = await this.makeRootRequest(`/api/messages/latest/${encodeURIComponent(username)}`);
+      return Array.isArray(res) ? res : [];
+    } catch (error) {
+      console.error('getLatestChats error:', error);
+      return [];
+    }
+  }
+
+  async sendFriendRequest(username: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const from = current?.username;
+
+      if (!from) {
+        console.warn('sendFriendRequest: missing current user');
+        return { success: false };
+      }
+
+      const res = await this.makeRootRequest('/friend-request', {
+        method: 'POST',
+        body: JSON.stringify({ from, to: username }),
+      });
+      return res;
+    } catch (error) {
+      console.error('sendFriendRequest error:', error);
+      return { success: false };
+    }
+  }
+
+  // Follow/unfollow leverage friend request system for now
+  async followUser(targetUsername: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const from = current?.username;
+
+      if (!from) {
+        console.warn('followUser: missing current user');
+        return { success: false };
+      }
+
+      await this.makeRootRequest('/friend-request', {
+        method: 'POST',
+        body: JSON.stringify({ from, to: targetUsername }),
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('followUser error:', error);
+      // Be lenient to avoid breaking UI toggle when backend is unavailable
+      return { success: true };
+    }
+  }
+
+  async unfollowUser(targetUsername: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const from = current?.username;
+
+      if (!from) {
+        console.warn('unfollowUser: missing current user');
+        return { success: false };
+      }
+
+      // If already friends, unfollow acts as unfriend (remove friendship)
+      try {
+        const isFriends = await this.areFriends(targetUsername);
+        if (isFriends) {
+          await this.makeRequest('/users/unfriend', {
+            method: 'POST',
+            body: JSON.stringify({ user1: from, user2: targetUsername }),
+          });
+          return { success: true };
+        }
+      } catch (_e) {
+        // Fall through to decline pending request
+      }
+
+      // Otherwise, cancel a pending friend/follow request
+      await this.makeRootRequest('/friend-decline', {
+        method: 'POST',
+        body: JSON.stringify({ from, to: targetUsername }),
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('unfollowUser error:', error);
+      // Be lenient to avoid breaking UI toggle when backend is unavailable
+      return { success: true };
+    }
+  }
+
+  // Accept a friend request from the given username (sender)
+  async acceptFriendRequest(fromUsername: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const to = current?.username;
+
+      if (!to) {
+        console.warn('acceptFriendRequest: missing current user');
+        return { success: false };
+      }
+
+      // Backend expects { user1, user2 }
+      const res = await this.makeRootRequest('/friend-accept', {
+        method: 'POST',
+        body: JSON.stringify({ user1: to, user2: fromUsername }),
+      });
+
+      return (res && typeof res === 'object') ? res : { success: true };
+    } catch (error) {
+      console.error('acceptFriendRequest error:', error);
+      return { success: false };
+    }
+  }
+
+  // Decline a friend request from the given username (sender)
+  async declineFriendRequest(fromUsername: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const to = current?.username;
+
+      if (!to) {
+        console.warn('declineFriendRequest: missing current user');
+        return { success: false };
+      }
+
+      const res = await this.makeRootRequest('/friend-decline', {
+        method: 'POST',
+        body: JSON.stringify({ from: fromUsername, to }),
+      });
+
+      return (res && typeof res === 'object') ? res : { success: true };
+    } catch (error) {
+      console.error('declineFriendRequest error:', error);
+      return { success: false };
+    }
+  }
+
+  // Unfriend using dedicated backend route
+  async unfriendUser(targetUsername: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const from = current?.username;
+
+      if (!from) {
+        console.warn('unfriendUser: missing current user');
+        return { success: false };
+      }
+
+      await this.makeRequest('/users/unfriend', {
+        method: 'POST',
+        body: JSON.stringify({ user1: from, user2: targetUsername }),
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('unfriendUser error:', error);
+      return { success: false };
+    }
+  }
+
+  // Check friendship status by inspecting current user's friends list
+  async areFriends(targetUsername: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const from = current?.username;
+
+      if (!from) {
+        console.warn('areFriends: missing current user');
+        return false;
+      }
+
+      const res = await this.getFriends(from);
+
+      const friends: any[] = Array.isArray(res?.users) ? res.users : [];
+      return friends.some((u: any) =>
+        (u?.username ?? u?.user?.username) === targetUsername
+      );
+    } catch (error) {
+      console.error('areFriends error:', error);
+      return false;
+    }
+  }
+
+  // Messages methods
+  async getMessages(recipient: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const sender = current?.username;
+
+      if (!sender) {
+        console.warn('getMessages: missing current user');
+        return { success: false, messages: [] } as any;
+      }
+
+      const data = await this.makeRequest(
+        `/messages/${encodeURIComponent(sender)}/${encodeURIComponent(recipient)}`
+      );
+      const messages = Array.isArray(data) ? data : (data as any)?.messages || [];
+      return { success: true, messages } as any;
+    } catch (error) {
+      console.error('getMessages error:', error);
+      throw error;
+    }
+  }
+
+  // Call methods
+  async logCall(caller: string, receiver: string, status: 'started' | 'accepted' | 'declined' | 'missed' | 'ended', type: 'audio' | 'video', duration: number = 0) {
+    try {
+      const body = { caller, receiver, status, type, duration } as any;
+      return await this.makeRequest('/calls', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      console.error('logCall error:', error);
+      throw error;
+    }
+  }
+
+  // Fetch user summary by username (name, avatar, username)
+  async getUserByUsername(username: string) {
+    try {
+      // Server exposes GET /users/:username returning { user }
+      const resp = await this.makeRequest(`/users/${encodeURIComponent(username)}`, {
+        method: 'GET',
+      });
+      // Normalize to a simple object when server returns { user }
+      return (resp as any)?.user || resp;
+    } catch (error) {
+      console.error('getUserByUsername error:', error);
+      // Swallow 404 by returning minimal object rather than throwing to avoid noisy logs
+      if ((error as any)?.message?.includes('404')) {
+        return { username } as any;
+      }
+      throw error;
+    }
+  }
+
+  // Normalize avatar path to absolute URL
+  normalizeAvatar(uri?: string): string {
+    if (!uri) return 'https://cdn-icons-png.flaticon.com/512/1077/1077114.png';
+    if (/^https?:\/\//i.test(uri)) return uri;
+    const base = (this as any).rootUrl || 'https://connecther.network';
+    return `${base}/${String(uri).replace(/^\/+/, '')}`;
+  }
+
+  async getCallLogs(username: string) {
+    try {
+      const slug = encodeURIComponent(username);
+      const data = await this.makeRequest(`/calls/${slug}`);
+      return Array.isArray(data) ? data : (data as any) || [];
+    } catch (error) {
+      console.error('getCallLogs error:', error);
+      return [];
+    }
+  }
+
+  async deleteCallLog(id: string) {
+    try {
+      const slug = encodeURIComponent(id);
+      return await this.makeRequest(`/calls/${slug}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('deleteCallLog error:', error);
+      throw error;
+    }
+  }
+
+  async bulkDeleteCallLogs(ids: string[]) {
+    try {
+      return await this.makeRequest('/calls/bulk-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      });
+    } catch (error) {
+      console.error('bulkDeleteCallLogs error:', error);
+      throw error;
+    }
+  }
+
+  async sendMessage(data: {
+    to: string;
+    message: string;
+    files?: any[]; // legacy field
+    media?: any[]; // preferred field name expected by backend
+    replyTo?: string; // message id
+    replyFrom?: string; // username who is replying
+    reply?: string; // snippet of replied text
+  }) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const sender = current?.username;
+
+      if (!sender) {
+        console.warn('sendMessage: missing current user');
+        return { success: false } as any;
+      }
+
+      // Build payload to satisfy backend schema for media-only or captioned media
+      const payload: any = {
+        sender,
+        recipient: data.to,
+      };
+
+      // Normalize media array from either `media` or legacy `files`
+      const mediaArray = Array.isArray(data.media) && data.media.length > 0
+        ? data.media
+        : (Array.isArray(data.files) && data.files.length > 0 ? data.files : []);
+
+      const hasText = typeof data.message === 'string' && data.message.trim().length > 0;
+
+      if (mediaArray.length > 0) {
+        // Send as array to be parsed directly by backend; supports [{url,type,name,public_id}]
+        payload.media = mediaArray;
+        // Store caption separately; backend accepts either `text` or `caption`
+        if (hasText) payload.caption = data.message.trim();
+        // Avoid empty text for media-only messages to keep validation focused on media presence
+        payload.text = '';
+      } else {
+        // No media; this is a text-only message
+        payload.text = hasText ? data.message.trim() : '';
+      }
+
+      // Reply context support
+      if (data.replyTo) payload.replyToId = data.replyTo;
+      if (data.replyFrom) payload.replyFrom = data.replyFrom;
+      if (data.reply) payload.reply = data.reply;
+
+      return this.makeRequest('/messages', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      console.error('sendMessage error:', error);
+      throw error;
+    }
+  }
+
+  async deleteMessageForMe(messageId: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+      if (!username) return { success: false } as any;
+      return this.makeRequest(`/messages/${encodeURIComponent(messageId)}/delete-for-me/${encodeURIComponent(username)}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('deleteMessageForMe error:', error);
+      throw error;
+    }
+  }
+
+  async deleteMessageForEveryone(messageId: string) {
+    try {
+      return this.makeRequest(`/messages/${encodeURIComponent(messageId)}/delete-for-everyone`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('deleteMessageForEveryone error:', error);
+      throw error;
+    }
+  }
+
+  async editMessage(messageId: string, newText: string) {
+    try {
+      return this.makeRequest(`/messages/${encodeURIComponent(messageId)}/edit`, {
+        method: 'PUT',
+        body: JSON.stringify({ text: newText }),
+      });
+    } catch (error) {
+      console.error('editMessage error:', error);
+      throw error;
+    }
+  }
+
+  async clearChat(friendUsername: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+      if (!username) return { success: false } as any;
+      return this.makeRequest(`/messages/clear/${encodeURIComponent(username)}/${encodeURIComponent(friendUsername)}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('clearChat error:', error);
+      throw error;
+    }
+  }
+
+  // Users: Last seen
+  async getLastSeen(username: string) {
+    try {
+      const res = await this.makeRootRequest(`/api/users/last-seen/${encodeURIComponent(username)}`);
+      // Expected shape: { lastSeen: ISOString }
+      return res;
+    } catch (error) {
+      console.error('getLastSeen error:', error);
+      throw error;
+    }
+  }
+
+  async deleteMessage(messageId: string) {
+    return this.makeRequest(`/messages/${messageId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Posts methods
+  async getPosts(page: number = 1) {
+    // Prefer personalized randomized feed when current user exists
+    try {
+      const userStr = await AsyncStorage.getItem('currentUser');
+      const username = userStr ? JSON.parse(userStr).username : undefined;
+      if (username) {
+        const data = await this.makeRequest(`/posts/${encodeURIComponent(username)}/feed?page=${page}`);
+        const raw = Array.isArray(data) ? data : (data as any)?.posts || [];
+        return raw.map((p: any) => this.normalizePost(p));
+      }
+    } catch (err) {
+      // Fall through to global feed
+    }
+    const data = await this.makeRequest(`/posts?page=${page}`);
+    const raw = Array.isArray(data) ? data : (data as any)?.posts || [];
+    return raw.map((p: any) => this.normalizePost(p));
+  }
+
+  async getPost(postId: string) {
+    const data = await this.makeRequest(`/posts/${postId}`);
+    const raw = (data as any)?.post || data;
+    const post = this.normalizePost(raw);
+    return { post };
+  }
+
+  async createPost(data: { content: string; files?: any[] }) {
+    try {
+      const userStr = await AsyncStorage.getItem('currentUser');
+      const username = userStr ? JSON.parse(userStr).username : undefined;
+      const payload = {
+        username,
+        caption: data.content,
+        media: Array.isArray(data.files) ? data.files : [],
+      };
+
+      const res = await this.makeRequest('/posts', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      // Normalize the created post for the app
+      const post = this.normalizePost(res);
+      return { success: true, post };
+    } catch (error) {
+      console.error('createPost error:', error);
+      return { success: false } as any;
+    }
+  }
+
+  async likePost(postId: string) {
+    try {
+      const userStr = await AsyncStorage.getItem('currentUser');
+      const username = userStr ? JSON.parse(userStr).username : undefined;
+      return this.makeRequest(`/posts/${postId}/like`, {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      });
+    } catch (error) {
+      console.error('Error preparing likePost request:', error);
+      // Fallback without username to avoid UI breakage
+      return this.makeRequest(`/posts/${postId}/like`, {
+        method: 'POST',
+      });
+    }
+  }
+
+  async savePost(postId: string) {
+    try {
+      const userStr = await AsyncStorage.getItem('currentUser');
+      const username = userStr ? JSON.parse(userStr).username : undefined;
+      return this.makeRequest(`/posts/${postId}/save`, {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      });
+    } catch (error) {
+      console.error('Error preparing savePost request:', error);
+      return this.makeRequest(`/posts/${postId}/save`, { method: 'POST' });
+    }
+  }
+
+  async unsavePost(postId: string) {
+    try {
+      const userStr = await AsyncStorage.getItem('currentUser');
+      const username = userStr ? JSON.parse(userStr).username : undefined;
+      return this.makeRequest(`/posts/${postId}/unsave`, {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      });
+    } catch (error) {
+      console.error('Error preparing unsavePost request:', error);
+      return this.makeRequest(`/posts/${postId}/unsave`, { method: 'POST' });
+    }
+  }
+
+  async getSavedPosts(username: string) {
+    const fetchSaved = async (u: string) => {
+      const data = await this.makeRequest(`/posts/saved/${encodeURIComponent(u.trim())}`);
+      const raw = (data as any)?.posts || [];
+      return raw.map((p: any) => this.normalizePost(p));
+    };
+
+    try {
+      // Try as-is
+      return await fetchSaved(username);
+    } catch (err: any) {
+      // Retry lowercase on 404
+      if (err?.status === 404) {
+        const lower = username.trim().toLowerCase();
+        if (lower !== username) {
+          try {
+            return await fetchSaved(lower);
+          } catch (_) {}
+        }
+        // Resolve by full name or display identifier, then retry with resolved username
+        try {
+          const resolved = await this.makeRequest(`/users/resolve/${encodeURIComponent(username.trim())}`);
+          const resolvedUsername = (resolved as any)?.user?.username || (resolved as any)?.username;
+          if (resolvedUsername) {
+            return await fetchSaved(resolvedUsername);
+          }
+        } catch (_) {}
+      }
+      // Avoid logging 404 (expected when no user or saved posts yet)
+      if (!(err?.status === 404)) {
+        console.error('getSavedPosts error:', err);
+      }
+      return [];
+    }
+  }
+  async commentOnPost(postId: string, comment: string) {
+    try {
+      const userStr = await AsyncStorage.getItem('currentUser');
+      const username = userStr ? JSON.parse(userStr).username : undefined;
+      return this.makeRequest(`/posts/${postId}/comment`, {
+        method: 'POST',
+        body: JSON.stringify({ username, text: comment }),
+      });
+    } catch (error) {
+      console.error('Error preparing commentOnPost request:', error);
+      // Fallback without username to avoid breaking UI
+      return this.makeRequest(`/posts/${postId}/comment`, {
+        method: 'POST',
+        body: JSON.stringify({ text: comment }),
+      });
+    }
+  }
+
+  async replyToComment(postId: string, commentIndex: number, text: string) {
+    try {
+      const userStr = await AsyncStorage.getItem('currentUser');
+      const username = userStr ? JSON.parse(userStr).username : undefined;
+      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}/reply`, {
+        method: 'POST',
+        body: JSON.stringify({ username, text }),
+      });
+    } catch (error) {
+      console.error('Error preparing replyToComment request:', error);
+      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}/reply`, {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
+    }
+  }
+
+  async editComment(postId: string, commentIndex: number, text: string) {
+    try {
+      const userStr = await AsyncStorage.getItem('currentUser');
+      const username = userStr ? JSON.parse(userStr).username : undefined;
+      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}`, {
+        method: 'PUT',
+        body: JSON.stringify({ username, text }),
+      });
+    } catch (error) {
+      console.error('Error preparing editComment request:', error);
+      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}`, {
+        method: 'PUT',
+        body: JSON.stringify({ text }),
+      });
+    }
+  }
+
+  async deleteComment(postId: string, commentIndex: number) {
+    try {
+      const userStr = await AsyncStorage.getItem('currentUser');
+      const username = userStr ? JSON.parse(userStr).username : undefined;
+      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ username }),
+      });
+    } catch (error) {
+      console.error('Error preparing deleteComment request:', error);
+      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}`, {
+        method: 'DELETE',
+      });
+    }
+  }
+
+  async editReply(postId: string, commentIndex: number, replyIndex: number, text: string) {
+    try {
+      const userStr = await AsyncStorage.getItem('currentUser');
+      const username = userStr ? JSON.parse(userStr).username : undefined;
+      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}/reply/${replyIndex}`, {
+        method: 'PUT',
+        body: JSON.stringify({ username, text }),
+      });
+    } catch (error) {
+      console.error('Error preparing editReply request:', error);
+      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}/reply/${replyIndex}`, {
+        method: 'PUT',
+        body: JSON.stringify({ text }),
+      });
+    }
+  }
+
+  async deleteReply(postId: string, commentIndex: number, replyIndex: number) {
+    try {
+      const userStr = await AsyncStorage.getItem('currentUser');
+      const username = userStr ? JSON.parse(userStr).username : undefined;
+      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}/reply/${replyIndex}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ username }),
+      });
+    } catch (error) {
+      console.error('Error preparing deleteReply request:', error);
+      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}/reply/${replyIndex}`, {
+        method: 'DELETE',
+      });
+    }
+  }
+
+  async resharePost(originalPostId: string) {
+    try {
+      const userStr = await AsyncStorage.getItem('currentUser');
+      const username = userStr ? JSON.parse(userStr).username : undefined;
+      return this.makeRequest('/posts/reshare', {
+        method: 'POST',
+        body: JSON.stringify({ originalPostId, username }),
+      });
+    } catch (error) {
+      console.error('Error preparing resharePost request:', error);
+      return this.makeRequest('/posts/reshare', {
+        method: 'POST',
+        body: JSON.stringify({ originalPostId }),
+      });
+    }
+  }
+
+  // Communities methods
+  async getCommunities() {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+
+      const data = await this.makeRequest('/communities/all');
+      const raw = Array.isArray(data)
+        ? data
+        : (data as any)?.communities || [];
+
+      const communities = raw.map((c: any) => ({
+        ...c,
+        memberCount: Array.isArray(c?.members) ? c.members.length : 0,
+        isJoined: username ? Array.isArray(c?.members) && c.members.includes(username) : false,
+      }));
+
+      return { success: true, communities } as any;
+    } catch (error) {
+      console.error('getCommunities error:', error);
+      throw error;
+    }
+  }
+
+  async getCommunity(communityId: string) {
+    return this.makeRequest(`/communities/${communityId}`);
+  }
+
+  async getCommunityMembers(communityId: string) {
+    try {
+      const data = await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/members`);
+      const membersRaw = (data as any)?.members || ((data as any)?.data?.members) || [];
+      const normalize = (m: any) => ({
+        username: m?.username || m?.user || '',
+        name: m?.name || m?.username || m?.user || '',
+        avatar: this.normalizeAvatar(m?.avatar),
+        isAdmin: !!m?.isAdmin,
+        isCreator: !!m?.isCreator,
+      });
+      const members = Array.isArray(membersRaw) ? membersRaw.map(normalize) : [];
+      return { success: true, members } as any;
+    } catch (error) {
+      console.error('getCommunityMembers error:', error);
+      return { success: false, members: [] } as any;
+    }
+  }
+
+  async promoteCommunityMember(communityId: string, username: string) {
+    try {
+      const data = await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/promote`, {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      });
+      return (data as any) || { success: true };
+    } catch (error) {
+      console.error('promoteCommunityMember error:', error);
+      return { success: false, message: 'Failed to promote member' } as any;
+    }
+  }
+
+  async demoteCommunityMember(communityId: string, username: string) {
+    try {
+      const data = await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/demote`, {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      });
+      return (data as any) || { success: true };
+    } catch (error) {
+      console.error('demoteCommunityMember error:', error);
+      return { success: false, message: 'Failed to demote member' } as any;
+    }
+  }
+
+  async removeCommunityMember(communityId: string, targetUsername: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+      const data = await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/remove-member`, {
+        method: 'POST',
+        body: JSON.stringify({ username, target: targetUsername }),
+      });
+      return (data as any) || { success: true };
+    } catch (error) {
+      console.error('removeCommunityMember error:', error);
+      return { success: false, message: 'Failed to remove member' } as any;
+    }
+  }
+
+  async getCommunityMessages(communityId: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+
+      if (!username) {
+        console.warn('getCommunityMessages: missing current user');
+        return { success: false, messages: [] } as any;
+      }
+
+      const data = await this.makeRequest(
+        `/communities/${encodeURIComponent(communityId)}/messages?username=${encodeURIComponent(
+          username
+        )}`
+      );
+      const messages = (data as any)?.messages || (Array.isArray(data) ? data : []);
+      return { success: true, messages } as any;
+    } catch (error) {
+      console.error('getCommunityMessages error:', error);
+      throw error;
+    }
+  }
+
+  async getCommunityPosts() {
+    // Backend represents community feed via community messages;
+    // provide an adapter returning messages as posts for the screen.
+    try {
+      const list = await this.getCommunities();
+      const communities: any[] = (list as any)?.communities || [];
+      const posts: any[] = [];
+      for (const c of communities) {
+        const msgs = await this.getCommunityMessages(c._id);
+        const m = (msgs as any)?.messages || [];
+        // Map messages to a simplified post-like structure
+        m.forEach((msg: any) => {
+          posts.push({
+            _id: msg._id,
+            community: c._id,
+            author: msg.sender?.username
+              ? { username: msg.sender.username, name: msg.sender.name || msg.sender.username, avatar: msg.sender.avatar }
+              : { username: msg.sender, name: msg.sender, avatar: '' },
+            content: msg.text || '',
+            files: msg.media || [],
+            likes: msg.likes || [],
+            comments: msg.comments || [],
+            createdAt: msg.time || msg.timestamp || new Date().toISOString(),
+          });
+        });
+      }
+      return { success: true, posts } as any;
+    } catch (error) {
+      console.error('getCommunityPosts error:', error);
+      return { success: false, posts: [] } as any;
+    }
+  }
+
+  async joinCommunity(communityId: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+      return this.makeRequest(`/communities/${communityId}/join`, {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      });
+    } catch (error) {
+      console.error('joinCommunity error:', error);
+      throw error;
+    }
+  }
+
+  async leaveCommunity(communityId: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+      return this.makeRequest(`/communities/${communityId}/leave`, {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      });
+    } catch (error) {
+      console.error('leaveCommunity error:', error);
+      throw error;
+    }
+  }
+
+  async getUserCommunities(username?: string) {
+    try {
+      let u = username;
+      if (!u) {
+        const stored = await AsyncStorage.getItem('currentUser');
+        const current = stored ? JSON.parse(stored) : null;
+        u = current?.username;
+      }
+      if (!u) {
+        return { success: false, owned: [], joined: [] } as any;
+      }
+      const data = await this.makeRequest(`/communities/user/${encodeURIComponent(u)}`);
+      const ownedRaw = (data as any)?.owned || [];
+      const joinedRaw = (data as any)?.joined || [];
+
+      const normalize = (c: any) => ({
+        ...c,
+        avatar: this.normalizeAvatar(c?.avatar),
+        memberCount: Array.isArray(c?.members) ? c.members.length : 0,
+        isJoined: Array.isArray(c?.members) && c.members.includes(u!),
+      });
+
+      const owned = ownedRaw.map(normalize);
+      const joined = joinedRaw.map(normalize);
+      return { success: true, owned, joined } as any;
+    } catch (error) {
+      console.error('getUserCommunities error:', error);
+      throw error;
+    }
+  }
+
+  async createCommunity(data: { name: string; description: string; category?: string; isPrivate?: boolean; avatar?: string }) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+
+      const payload = {
+        name: data.name,
+        description: data.description,
+        avatar: data.avatar,
+        username,
+      };
+
+      return this.makeRequest('/communities/create', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      console.error('createCommunity error:', error);
+      throw error;
+    }
+  }
+
+  // Upload image (multipart) and return a normalized URL
+  async uploadImage(uri: string, fileName: string = 'upload.jpg', mimeType: string = 'image/jpeg') {
+    try {
+      const token = await this.getAuthToken();
+      const form = new FormData();
+      // React Native requires this shape for file uploads
+      form.append('files', {
+        uri,
+        name: fileName,
+        type: mimeType,
+      } as any);
+
+      const headers: HeadersInit = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const response = await fetch(`${this.baseUrl}/upload`, {
+        method: 'POST',
+        headers,
+        body: form,
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        const message = (payload && payload.message) || `HTTP error ${response.status}`;
+        const err = new Error(message);
+        (err as any).status = response.status;
+        (err as any).payload = payload;
+        throw err;
+      }
+
+      const files = (payload as any)?.files || [];
+      const first = files[0];
+      const url: string | undefined = first?.secure_url || first?.url;
+      return { success: true, url } as any;
+    } catch (error) {
+      console.error('uploadImage error:', error);
+      throw error;
+    }
+  }
+
+  // Notifications methods
+  async getNotifications(username?: string) {
+    // Prefer user-specific like/comment notifications when a username is provided,
+    // otherwise fall back to sponsor alerts visible to all users.
+    try {
+      if (username) {
+        const likesComments = await this.makeRequest(
+          `/notifications/likes-comments/${encodeURIComponent(username)}`
+        );
+        return {
+          success: true,
+          notifications: Array.isArray(likesComments)
+            ? likesComments
+            : (likesComments as any)?.notifications || likesComments || [],
+        };
+      }
+
+      const sponsorAlerts = await this.makeRequest('/notifications/sponsor-alerts');
+      return {
+        success: true,
+        notifications: Array.isArray(sponsorAlerts)
+          ? sponsorAlerts
+          : (sponsorAlerts as any)?.notifications || sponsorAlerts || [],
+      };
+    } catch (error) {
+      console.error('getNotifications error:', error);
+      throw error;
+    }
+  }
+
+  async markNotificationAsRead(_notificationId: string) {
+    // The backend does not currently expose a dedicated "mark as read" route.
+    // Avoid spamming 404s by returning a successful no-op.
+    return { success: true };
+  }
+
+  // File upload
+  async uploadFile(
+    file: { uri: string; name: string; type: string },
+    type: 'image' | 'video' | 'audio' | 'document',
+    onProgress?: (percent: number) => void
+  ) {
+    // If progress callback is provided, use XMLHttpRequest to track upload progress
+    if (onProgress) {
+      return new Promise<any>(async (resolve, reject) => {
+        try {
+          const token = await this.getAuthToken();
+          const form = new FormData();
+          // Server accepts arbitrary field names via upload.any(); use a plural key
+          (form as any).append('files', {
+            uri: file.uri,
+            name: file.name,
+            type: file.type || 'application/octet-stream',
+          } as any);
+          (form as any).append('type', type);
+
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', `${this.baseUrl}/upload`);
+          if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percent = Math.round((event.loaded / event.total) * 100);
+              try { onProgress(percent); } catch (_) {}
+            }
+          };
+
+          xhr.onreadystatechange = () => {
+            if (xhr.readyState === 4) {
+              // Finalize progress at 100%
+              try { onProgress(100); } catch (_) {}
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                  const payload = JSON.parse(xhr.responseText || '{}');
+                  resolve(payload);
+                } catch (e) {
+                  resolve({ success: true });
+                }
+              } else {
+                reject(new Error(`HTTP error ${xhr.status}`));
+              }
+            }
+          };
+
+          // RN automatically sets proper multipart boundaries for FormData
+          xhr.send(form as any);
+        } catch (err) {
+          reject(err);
+        }
+      });
+    }
+
+    // Fallback: simple fetch without progress
+    const formData = new FormData();
+    (formData as any).append('files', file as any);
+    (formData as any).append('type', type);
+
+    return this.makeRequest('/upload', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      body: formData,
+    });
+  }
+
+  // Download a remote media file to device storage with progress callback
+  async downloadFile(
+    url: string,
+    filename: string,
+    onProgress?: (percent: number) => void
+  ) {
+    try {
+      // Prefer public Downloads directory on Android; fallback to app documents
+      const baseDir = Platform.OS === 'android'
+        ? (RNFS.DownloadDirectoryPath || RNFS.DocumentDirectoryPath)
+        : RNFS.DocumentDirectoryPath;
+      const destPath = `${baseDir}/${filename}`;
+
+      const result = await RNFS.downloadFile({
+        fromUrl: url,
+        toFile: destPath,
+        progressDivider: 2,
+        begin: (_res) => {
+          try { onProgress?.(0); } catch (_) {}
+        },
+        progress: (data) => {
+          const percent = Math.floor((data.bytesWritten / data.contentLength) * 100);
+          try { onProgress?.(percent); } catch (_) {}
+        },
+      }).promise;
+
+      if (result.statusCode && result.statusCode >= 200 && result.statusCode < 300) {
+        try { onProgress?.(100); } catch (_) {}
+        return { success: true, path: destPath } as any;
+      }
+      return { success: false, statusCode: result.statusCode } as any;
+    } catch (err) {
+      console.error('downloadFile error:', err);
+      throw err;
+    }
+  }
+}
+
+// Export a lazy singleton to avoid constructor side effects during module import.
+// The instance is created on first property access, deferring initialization
+// until the service is actually used by a screen or another module.
+let __apiSingleton: ApiService | null = null;
+const apiServiceProxy: ApiService = new Proxy({} as ApiService, {
+  get(_target, prop: keyof ApiService) {
+    if (!__apiSingleton) __apiSingleton = new ApiService();
+    const value = (__apiSingleton as any)[prop];
+    return typeof value === 'function'
+      ? (...args: any[]) => (value as any).apply(__apiSingleton, args)
+      : value;
+  },
+  set(_target, prop: keyof ApiService, value: any) {
+    if (!__apiSingleton) __apiSingleton = new ApiService();
+    (__apiSingleton as any)[prop] = value;
+    return true;
+  },
+}) as ApiService;
+
+export default apiServiceProxy;
