@@ -20,6 +20,7 @@ export class PushNotificationService {
   private static instance: PushNotificationService;
   private isInitialized = false;
   private firebaseAvailable = false;
+  private foregroundUnsubscribe: (() => void) | null = null;
 
   static getInstance(): PushNotificationService {
     if (!PushNotificationService.instance) {
@@ -252,6 +253,25 @@ export class PushNotificationService {
     });
   }
 
+  // Convenience: allow screens to create additional channels on demand
+  createChannel(channel: {
+    channelId: string;
+    channelName: string;
+    channelDescription?: string;
+    playSound?: boolean;
+    soundName?: string;
+    importance?: number;
+    vibrate?: boolean;
+  }): void {
+    try {
+      PushNotification.createChannel(channel as any, (created) => {
+        console.log(`Channel ${channel.channelId} created:`, created);
+      });
+    } catch (e) {
+      console.log('createChannel failed:', e);
+    }
+  }
+
   private async setupFirebaseMessaging(): Promise<void> {
     try {
       // Check if Firebase messaging is available
@@ -273,7 +293,7 @@ export class PushNotificationService {
       });
 
       // Handle foreground messages
-      messaging().onMessage(async (remoteMessage) => {
+      this.foregroundUnsubscribe = messaging().onMessage(async (remoteMessage) => {
         console.log('Foreground message received:', remoteMessage);
         this.displayLocalNotification(remoteMessage);
       });
@@ -301,6 +321,40 @@ export class PushNotificationService {
     } catch (error) {
       console.error('Error setting up Firebase messaging:', error);
       throw error; // Re-throw to be caught by the initialize method
+    }
+  }
+
+  // Allow consumers to register custom foreground message handlers
+  onMessage(handler: (remoteMessage: FirebaseMessagingTypes.RemoteMessage) => void): void {
+    try {
+      if (!this.firebaseAvailable) {
+        console.log('onMessage ignored: Firebase messaging not available');
+        return;
+      }
+      // Chain alongside internal display handler
+      messaging().onMessage(async (remoteMessage) => {
+        try {
+          handler(remoteMessage);
+        } catch (e) {
+          console.log('onMessage handler error:', e);
+        }
+      });
+    } catch (e) {
+      console.log('onMessage registration failed:', e);
+    }
+  }
+
+  // Ensure background handling is enabled; safe to call multiple times
+  enableBackgroundHandling(): void {
+    try {
+      if (!this.firebaseAvailable) {
+        console.log('enableBackgroundHandling skipped: Firebase messaging not available');
+        return;
+      }
+      // No-op here since setBackgroundMessageHandler is configured in setupFirebaseMessaging
+      console.log('Background message handling enabled');
+    } catch (e) {
+      console.log('enableBackgroundHandling failed:', e);
     }
   }
 

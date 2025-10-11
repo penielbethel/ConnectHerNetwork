@@ -65,6 +65,10 @@ export type RootStackParamList = {
   SuperAdminPanel: undefined;
   AdminPanel: undefined;
   Sponsors: undefined;
+  SponsorDetail: {
+    sponsorId: string;
+    name?: string;
+  };
 };
 
 declare global {

@@ -59,7 +59,53 @@ const NotificationScreen = () => {
   useEffect(() => {
     loadCurrentUser();
     // Ensure push is prepared when user visits Notifications
-    PushNotificationService.getInstance().initialize();
+    const push = PushNotificationService.getInstance();
+    push.initialize();
+    // Register a dedicated Sponsors Alert channel
+    try {
+      push.createChannel({
+        channelId: 'sponsors_alerts',
+        channelName: 'Sponsors Alerts',
+        channelDescription: 'Notifications about sponsor posts and opportunities',
+      });
+    } catch (_e) {}
+
+    // Foreground handler to surface sponsor alerts instantly
+    push.onMessage((msg: any) => {
+      const type = msg?.data?.type || msg?.type;
+      if (type === 'sponsor_alert') {
+        try {
+          push.showLocalNotification({
+            title: msg?.notification?.title || msg?.title || 'Sponsor Alert',
+            body: msg?.notification?.body || msg?.body || 'New opportunity from a sponsor',
+            data: msg?.data || { type: 'sponsor_alert' },
+            channelId: 'sponsors_alerts',
+          });
+        } catch (e) {
+          console.log('Local sponsor alert failed:', e);
+        }
+        // Prepend into sponsors tab
+        const n: Notification = {
+          _id: String(Date.now()),
+          type: 'community',
+          title: msg?.notification?.title || msg?.title || 'Sponsor Alert',
+          message: msg?.notification?.body || msg?.body || '',
+          sender: {
+            username: msg?.data?.sponsorUsername || 'sponsor',
+            name: msg?.data?.sponsorName || 'Sponsor',
+            avatar: msg?.data?.sponsorAvatar || '',
+          },
+          data: msg?.data || {},
+          isRead: false,
+          createdAt: new Date().toISOString(),
+        } as any;
+        setNotifications(prev => [n, ...prev]);
+      }
+    });
+
+    // Background notifications are handled by the service; ensure it is active
+    push.enableBackgroundHandling();
+
     loadNotifications();
     setupSocketListeners();
   }, []);

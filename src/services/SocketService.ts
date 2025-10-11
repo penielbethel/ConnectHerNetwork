@@ -265,6 +265,7 @@ const socketServiceProxy = {
   leaveGroupCall: (data: { communityId: string; username: string }) => socketServiceSingleton.leaveGroupCall(data),
   declineGroupCall: (data: { communityId: string; username: string }) => socketServiceSingleton.declineGroupCall(data),
   onGroupCallStart: (callback: (data: { communityId: string; communityName: string }) => void) => socketServiceSingleton.onGroupCallStart(callback),
+  onIncomingGroupCall: (callback: (data: { from: string; communityId: string; communityName: string; type?: 'audio' | 'video' }) => void) => socketServiceSingleton.onIncomingGroupCall(callback),
   initiateCall: (data: { from: string; to: string; type: 'audio' | 'video'; offer: any }) => socketServiceSingleton.initiateCall(data),
   acceptCall: (data: { from: string; to: string }) => socketServiceSingleton.acceptCall(data),
   rejectCall: (data: { from: string; to: string }) => socketServiceSingleton.rejectCall(data),

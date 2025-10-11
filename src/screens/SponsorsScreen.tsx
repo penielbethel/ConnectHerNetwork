@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, useColorScheme, Image, FlatList, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, useColorScheme, Image, FlatList, RefreshControl, TouchableOpacity } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { colors, globalStyles } from '../styles/globalStyles';
 import apiService from '../services/ApiService';
 
@@ -15,6 +16,7 @@ interface Sponsor {
 
 const SponsorsScreen: React.FC = () => {
   const isDark = useColorScheme() === 'dark';
+  const navigation = useNavigation();
   const [sponsors, setSponsors] = useState<Sponsor[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -47,14 +49,14 @@ const SponsorsScreen: React.FC = () => {
   };
 
   const renderSponsor = ({ item }: { item: Sponsor }) => (
-    <View style={styles.card}>
+    <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('SponsorDetail' as never, { sponsorId: item._id, name: item.companyName } as never)}>
       {item.logo ? (
         <Image source={{ uri: getAvatarUri(item.logo) }} style={styles.logo} />
       ) : null}
       <Text style={styles.company}>{item.companyName}</Text>
       {!!item.objectives && <Text style={styles.objectives}>{item.objectives}</Text>}
       <Text style={styles.meta}>Posts: {item.postCount ?? item.posts?.length ?? 0}</Text>
-    </View>
+    </TouchableOpacity>
   );
 
   return (

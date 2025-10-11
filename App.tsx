@@ -256,6 +256,7 @@ const App: React.FC = () => {
         <Stack.Screen name="IncomingCall" component={IncomingCallScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Verification" component={VerificationScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Sponsors" component={SponsorsScreen} />
+        <Stack.Screen name="SponsorDetail" component={SponsorDetailScreen} />
         <Stack.Screen name="SuperAdminPanel" component={SuperAdminPanelScreen} />
         <Stack.Screen name="AdminPanel" component={AdminPanelScreen} />
       </Stack.Navigator>
