@@ -578,7 +578,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: colors.text,
+    color: '#e91e63',
     marginLeft: 15,
   },
   unreadBadge: {

@@ -159,6 +159,21 @@ const DashboardScreen = () => {
     setPreviewIndex(0);
   };
 
+  // Ensure preview starts on the tapped media without white screen
+  const previewListRef = useRef<FlatList<any>>(null);
+  useEffect(() => {
+    if (mediaPreviewVisible) {
+      // Scroll after modal mounts to avoid initialScrollIndex rendering issues
+      requestAnimationFrame(() => {
+        try {
+          previewListRef.current?.scrollToIndex({ index: previewIndex, animated: false });
+        } catch (_e) {
+          previewListRef.current?.scrollToOffset({ offset: previewIndex * screenWidth, animated: false });
+        }
+      });
+    }
+  }, [mediaPreviewVisible, previewIndex]);
+
   // Derive a friendly display name for greeting
   const getDisplayName = (user: any) => {
     if (!user) return '';
@@ -1050,11 +1065,11 @@ const DashboardScreen = () => {
       >
         <View style={styles.previewContainer}>
           <FlatList
+            ref={previewListRef}
             data={previewPost?.files || []}
             horizontal
             pagingEnabled
-            initialScrollIndex={previewIndex}
-            keyExtractor={(_, idx) => String(idx)}
+            keyExtractor={(item, idx) => (item?.url ? `${item.url}:${idx}` : String(idx))}
             getItemLayout={(_, index) => ({ length: screenWidth, offset: screenWidth * index, index })}
             renderItem={({ item }) => {
               const typeStr = (item?.type || '').toLowerCase();

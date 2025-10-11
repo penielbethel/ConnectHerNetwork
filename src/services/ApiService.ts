@@ -1433,6 +1433,59 @@ export class ApiService {
     }
   }
 
+  // Delete a single message for the current user (hide)
+  async deleteCommunityMessageForMe(communityId: string, msgId: string, username?: string) {
+    try {
+      let u = username;
+      if (!u) {
+        const stored = await AsyncStorage.getItem('currentUser');
+        const current = stored ? JSON.parse(stored) : null;
+        u = current?.username;
+      }
+      if (!u) throw new Error('deleteCommunityMessageForMe: missing username');
+      return this.makeRequest(`/communities/${encodeURIComponent(communityId)}/messages/${encodeURIComponent(msgId)}/hide`, {
+        method: 'POST',
+        body: JSON.stringify({ username: u }),
+      });
+    } catch (error) {
+      console.error('deleteCommunityMessageForMe error:', error);
+      throw error;
+    }
+  }
+
+  // Delete a message for everyone (requires sender or admin privileges)
+  async deleteCommunityMessageForEveryone(communityId: string, msgId: string, username?: string) {
+    try {
+      let u = username;
+      if (!u) {
+        const stored = await AsyncStorage.getItem('currentUser');
+        const current = stored ? JSON.parse(stored) : null;
+        u = current?.username;
+      }
+      if (!u) throw new Error('deleteCommunityMessageForEveryone: missing username');
+      return this.makeRequest(`/communities/${encodeURIComponent(communityId)}/messages/${encodeURIComponent(msgId)}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ username: u }),
+      });
+    } catch (error) {
+      console.error('deleteCommunityMessageForEveryone error:', error);
+      throw error;
+    }
+  }
+
+  // Edit message text
+  async editCommunityMessage(communityId: string, msgId: string, newText: string) {
+    try {
+      return this.makeRequest(`/communities/${encodeURIComponent(communityId)}/messages/${encodeURIComponent(msgId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ text: newText }),
+      });
+    } catch (error) {
+      console.error('editCommunityMessage error:', error);
+      throw error;
+    }
+  }
+
   async getUserCommunities(username?: string) {
     try {
       let u = username;

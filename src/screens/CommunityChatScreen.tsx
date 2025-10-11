@@ -55,9 +55,15 @@ const CommunityChatScreen: React.FC = () => {
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [actionTarget, setActionTarget] = useState<CommunityMessage | null>(null);
   const [actionsVisible, setActionsVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editText, setEditText] = useState('');
   const [avatarPreviewVisible, setAvatarPreviewVisible] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const atBottomRef = useRef(true);
+  const emojis: string[] = ['😀','😂','😍','👍','🙏','🎉','😎','❤️','🔥','🥳','😢','🤔','👏','💯'];
+  const handleEmojiSelect = (emoji: string) => {
+    setInputText(prev => prev + emoji);
+  };
 
   useEffect(() => {
     navigation.setOptions({
@@ -244,14 +250,11 @@ const CommunityChatScreen: React.FC = () => {
   const sendMediaWithCaption = async (fileUris: string[], caption?: string) => {
     try {
       if (!currentUser?.username) return;
-      const form = new FormData();
-      form.append('communityId', communityId);
-      form.append('from', currentUser.username);
-      if (caption) form.append('text', caption);
-      if (replyTo) form.append('replyTo', replyTo);
-      fileUris.forEach((uri, idx) => {
+      // Step 1: Upload each file to get persistent URLs (server expects media array, not raw files)
+      const uploaded: Array<{ url: string; type?: string; name?: string }> = [];
+      for (let idx = 0; idx < fileUris.length; idx++) {
+        const uri = fileUris[idx];
         const guessedExt = uri?.toLowerCase().match(/\.(mp4|mov|webm|jpg|jpeg|png|webp|mp3|wav|m4a|aac|pdf|docx|pptx|xlsx|txt)$/)?.[1] || 'bin';
-        const name = `file_${idx}.${guessedExt}`;
         const mimeMap: any = {
           jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
           mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
@@ -261,12 +264,46 @@ const CommunityChatScreen: React.FC = () => {
           xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', txt: 'text/plain', bin: 'application/octet-stream'
         };
         const type = mimeMap[guessedExt] || 'application/octet-stream';
-        form.append('files', { uri, name, type } as any);
-      });
+        const kind: 'image' | 'video' | 'audio' | 'document' =
+          type.startsWith('image/') ? 'image' :
+          type.startsWith('video/') ? 'video' :
+          type.startsWith('audio/') ? 'audio' : 'document';
+
+        const name = `file_${idx}.${guessedExt}`;
+        const res = await apiService.uploadFile({ uri, name, type }, kind);
+        if (Array.isArray((res as any)?.files)) {
+          ((res as any).files as any[]).forEach((f: any) => {
+            const url = f?.secure_url || f?.url || (f?.path ? String(f.path) : '')
+            if (url) uploaded.push({ url, type: f?.type, name: f?.name });
+          });
+        } else if ((res as any)?.url) {
+          uploaded.push({ url: (res as any).url, type: kind });
+        }
+      }
+
+      if (uploaded.length === 0) {
+        Alert.alert('Upload failed', 'Could not send media.');
+        return;
+      }
+
+      // Step 2: Send a community message with media array
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+      const name = current?.name || `${current?.firstName || ''} ${current?.surname || ''}`.trim() || username;
+
+      const formData = new FormData();
+      if (username) {
+        formData.append('sender', JSON.stringify({ username, name, avatar: (apiService as any)['normalizeAvatar']?.(current?.avatar) || current?.avatar }));
+      }
+      formData.append('time', new Date().toISOString());
+      if (caption) formData.append('text', caption);
+      if (replyTo) formData.append('replyTo', replyTo);
+      formData.append('media', JSON.stringify(uploaded));
+
       const resp = await (apiService as any).makeRequest(`/communities/${encodeURIComponent(communityId)}/messages`, {
         method: 'POST',
-        body: form as any,
-        headers: { 'accept': 'application/json' },
+        body: formData,
       });
       const saved = (resp as any)?.message || resp;
       const normalized = normalizeMessage(saved);
@@ -274,6 +311,7 @@ const CommunityChatScreen: React.FC = () => {
       setReplyTo(null);
       scrollToEnd();
     } catch (e) {
+      console.error('sendMediaWithCaption error:', e);
       Alert.alert('Upload failed', 'Could not send media.');
     }
   };
@@ -334,7 +372,11 @@ const CommunityChatScreen: React.FC = () => {
     const isMine = (currentUser?.username && (item.sender as any)?.username === currentUser.username) || false;
     const avatar = (item.sender as any)?.avatar;
     return (
-      <View style={[styles.msg, isMine ? styles.msgMine : styles.msgTheirs]}>
+      <TouchableOpacity
+        activeOpacity={0.95}
+        onLongPress={() => { setActionTarget(item); setActionsVisible(true); }}
+        style={[styles.msg, isMine ? styles.msgMine : styles.msgTheirs]}
+      >
         <View style={styles.msgHeader}>
           {!isMine ? (
             <View style={styles.senderRow}>
@@ -360,7 +402,7 @@ const CommunityChatScreen: React.FC = () => {
             style={{ marginTop: 6 }}
           />
         ) : null}
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -416,9 +458,21 @@ const CommunityChatScreen: React.FC = () => {
         }}
       />
 
+      {!!replyTo && (
+        <View style={styles.replyPill}>
+          <Text style={styles.replyPillText}>Replying to message</Text>
+          <TouchableOpacity onPress={() => setReplyTo(null)}>
+            <Icon name="close" size={16} color={'#fff'} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       <View style={styles.inputBar}>
         <TouchableOpacity style={styles.attachBtn} onPress={handleAttachMedia}>
           <Icon name="attach-file" size={20} color={colors.text} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.emojiBtn} onPress={() => setEmojiVisible(v => !v)}>
+          <Icon name="insert-emoticon" size={22} color={colors.text} />
         </TouchableOpacity>
         <TextInput
           style={styles.input}
@@ -431,6 +485,16 @@ const CommunityChatScreen: React.FC = () => {
           <Icon name="send" size={20} color={'#fff'} />
         </TouchableOpacity>
       </View>
+
+      {emojiVisible && (
+        <View style={styles.emojiTray}>
+          {emojis.map((e) => (
+            <TouchableOpacity key={e} style={styles.emojiItem} onPress={() => handleEmojiSelect(e)}>
+              <Text style={styles.emojiText}>{e}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       {/* Members & Admin management modal */}
       <Modal visible={showMembersModal} transparent animationType="slide" onRequestClose={() => setShowMembersModal(false)}>
@@ -516,6 +580,106 @@ const CommunityChatScreen: React.FC = () => {
               <Image source={{ uri: community.avatar }} style={styles.avatarPreviewImage} />
             ) : null}
           </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Message actions modal */}
+      <Modal visible={actionsVisible} transparent animationType="fade" onRequestClose={() => setActionsVisible(false)}>
+        <View style={styles.menuBackdrop}>
+          <View style={styles.menuCard}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setActionsVisible(false);
+                if (actionTarget?._id) setReplyTo(actionTarget._id);
+              }}
+            >
+              <Icon name="reply" size={18} color={colors.text} />
+              <Text style={styles.menuItemText}>Reply</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setActionsVisible(false);
+                setEditText(actionTarget?.text || '');
+                setEditModalVisible(true);
+              }}
+            >
+              <Icon name="edit" size={18} color={colors.text} />
+              <Text style={styles.menuItemText}>Edit</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={async () => {
+                setActionsVisible(false);
+                try {
+                  if (!actionTarget?._id) return;
+                  await (apiService as any).deleteCommunityMessageForMe(communityId, actionTarget._id, currentUser?.username);
+                  setMessages(prev => prev.filter(m => m._id !== actionTarget._id));
+                } catch (e) {
+                  Alert.alert('Failed', 'Could not delete message for you.');
+                }
+              }}
+            >
+              <Icon name="delete" size={18} color={colors.text} />
+              <Text style={styles.menuItemText}>Delete for me</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={async () => {
+                setActionsVisible(false);
+                try {
+                  if (!actionTarget?._id) return;
+                  await (apiService as any).deleteCommunityMessageForEveryone(communityId, actionTarget._id);
+                  setMessages(prev => prev.filter(m => m._id !== actionTarget._id));
+                } catch (e) {
+                  Alert.alert('Failed', 'Could not delete for everyone.');
+                }
+              }}
+            >
+              <Icon name="delete-forever" size={18} color={colors.text} />
+              <Text style={styles.menuItemText}>Delete for everyone</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit message modal */}
+      <Modal visible={editModalVisible} transparent animationType="slide" onRequestClose={() => setEditModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Message</Text>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                <Icon name="close" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
+              <TextInput
+                style={styles.input}
+                value={editText}
+                onChangeText={setEditText}
+                multiline
+                placeholder="Update your message"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.shareInviteBtn} onPress={async () => {
+                try {
+                  if (!actionTarget?._id) return;
+                  await (apiService as any).editCommunityMessage(communityId, actionTarget._id, editText);
+                  setMessages(prev => prev.map(m => m._id === actionTarget._id ? { ...m, text: editText } : m));
+                  setEditModalVisible(false);
+                } catch (e) {
+                  Alert.alert('Failed', 'Could not edit message.');
+                }
+              }}>
+                <Icon name="save" size={18} color={'#fff'} />
+                <Text style={styles.shareInviteText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
     </KeyboardAvoidingView>
@@ -771,6 +935,19 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     marginLeft: 6,
+  },
+  avatarBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarPreviewImage: {
+    width: '85%',
+    height: '85%',
+    resizeMode: 'contain',
+    borderRadius: 12,
+    backgroundColor: '#000',
   },
 });
 

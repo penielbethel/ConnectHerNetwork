@@ -65,6 +65,18 @@
       margin-bottom: 10px;
     }
 
+    .preview {
+      margin-top: 8px;
+      border: 1px dashed #444;
+      padding: 8px;
+      border-radius: 6px;
+    }
+
+    .preview img, .preview video {
+      max-width: 100%;
+      border-radius: 6px;
+    }
+
     .modal {
       position: fixed;
       top: 0; left: 0;
@@ -115,6 +127,7 @@
       <form id="sponsorForm">
         <input type="text" id="companyName" placeholder="Company Name" required />
         <input type="file" id="logo" accept="image/*" required />
+        <div id="logoPreview" class="preview" style="display:none;"></div>
         <textarea id="objectives" placeholder="Objectives" required></textarea>
         <button type="submit">Register Sponsor</button>
       </form>
@@ -136,6 +149,7 @@
         <input type="hidden" id="modalSponsorId" />
         <input type="hidden" id="modalPostId" />
         <input type="file" id="postMedia" accept="image/*,video/*" required />
+        <div id="postMediaPreview" class="preview" style="display:none;"></div>
         <textarea id="postCaption" placeholder="Write caption..." required></textarea>
         <input type="url" id="jobLink" placeholder="Link to Job Posting" required />
         <button type="submit">Submit Post</button>
@@ -146,6 +160,11 @@
 
   <script>
 const token = localStorage.getItem("token");
+
+// Basic guard if token is missing
+if (!token) {
+  console.warn("Admin token missing. Please login to the admin panel.");
+}
 
 // ----------------- FETCH DATA -----------------
 async function fetchUserCount() {
@@ -185,9 +204,23 @@ async function fetchSponsors() {
 // ----------------- SPONSOR CRUD -----------------
 document.getElementById("sponsorForm").addEventListener("submit", async e => {
   e.preventDefault();
+  const logoInput = document.getElementById("logo");
+  if (!logoInput.files || !logoInput.files[0]) {
+    alert("Please select a logo image");
+    return;
+  }
+  const file = logoInput.files[0];
+  if (!file.type.startsWith("image/")) {
+    alert("Logo must be an image file");
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    alert("Logo image too large (max 5MB)");
+    return;
+  }
   const formData = new FormData();
   formData.append("companyName", document.getElementById("companyName").value);
-  formData.append("logo", document.getElementById("logo").files[0]);
+  formData.append("logo", file);
   formData.append("objectives", document.getElementById("objectives").value);
 
   const res = await fetch("/api/sponsors/register", {
@@ -240,7 +273,18 @@ document.getElementById("postForm").addEventListener("submit", async e => {
 
   const formData = new FormData();
   const mediaFile = document.getElementById("postMedia").files[0];
-  if (mediaFile) formData.append("media", mediaFile);
+  if (mediaFile) {
+    const isValidType = mediaFile.type.startsWith("image/") || mediaFile.type.startsWith("video/");
+    if (!isValidType) {
+      alert("Media must be an image or video file");
+      return;
+    }
+    if (mediaFile.size > 25 * 1024 * 1024) {
+      alert("Media file too large (max 25MB)");
+      return;
+    }
+    formData.append("media", mediaFile);
+  }
 
   const caption = document.getElementById("postCaption").value.trim() || "No caption provided";
   const jobLink = document.getElementById("jobLink").value.trim() || "#";
@@ -343,6 +387,31 @@ async function deletePost(sponsorId, postId) {
 // ----------------- INIT -----------------
 fetchUserCount();
 fetchSponsors();
+
+// ----------------- PREVIEWS -----------------
+document.getElementById("logo").addEventListener("change", () => {
+  const file = document.getElementById("logo").files[0];
+  const box = document.getElementById("logoPreview");
+  if (!file) { box.style.display = "none"; box.innerHTML = ""; return; }
+  const url = URL.createObjectURL(file);
+  box.innerHTML = `<img src="${url}" alt="Logo Preview" />`;
+  box.style.display = "block";
+});
+
+document.getElementById("postMedia").addEventListener("change", () => {
+  const file = document.getElementById("postMedia").files[0];
+  const box = document.getElementById("postMediaPreview");
+  if (!file) { box.style.display = "none"; box.innerHTML = ""; return; }
+  const url = URL.createObjectURL(file);
+  if (file.type.startsWith("image/")) {
+    box.innerHTML = `<img src="${url}" alt="Media Preview" />`;
+  } else if (file.type.startsWith("video/")) {
+    box.innerHTML = `<video src="${url}" controls></video>`;
+  } else {
+    box.innerHTML = `<p>Unsupported file type</p>`;
+  }
+  box.style.display = "block";
+});
 </script>
 
   
