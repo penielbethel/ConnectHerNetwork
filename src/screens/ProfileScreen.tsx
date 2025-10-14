@@ -174,7 +174,31 @@ const ProfileScreen = () => {
         });
       }
     } catch (error) {
-      console.error('Error loading profile:', error);
+      const status = (error as any)?.status;
+      const username = targetUsername || currentUser?.username;
+      if (status === 404 && username) {
+        const fallback: any = {
+          username,
+          name: username,
+          bio: '',
+          location: '',
+          website: '',
+          isOwnProfile: false,
+        };
+        setProfile(fallback);
+        setEditProfile({
+          name: fallback.name,
+          email: '',
+          bio: '',
+          location: '',
+          website: '',
+          workplace: '',
+          education: '',
+          dob: '',
+        });
+      } else {
+        console.error('Error loading profile:', error);
+      }
     } finally {
       setLoading(false);
     }
@@ -693,7 +717,7 @@ const ProfileScreen = () => {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Icon name="arrow-back" size={24} color={colors.text} />
+          <Icon name="arrow-back" size={24} color="#C71585" />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <Text style={styles.headerTitle}>{profile.name}</Text>
@@ -701,7 +725,7 @@ const ProfileScreen = () => {
         </View>
         {profile.isOwnProfile && (
           <TouchableOpacity onPress={handleLogout}>
-            <Icon name="logout" size={24} color={colors.text} />
+            <Icon name="logout" size={24} color="#C71585" />
           </TouchableOpacity>
         )}
       </View>
@@ -927,6 +951,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.secondary,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   headerInfo: {
     flex: 1,
@@ -935,11 +961,11 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: colors.text,
+    color: '#C71585',
   },
   headerSubtitle: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: '#C71585',
   },
   content: {
     flex: 1,

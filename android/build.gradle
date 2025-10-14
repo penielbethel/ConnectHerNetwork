@@ -6,37 +6,43 @@ buildscript {
         minSdkVersion = 21
         compileSdkVersion = 34
         targetSdkVersion = 34
-        ndkVersion = "25.1.8937393"
-        kotlinVersion = "1.9.25"
+
+        // We use NDK 23 which has both M1 support and is the side-by-side NDK version from AGP.
+        ndkVersion = "23.1.7779620"
     }
     repositories {
+        // Prefer explicit Google Maven URLs to avoid DNS issues
+        maven { url 'https://dl.google.com/dl/android/maven2/' }
+        maven { url 'https://maven.google.com' }
         google()
         mavenCentral()
+        // Add this line to tell Gradle where to find the React Native plugin
         gradlePluginPortal()
     }
     dependencies {
-        classpath("com.android.tools.build:gradle:8.6.0")
+        classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
-        classpath("com.google.gms:google-services:4.3.15")
-        // NOTE: Do not place your application dependencies here; they belong
-        // in the individual module build.gradle files
+        // Add this line to include the Google Services plugin
+        classpath('com.google.gms:google-services:4.4.1') 
     }
 }
 
+// All projects need to know about the Maven repository to access React Native and other dependencies.
 allprojects {
     repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-        maven { url "https://www.jitpack.io" }
-        maven { url "https://maven.google.com" }
-        // React Native repository
         maven {
+            // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
             url("$rootDir/../node_modules/react-native/android")
         }
-        // Removed flatDir repository to avoid metadata format warnings
-        // flatDir repositories should only be used when absolutely necessary
-        // for local .aar/.jar files that cannot be published to a proper repository
+        maven {
+            // Android JSC is installed from npm
+            url("$rootDir/../node_modules/jsc-android/dist")
+        }
+        // Prefer explicit Google Maven URLs to avoid DNS issues
+        maven { url 'https://dl.google.com/dl/android/maven2/' }
+        maven { url 'https://maven.google.com' }
+        google()
+        mavenCentral()
+        maven { url 'https://www.jitpack.io' }
     }
 }

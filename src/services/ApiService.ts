@@ -20,11 +20,17 @@ export class ApiService {
   private devHost: string | null = null;
 
   constructor() {
-    // Force production endpoints so the app consistently uses the live server
+    // Prefer local dev server when available; fallback to production
     this.devHost = getDevHost();
-    this.baseUrl = 'https://connecther.network/api';
-    this.rootUrl = 'https://connecther.network';
-    console.log('ApiService baseUrl:', this.baseUrl);
+    if (__DEV__ && this.devHost) {
+      const localRoot = `http://${this.devHost}:3000`;
+      this.rootUrl = localRoot;
+      this.baseUrl = `${localRoot}/api`;
+    } else {
+      this.baseUrl = 'https://connecther.network/api';
+      this.rootUrl = 'https://connecther.network';
+    }
+    console.log('ApiService baseUrl:', this.baseUrl, 'rootUrl:', this.rootUrl);
   }
 
   // Normalize helpers to map backend post shape to app-friendly shape
@@ -209,7 +215,7 @@ export class ApiService {
       // Suppress noisy logs for expected client-handled statuses
       const status = (error as any)?.status;
       if (status !== 404) {
-        console.error('API request error:', error);
+        console.warn('API request warning:', error);
       }
       throw error;
     }
@@ -299,6 +305,11 @@ export class ApiService {
   // Expose a generic request method for other services
   public request(endpoint: string, options: RequestInit = {}) {
     return this.makeRequest(endpoint, options);
+  }
+
+  // Convenience alias for GET requests (used by some screens)
+  public get(endpoint: string, options: RequestInit = {}) {
+    return this.request(endpoint, options);
   }
 
   // Convenience helper for POST requests with JSON body
@@ -465,7 +476,154 @@ export class ApiService {
   }
 
   async searchUsers(query: string) {
-    return this.makeRequest(`/users/search?q=${encodeURIComponent(query)}`);
+    const q = String(query || '').trim();
+    if (!q) return [] as any[];
+
+    try {
+      const res = await this.makeRequest(`/users/search?q=${encodeURIComponent(q)}`);
+      if (Array.isArray(res)) return res;
+      if (Array.isArray((res as any)?.users)) return (res as any).users;
+    } catch (err: any) {
+      if (err?.status !== 404) {
+        console.warn('searchUsers API error:', err);
+      }
+    }
+
+    try {
+      const resp = await this.makeRequest(`/users/resolve/${encodeURIComponent(q)}`);
+      const u = (resp as any)?.user || resp;
+      if (u && u.username) return [u];
+    } catch (_) {}
+
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+
+      let candidates: any[] = [];
+      try {
+        const friends = await this.getFriends(username);
+        const list = Array.isArray((friends as any)?.users)
+          ? (friends as any).users
+          : Array.isArray(friends) ? friends : [];
+        candidates = candidates.concat(list);
+      } catch (_) {}
+
+      if (username) {
+        try {
+          const sugg = await this.getUserSuggestions(username);
+          candidates = candidates.concat(Array.isArray(sugg) ? sugg : []);
+        } catch (_) {}
+      }
+
+      const lower = q.toLowerCase();
+      const filtered = candidates.filter((u: any) => {
+        const uname = String(u?.username || '').toLowerCase();
+        const name = String(u?.name || `${u?.firstName || ''} ${u?.surname || ''}`).toLowerCase();
+        return uname.includes(lower) || name.includes(lower);
+      });
+
+      const seen = new Set<string>();
+      const deduped = filtered.filter((u: any) => {
+        const key = String(u?.username || '');
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      return deduped;
+    } catch (_) {}
+
+    return [] as any[];
+  }
+
+  // Aggregated search across users, posts, communities, and sponsors
+  async searchAll(query: string) {
+    const q = String(query || '').trim();
+    if (!q) {
+      return { users: [], posts: [], communities: [], sponsors: [] } as any;
+    }
+
+    const usersPromise = (async () => {
+      try {
+        const raw = await this.searchUsers(q);
+        return (Array.isArray(raw) ? raw : []).map((u: any) => ({
+          _id: u?._id,
+          username: u?.username,
+          name: u?.name || `${u?.firstName || ''} ${u?.surname || ''}`.trim() || u?.username,
+          avatar: this.normalizeAvatar(u?.avatar),
+          bio: u?.bio,
+          verified: !!u?.verified,
+          lastSeen: u?.lastSeen,
+        }));
+      } catch (_) {
+        return [];
+      }
+    })();
+
+    const postsPromise = (async () => {
+      try {
+        const res = await this.makeRequest(`/posts/search/${encodeURIComponent(q)}`);
+        const raw = Array.isArray(res) ? res : (res as any)?.posts || [];
+        return raw.map((p: any) => this.normalizePost(p));
+      } catch (_) {
+        return [];
+      }
+    })();
+
+    const communitiesPromise = (async () => {
+      try {
+        const res = await this.makeRequest('/communities/all');
+        const raw = Array.isArray(res) ? res : (res as any)?.communities || [];
+        const lower = q.toLowerCase();
+        const filtered = raw.filter((c: any) => {
+          const name = String(c?.name || '').toLowerCase();
+          const desc = String(c?.description || '').toLowerCase();
+          const creator = String(c?.creator || '').toLowerCase();
+          return name.includes(lower) || desc.includes(lower) || creator.includes(lower);
+        });
+        return filtered.map((c: any) => ({
+          _id: c?._id,
+          name: c?.name,
+          description: c?.description,
+          avatar: this.normalizeAvatar(c?.avatar),
+          members: Array.isArray(c?.members) ? c.members : [],
+        }));
+      } catch (_) {
+        return [];
+      }
+    })();
+
+    const sponsorsPromise = (async () => {
+      try {
+        const res = await this.makeRequest('/sponsors');
+        const raw = Array.isArray(res) ? res : (res as any)?.sponsors || [];
+        const lower = q.toLowerCase();
+        const filtered = raw.filter((s: any) => {
+          const companyName = String(s?.companyName || s?.name || '').toLowerCase();
+          const objectives = String(s?.objectives || s?.description || '').toLowerCase();
+          return companyName.includes(lower) || objectives.includes(lower);
+        });
+        return filtered.map((s: any) => ({
+          _id: s?._id,
+          name: s?.companyName || s?.name,
+          description: s?.objectives || s?.description,
+          logo: s?.logo,
+          avatar: this.normalizeAvatar(s?.logo || s?.avatar),
+        }));
+      } catch (_) {
+        return [];
+      }
+    })();
+
+    const [users, posts, communities, sponsors] = await Promise.all([
+      usersPromise,
+      postsPromise,
+      communitiesPromise,
+      sponsorsPromise,
+    ]);
+
+    return { users, posts, communities, sponsors } as any;
   }
 
   // Update an existing post (caption/content and optionally media)
@@ -541,6 +699,45 @@ export class ApiService {
       return Array.isArray(res) ? res : [];
     } catch (error) {
       console.error('getUserSuggestions error:', error);
+      return [];
+    }
+  }
+
+  // Pending friend requests for a user (returns enriched sender profiles)
+  async getFriendRequests(username?: string) {
+    try {
+      let u = username;
+      if (!u) {
+        const stored = await AsyncStorage.getItem('currentUser');
+        const current = stored ? JSON.parse(stored) : null;
+        u = current?.username;
+      }
+
+      if (!u) {
+        console.warn('getFriendRequests: missing username');
+        return [];
+      }
+
+      // Legacy root endpoint returns array of usernames who sent requests
+      const list = await this.makeRootRequest(`/friend-requests/${encodeURIComponent(u)}`);
+      const usernames: string[] = Array.isArray(list) ? list : [];
+
+      // Enrich with minimal profile for avatar/name display
+      const profiles = await Promise.all(
+        usernames.map(async (from) => {
+          try {
+            const p: any = await this.getUserByUsername(from);
+            const name = p?.name || `${p?.firstName || ''} ${p?.surname || ''}`.trim() || from;
+            return { username: from, name, avatar: this.normalizeAvatar(p?.avatar) };
+          } catch (_) {
+            return { username: from, name: from, avatar: undefined } as any;
+          }
+        })
+      );
+
+      return profiles;
+    } catch (error) {
+      console.error('getFriendRequests error:', error);
       return [];
     }
   }
@@ -1251,7 +1448,7 @@ export class ApiService {
       return { success: true, communities } as any;
     } catch (error) {
       console.error('getCommunities error:', error);
-      throw error;
+      return { success: false, communities: [] } as any;
     }
   }
 
