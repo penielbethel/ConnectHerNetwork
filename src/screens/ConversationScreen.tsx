@@ -1090,6 +1090,8 @@ const handleSendMessage = async () => {
         onMomentumScrollEnd={() => setTimeout(() => setShowScrollControls(false), 1500)}
         onScroll={() => setShowScrollControls(true)}
         ListFooterComponent={renderTypingIndicator}
+        showsVerticalScrollIndicator={false}
+        showsHorizontalScrollIndicator={false}
       />
 
       {/* Scroll controls (appear only when user is scrolling) */}

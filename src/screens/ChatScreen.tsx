@@ -451,7 +451,7 @@ const ChatScreen = () => {
 
   const handleNewChat = () => {
     // Navigate to user search/selection screen
-    Alert.alert('New Chat', 'Feature coming soon!');
+    navigation.navigate('StartNewChat' as never);
   };
 
   const renderChatItem = ({item}: {item: Chat}) => {
@@ -576,6 +576,7 @@ const ChatScreen = () => {
         }
         ListEmptyComponent={!loading ? renderEmptyState : null}
         showsVerticalScrollIndicator={false}
+        showsHorizontalScrollIndicator={false}
       />
     </View>
   );

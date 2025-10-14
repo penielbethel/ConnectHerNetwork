@@ -75,6 +75,8 @@ const SponsorsScreen: React.FC = () => {
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={'#e91e63'} />
             }
+            showsVerticalScrollIndicator={false}
+            showsHorizontalScrollIndicator={false}
             ListEmptyComponent={<Text style={styles.placeholder}>No sponsors found.</Text>}
             contentContainerStyle={sponsors.length === 0 ? styles.emptyContainer : undefined}
           />

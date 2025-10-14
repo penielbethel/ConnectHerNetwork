@@ -33,45 +33,39 @@ export class PushNotificationService {
     if (this.isInitialized) return;
 
     try {
-      // First, detect if the Firebase default app is available
-      try {
-        const app = firebase.app();
-        if (app) {
-          this.firebaseAvailable = true;
-          console.log('Firebase default app initialized:', app.name);
-        }
-      } catch (appInitError) {
-        this.firebaseAvailable = false;
-        // Tone down startup noise: avoid yellowbox stack by using log
-        console.log('Firebase default app not initialized; continuing with local notifications');
-      }
-
-      // Configure push notifications (local notifications always work)
+      // Configure local notifications (works regardless of Firebase state)
       this.configurePushNotifications();
 
-      // Request permission for notifications (skip Firebase messaging if not available)
+      // Try to register device for remote messages to confirm Firebase Messaging availability
+      try {
+        await messaging().registerDeviceForRemoteMessages();
+        this.firebaseAvailable = true;
+        console.log('Firebase Messaging: device registered for remote messages');
+      } catch (e) {
+        this.firebaseAvailable = false;
+        console.log('Firebase Messaging not available; proceeding with local notifications only');
+      }
+
+      // Request notification permissions (handles Android 13+ and FCM permissions)
       await this.requestPermission();
 
-      // Try to set up Firebase messaging only if Firebase is available
+      // Initialize Firebase Messaging if available, defer until after initial UI work
       if (this.firebaseAvailable) {
-        // Defer FCM setup until after initial UI interactions to reduce startup contention
         InteractionManager.runAfterInteractions(async () => {
           try {
             await this.setupFirebaseMessaging();
             console.log('Firebase messaging initialized successfully');
           } catch (firebaseError) {
-            // Avoid yellowbox stack by using log for non-fatal messaging availability
-            console.log('Firebase messaging not available, using local notifications only');
+            console.log('Firebase messaging init failed; using local notifications only');
             this.firebaseAvailable = false;
           }
         });
       }
-      
+
       this.isInitialized = true;
       console.log('Push notification service initialized successfully');
     } catch (error) {
       console.error('Failed to initialize push notification service:', error);
-      // Don't throw error - allow app to continue with basic functionality
       this.isInitialized = true;
     }
   }
@@ -99,26 +93,23 @@ export class PushNotificationService {
         }
       }
 
-      // If Firebase is not available, skip Firebase Messaging permission gracefully
-      if (!this.firebaseAvailable) {
-        // Use log to avoid yellowbox component stack
-        console.log('Firebase messaging permission skipped: default app not available');
-        console.log('Notification permissions granted (local notifications only)');
+      // Request FCM permission when available
+      if (this.firebaseAvailable) {
+        const authStatus = await messaging().requestPermission();
+        const enabled =
+          authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+          authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+
+        if (!enabled) {
+          console.warn('Firebase messaging permission denied');
+          return false;
+        }
+        console.log('Notification permissions granted (FCM)');
         return true;
       }
 
-      // Request Firebase messaging permission
-      const authStatus = await messaging().requestPermission();
-      const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-
-      if (!enabled) {
-        console.warn('Firebase messaging permission denied');
-        return false;
-      }
-
-      console.log('Notification permissions granted');
+      // If FCM not available, still proceed with local notifications
+      console.log('Notification permissions granted (local notifications only)');
       return true;
     } catch (error) {
       console.error('Error requesting notification permission:', error);
@@ -279,6 +270,11 @@ export class PushNotificationService {
         throw new Error('Firebase messaging not available');
       }
 
+      // Ensure device registration (safe to call even if already registered)
+      try {
+        await messaging().registerDeviceForRemoteMessages();
+      } catch (_) {}
+
       // Get FCM token
       const fcmToken = await messaging().getToken();
       if (fcmToken) {
@@ -348,8 +344,7 @@ export class PushNotificationService {
   enableBackgroundHandling(): void {
     try {
       if (!this.firebaseAvailable) {
-        console.log('enableBackgroundHandling skipped: Firebase messaging not available');
-        return;
+        console.log('enableBackgroundHandling: attempting to enable despite unknown Firebase state');
       }
       // No-op here since setBackgroundMessageHandler is configured in setupFirebaseMessaging
       console.log('Background message handling enabled');

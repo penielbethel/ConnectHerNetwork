@@ -512,7 +512,11 @@ const CommunityChatScreen: React.FC = () => {
         <View style={styles.msgHeader}>
           {!isMine ? (
             <View style={styles.senderRow}>
-              {avatar ? <Image source={{ uri: avatar }} style={styles.senderAvatar} /> : null}
+              {avatar ? <Image source={{ uri: avatar }} style={styles.senderAvatar} /> : 
+                <View style={[styles.senderAvatar, styles.senderAvatarPlaceholder]}>
+                  <Text style={styles.avatarInitial}>{((item.sender as any)?.name || (item.sender as any)?.username || '?')[0]}</Text>
+                </View>
+              }
               <Text style={styles.senderName}>{(item.sender as any)?.name || (item.sender as any)?.username}</Text>
             </View>
           ) : (
@@ -532,6 +536,7 @@ const CommunityChatScreen: React.FC = () => {
               </TouchableOpacity>
             )}
             style={{ marginTop: 6 }}
+            showsHorizontalScrollIndicator={false}
           />
         ) : null}
       </TouchableOpacity>
@@ -542,16 +547,19 @@ const CommunityChatScreen: React.FC = () => {
     <KeyboardAvoidingView style={globalStyles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.headerBar}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Icon name="arrow-back" size={22} color={colors.text} />
+          <Icon name="arrow-back" size={22} color={colors.primary} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <View style={styles.headerTopRow}>
             {community?.avatar ? (
               <TouchableOpacity onPress={() => setAvatarPreviewVisible(true)}>
                 <Image source={{ uri: community.avatar }} style={styles.communityAvatar} />
+                <View style={styles.avatarBadge} />
               </TouchableOpacity>
             ) : (
-              <View style={[styles.communityAvatar, styles.communityAvatarPlaceholder]} />
+              <View style={[styles.communityAvatar, styles.communityAvatarPlaceholder]}>
+                <Icon name="group" size={20} color={colors.primary} />
+              </View>
             )}
             <View style={{ flex: 1 }}>
               <Text style={styles.headerTitle}>{communityName ? `# ${communityName}` : 'Community Chat'}</Text>
@@ -563,14 +571,19 @@ const CommunityChatScreen: React.FC = () => {
             </View>
           </View>
           <View style={styles.headerStatsRow}>
-            <Text style={styles.headerStatsText}>{members.length} members</Text>
-            <Text style={styles.headerDot}>•</Text>
-            <Text style={styles.headerStatsText}>{members.filter(m => m.isAdmin || m.isCreator).length} admins</Text>
+            <View style={styles.statsChip}>
+              <Icon name="people" size={14} color={colors.primary} style={styles.statsIcon} />
+              <Text style={styles.headerStatsText}>{members.length}</Text>
+            </View>
+            <View style={styles.statsChip}>
+              <Icon name="star" size={14} color={colors.primary} style={styles.statsIcon} />
+              <Text style={styles.headerStatsText}>{members.filter(m => m.isAdmin || m.isCreator).length}</Text>
+            </View>
           </View>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={() => setMenuVisible(true)} style={styles.actionBtn}>
-            <Icon name="more-vert" size={22} color={colors.text} />
+            <Icon name="more-vert" size={22} color={colors.primary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -581,6 +594,8 @@ const CommunityChatScreen: React.FC = () => {
         keyExtractor={(item) => item._id}
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        showsHorizontalScrollIndicator={false}
         onScroll={(e) => {
           const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
           const paddingToBottom = 24; // threshold
@@ -844,9 +859,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#333',
-    backgroundColor: '#1a1a1a',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.cardBackground,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
   backBtn: {
     padding: 4,
@@ -860,19 +880,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   communityAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     marginRight: 10,
     backgroundColor: '#111',
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  avatarBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 8,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#4CAF50',
+    borderWidth: 2,
+    borderColor: colors.cardBackground,
   },
   communityAvatarPlaceholder: {
-    backgroundColor: '#333',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     color: colors.text,
+    marginBottom: 2,
   },
   headerSubtitle: {
     fontSize: 12,
@@ -883,6 +919,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 6,
+  },
+  statsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  statsIcon: {
+    marginRight: 4,
   },
   headerStatsText: {
     fontSize: 12,
@@ -932,17 +980,29 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   msg: {
-    marginBottom: 10,
+    marginVertical: 4,
+    maxWidth: '85%',
+    borderRadius: 16,
     padding: 10,
-    borderRadius: 10,
-    backgroundColor: '#2e2e2e',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
   },
   msgMine: {
-    backgroundColor: '#42002e',
     alignSelf: 'flex-end',
+    backgroundColor: colors.primary + '30',
+    borderTopRightRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.primary + '50',
   },
   msgTheirs: {
     alignSelf: 'flex-start',
+    backgroundColor: colors.cardBackground,
+    borderTopLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   msgHeader: {
     flexDirection: 'row',
@@ -954,23 +1014,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   senderAvatar: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     marginRight: 6,
   },
-  senderName: {
+  senderAvatarPlaceholder: {
+    backgroundColor: colors.primary + '50',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    color: '#fff',
     fontSize: 12,
+    fontWeight: 'bold',
+  },
+  senderName: {
+    fontSize: 13,
+    fontWeight: '600',
     color: colors.text,
   },
   msgTime: {
-    fontSize: 10,
+    fontSize: 11,
     color: colors.textMuted,
   },
   msgText: {
     marginTop: 6,
     fontSize: 14,
     color: colors.text,
+    lineHeight: 20,
   },
   mediaThumb: {
     width: 100,

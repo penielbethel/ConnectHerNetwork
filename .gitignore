@@ -1,5 +1,8 @@
 .env
 node_modules/
+.DS_Store
+debug/
+release/
 .vscode/
 android/.idea/
 android/build/

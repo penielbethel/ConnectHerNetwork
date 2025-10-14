@@ -111,49 +111,72 @@ const SearchScreen: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const response = await apiService.get('/search', {
-        params: {
-          q: query,
-          type: type !== 'all' ? type : undefined,
-          limit: 20,
-        },
-      });
-
-      if (response.success) {
-        setSearchResults(response.data);
-        await saveRecentSearch(query);
+      // Use the new searchAll method from ApiService
+      const results = await apiService.searchAll(query);
+      await saveRecentSearch(query);
+      
+      // Transform the results into the expected format
+      const formattedResults: SearchResult[] = [];
+      
+      // Add users
+      if (Array.isArray(results.users) && (type === 'all' || type === 'users')) {
+        results.users.forEach(user => {
+          formattedResults.push({
+            id: user._id || user.username,
+            type: 'user',
+            title: user.name || user.username,
+            subtitle: user.bio || user.username,
+            image: user.avatar,
+            verified: user.verified || false,
+            lastActive: user.lastSeen || 'Recently'
+          });
+        });
       }
+      
+      // Add posts
+      if (Array.isArray(results.posts) && (type === 'all' || type === 'posts')) {
+        results.posts.forEach(post => {
+          formattedResults.push({
+            id: post._id,
+            type: 'post',
+            title: post.content?.substring(0, 50) || 'Post',
+            subtitle: post.author?.name || post.author?.username || 'Unknown author',
+            image: post.files?.[0]?.url || post.author?.avatar
+          });
+        });
+      }
+      
+      // Add communities
+      if (Array.isArray(results.communities) && (type === 'all' || type === 'communities')) {
+        results.communities.forEach(community => {
+          formattedResults.push({
+            id: community._id,
+            type: 'community',
+            title: community.name,
+            subtitle: community.description,
+            image: community.avatar,
+            memberCount: Array.isArray(community.members) ? community.members.length : 0
+          });
+        });
+      }
+      
+      // Add sponsors
+      if (Array.isArray(results.sponsors) && (type === 'all' || type === 'sponsors')) {
+        results.sponsors.forEach(sponsor => {
+          formattedResults.push({
+            id: sponsor._id,
+            type: 'sponsor',
+            title: sponsor.name,
+            subtitle: sponsor.description,
+            image: sponsor.logo || sponsor.avatar
+          });
+        });
+      }
+      
+      setSearchResults(formattedResults);
     } catch (error) {
       console.error('Search error:', error);
-      // Mock search results for demo
-      const mockResults: SearchResult[] = [
-        {
-          id: '1',
-          type: 'user',
-          title: 'Sarah Johnson',
-          subtitle: 'Software Engineer at Google',
-          image: 'https://via.placeholder.com/50',
-          verified: true,
-          lastActive: '2 hours ago',
-        },
-        {
-          id: '2',
-          type: 'community',
-          title: 'Women in Tech',
-          subtitle: 'A community for women in technology',
-          image: 'https://via.placeholder.com/50',
-          memberCount: 1250,
-        },
-        {
-          id: '3',
-          type: 'post',
-          title: 'Breaking barriers in STEM',
-          subtitle: 'How to overcome challenges in male-dominated fields',
-        },
-      ].filter(result => 
-        type === 'all' || result.type === type
-      );
-      setSearchResults(mockResults);
+      setSearchResults([]);
     } finally {
       setIsLoading(false);
     }
@@ -393,6 +416,8 @@ const SearchScreen: React.FC = () => {
                 renderItem={renderSearchResult}
                 keyExtractor={(item) => item.id}
                 scrollEnabled={false}
+                showsVerticalScrollIndicator={false}
+                showsHorizontalScrollIndicator={false}
               />
             ) : (
               <View style={styles.noResultsContainer}>

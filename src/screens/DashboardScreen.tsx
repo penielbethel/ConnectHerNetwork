@@ -851,6 +851,7 @@ const DashboardScreen = () => {
             data={mentionResults}
             keyExtractor={(item) => item.username}
             horizontal
+            showsVerticalScrollIndicator={false}
             showsHorizontalScrollIndicator={false}
             renderItem={({item}) => (
               <TouchableOpacity style={styles.mentionChip} onPress={() => insertMention(item)}>
@@ -884,6 +885,7 @@ const DashboardScreen = () => {
     <View style={globalStyles.container}>
       <ScrollView
         style={styles.content}
+        showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Header */}
@@ -902,7 +904,7 @@ const DashboardScreen = () => {
           <Icon name="search" size={20} color={colors.textMuted} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search users or posts..."
+            placeholder="Search names, usernames, posts, communities..."
             placeholderTextColor={colors.textMuted}
             onFocus={() => navigation.navigate('Search' as never)}
           />
@@ -910,9 +912,9 @@ const DashboardScreen = () => {
             style={styles.searchAction}
             onPress={() => navigation.navigate('Search' as never)}
             accessibilityRole="button"
-            accessibilityLabel="Open search options"
+            accessibilityLabel="Search"
           >
-            <Icon name="tune" size={20} color={colors.textMuted} />
+            <Icon name="search" size={20} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
 
