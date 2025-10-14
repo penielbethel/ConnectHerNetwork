@@ -153,6 +153,18 @@ const DashboardScreen = () => {
     setMediaPreviewVisible(true);
   };
 
+  const handleMentionPress = async (query: string) => {
+    try {
+      const results = await apiService.searchUsers(query);
+      const users: any[] = (results as any)?.users || (Array.isArray(results) ? results : []);
+      const match = users.find(u => (u?.username || '').toLowerCase() === query.toLowerCase()) || users[0];
+      const username = match?.username || query;
+      navigation.navigate('Profile' as never, { username } as never);
+    } catch (e) {
+      navigation.navigate('Profile' as never, { username: query } as never);
+    }
+  };
+
   const closeMediaPreview = () => {
     setMediaPreviewVisible(false);
     setPreviewPost(null);
@@ -588,7 +600,7 @@ const DashboardScreen = () => {
           text={post.content}
           style={styles.postContent}
           numberOfLines={expandedCaptions[post._id] ? undefined : 6}
-          onUserPress={(username: string) => navigation.navigate('Profile' as never, { username } as never)}
+          onUserPress={(username: string) => handleMentionPress(username)}
         />
       )}
       {!!post.content && post.content.split(/\s+/).length > 60 && (
@@ -670,7 +682,7 @@ const DashboardScreen = () => {
                       </Text>
                       <LinkedText
                         text={`  ${text}`}
-                        onUserPress={(username: string) => navigation.navigate('Profile' as never, { username } as never)}
+                        onUserPress={(username: string) => handleMentionPress(username)}
                       />
                     </Text>
                   </>

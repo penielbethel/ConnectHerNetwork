@@ -136,7 +136,41 @@ const NotificationScreen = () => {
     try {
       // Fetch based on tab selection
       let response: any;
-      if (selectedTab === 'activity') {
+      // Always check for pending friend requests; auto-switch if any
+      try {
+        const usernameFR = currentUser?.username;
+        if (usernameFR) {
+          const pendingFR = await (apiService as any).getFriendRequests(usernameFR);
+          if (Array.isArray(pendingFR) && pendingFR.length > 0 && selectedTab !== 'friends') {
+            setSelectedTab('friends');
+            return;
+          }
+        }
+      } catch (_e) {}
+      if (selectedTab === 'friends') {
+        const username = currentUser?.username;
+        if (username) {
+          const requests = await (apiService as any).getFriendRequests(username);
+          const items: Notification[] = (Array.isArray(requests) ? requests : []).map((u: any) => ({
+            _id: `friendreq-${u.username}`,
+            type: 'friend_request',
+            title: 'Friend Request',
+            message: `@${u.username} sent you a friend request`,
+            sender: {
+              username: u.username,
+              name: u.name || u.username,
+              avatar: u.avatar || '',
+            },
+            data: {},
+            isRead: false,
+            createdAt: new Date().toISOString(),
+          }));
+          setNotifications(items);
+        } else {
+          setNotifications([]);
+        }
+        return; // Friends tab handled above
+      } else if (selectedTab === 'activity') {
         const username = currentUser?.username;
         response = await apiService.getNotifications(username);
       } else if (selectedTab === 'sponsors') {
@@ -176,7 +210,12 @@ const NotificationScreen = () => {
     const socket = socketService.getSocket();
     if (socket) {
       socket.on('new-notification', (notification: Notification) => {
-        setNotifications(prev => [notification, ...prev]);
+        // If a friend request arrives, surface the Friends tab immediately
+        if (notification?.type === 'friend_request' && selectedTab !== 'friends') {
+          setSelectedTab('friends');
+        } else {
+          setNotifications(prev => [notification, ...prev]);
+        }
       });
 
       // Keep notifications in sync with friend request actions
@@ -184,6 +223,11 @@ const NotificationScreen = () => {
         loadNotifications();
       });
       socket.on('friendship-declined', () => {
+        loadNotifications();
+      });
+
+      // Friend request creation and suggestions refresh
+      socket.on('refresh-suggestions', () => {
         loadNotifications();
       });
     }
