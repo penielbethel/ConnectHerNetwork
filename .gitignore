@@ -22,3 +22,4 @@ android/build-log.txt
 android/build-debug-verbose.txt
 android/build-plain.txt
 android/gradle-*.zip
+restorepoints/
