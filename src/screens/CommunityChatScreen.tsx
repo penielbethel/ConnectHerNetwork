@@ -21,6 +21,9 @@ import { colors, globalStyles } from '../styles/globalStyles';
 import { Linking, Alert } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import DocumentPicker from 'react-native-document-picker';
+import audioRecorderService from '../services/AudioRecorder';
+import { PermissionsAndroid } from 'react-native';
+import RecordingWaveform from '../components/RecordingWaveform';
 
 type RouteParams = {
   params: {
@@ -60,6 +63,10 @@ const CommunityChatScreen: React.FC = () => {
   const [avatarPreviewVisible, setAvatarPreviewVisible] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const atBottomRef = useRef(true);
+  // Voice note state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordTimeMs, setRecordTimeMs] = useState(0);
+  const [recordFileUri, setRecordFileUri] = useState<string | null>(null);
   const emojis: string[] = ['😀','😂','😍','👍','🙏','🎉','😎','❤️','🔥','🥳','😢','🤔','👏','💯'];
   const handleEmojiSelect = (emoji: string) => {
     setInputText(prev => prev + emoji);
@@ -251,6 +258,124 @@ const CommunityChatScreen: React.FC = () => {
       scrollToEnd();
     } catch (e) {
       Alert.alert('Send failed', 'Could not send message.');
+    }
+  };
+
+  // Voice notes
+  const formatRecordTime = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
+  };
+
+  const requestAudioPermission = async () => {
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        {
+          title: 'Microphone Permission',
+          message: 'Microphone access is required to record voice notes.',
+          buttonPositive: 'OK',
+        }
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const startRecording = async () => {
+    const allowed = Platform.OS === 'android' ? await requestAudioPermission() : true;
+    if (!allowed) {
+      Alert.alert('Permission required', 'Microphone access is needed to record voice notes.');
+      return;
+    }
+    try {
+      audioRecorderService.onUpdate((_, pos) => setRecordTimeMs(pos));
+      const uri = await audioRecorderService.startRecording();
+      setRecordFileUri(uri);
+      setIsRecording(true);
+    } catch (err) {
+      console.error('startRecording error', err);
+      Alert.alert('Error', 'Failed to start recording');
+    }
+  };
+
+  const stopRecording = async () => {
+    try {
+      const uri = await audioRecorderService.stopRecording();
+      setRecordFileUri(uri || recordFileUri);
+      setIsRecording(false);
+    } catch (err) {
+      console.error('stopRecording error', err);
+    }
+  };
+
+  const cancelRecording = async () => {
+    try {
+      await audioRecorderService.cancelRecording();
+    } catch {}
+    setIsRecording(false);
+    setRecordTimeMs(0);
+    setRecordFileUri(null);
+  };
+
+  const sendVoiceNote = async () => {
+    try {
+      if (!recordFileUri) return;
+      const audioFile = {
+        uri: recordFileUri.startsWith('file://') ? recordFileUri : `file://${recordFileUri}`,
+        type: 'audio/m4a',
+        name: `voice-note-${Date.now()}.m4a`,
+      } as any;
+      const uploadResponse = await apiService.uploadFile(
+        {
+          uri: audioFile.uri,
+          type: audioFile.type,
+          name: audioFile.name,
+        } as any,
+        'audio'
+      );
+      const uploaded: Array<{ url: string; type?: string; name?: string }> = [];
+      if (Array.isArray((uploadResponse as any)?.files)) {
+        ((uploadResponse as any).files as any[]).forEach((f: any) => {
+          const url = f?.secure_url || f?.url || (f?.path ? String(f.path) : '');
+          if (url) uploaded.push({ url, type: f?.type, name: f?.name });
+        });
+      } else if ((uploadResponse as any)?.url) {
+        uploaded.push({ url: (uploadResponse as any).url, type: 'audio' });
+      }
+      if (uploaded.length === 0) {
+        Alert.alert('Upload failed', 'Could not send voice note.');
+        return;
+      }
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+      const name = current?.name || `${current?.firstName || ''} ${current?.surname || ''}`.trim() || username;
+      const formData = new FormData();
+      if (username) {
+        formData.append('sender', JSON.stringify({ username, name, avatar: (apiService as any)['normalizeAvatar']?.(current?.avatar) || current?.avatar }));
+      }
+      formData.append('time', new Date().toISOString());
+      if (replyTo) formData.append('replyTo', replyTo);
+      formData.append('media', JSON.stringify(uploaded));
+      const resp = await (apiService as any).makeRequest(`/communities/${encodeURIComponent(communityId)}/messages`, {
+        method: 'POST',
+        body: formData,
+      });
+      const saved = (resp as any)?.message || resp;
+      const normalized = normalizeMessage(saved);
+      setMessages(prev => [...prev, normalized]);
+      setReplyTo(null);
+      scrollToEnd();
+    } catch (e) {
+      console.error('sendVoiceNote error:', e);
+      Alert.alert('Upload failed', 'Could not send voice note.');
+    } finally {
+      setRecordTimeMs(0);
+      setRecordFileUri(null);
     }
   };
 
@@ -481,6 +606,9 @@ const CommunityChatScreen: React.FC = () => {
         <TouchableOpacity style={styles.emojiBtn} onPress={() => setEmojiVisible(v => !v)}>
           <Icon name="insert-emoticon" size={22} color={colors.text} />
         </TouchableOpacity>
+        <TouchableOpacity style={styles.emojiBtn} onPress={isRecording ? stopRecording : startRecording}>
+          <Icon name={isRecording ? 'stop-circle' : 'mic'} size={22} color={colors.text} />
+        </TouchableOpacity>
         <TextInput
           style={styles.input}
           placeholder="Type a message"
@@ -492,6 +620,23 @@ const CommunityChatScreen: React.FC = () => {
           <Icon name="send" size={20} color={'#fff'} />
         </TouchableOpacity>
       </View>
+
+      {isRecording && (
+        <View style={styles.recordBar}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <RecordingWaveform active width={140} height={24} color={colors.primary} />
+            <Text style={[styles.recordText, { marginLeft: 10 }]}>Recording {formatRecordTime(recordTimeMs)}</Text>
+          </View>
+          <View style={styles.recordActions}>
+            <TouchableOpacity style={styles.recordSend} onPress={sendVoiceNote}>
+              <Icon name="send" size={20} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.recordCancel} onPress={cancelRecording}>
+              <Icon name="close" size={20} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {emojiVisible && (
         <View style={styles.emojiTray}>
@@ -857,6 +1002,36 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  recordBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#333',
+    backgroundColor: '#1f1f1f',
+  },
+  recordText: {
+    color: colors.text,
+    fontSize: 14,
+  },
+  recordActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  recordSend: {
+    padding: 8,
+    marginLeft: 8,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+  },
+  recordCancel: {
+    padding: 8,
+    marginLeft: 8,
+    borderRadius: 20,
+    backgroundColor: '#333',
   },
   // Modal styles
   modalBackdrop: {

@@ -1611,9 +1611,64 @@ export class ApiService {
   }
 
   async markNotificationAsRead(_notificationId: string) {
-    // The backend does not currently expose a dedicated "mark as read" route.
-    // Avoid spamming 404s by returning a successful no-op.
-    return { success: true };
+    try {
+      const id = encodeURIComponent(_notificationId);
+      const resp = await this.makeRequest(`/notifications/${id}/read`, {
+        method: 'PUT',
+      });
+      return (resp as any) || { success: true };
+    } catch (error) {
+      console.error('markNotificationAsRead error:', error);
+      // Fail soft to avoid UI interruption
+      return { success: false } as any;
+    }
+  }
+
+  async markAllNotificationsAsRead(username?: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const u = username || current?.username;
+      // Fetch current notifications (likes/comments for user)
+      const list = await this.getNotifications(u);
+      const items: any[] = (list as any)?.notifications || [];
+      // PUT each to mark as read; batch quietly
+      await Promise.all(
+        items.map((n) => {
+          if (!n?._id) return Promise.resolve(null);
+          return this.makeRequest(`/notifications/${encodeURIComponent(n._id)}/read`, { method: 'PUT' })
+            .catch(() => null);
+        })
+      );
+      return { success: true } as any;
+    } catch (error) {
+      console.error('markAllNotificationsAsRead error:', error);
+      return { success: false } as any;
+    }
+  }
+
+  async clearAllNotifications(username?: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const u = username || current?.username;
+      // Fetch notifications to collect IDs
+      const list = await this.getNotifications(u);
+      const ids: string[] = ((list as any)?.notifications || [])
+        .map((n: any) => n?._id)
+        .filter((id: any) => typeof id === 'string');
+
+      if (ids.length === 0) return { success: true } as any;
+
+      const resp = await this.makeRequest('/notifications/bulk-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      });
+      return (resp as any) || { success: true };
+    } catch (error) {
+      console.error('clearAllNotifications error:', error);
+      return { success: false } as any;
+    }
   }
 
   // File upload

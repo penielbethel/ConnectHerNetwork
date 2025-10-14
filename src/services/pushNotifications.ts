@@ -412,7 +412,9 @@ export class PushNotificationService {
 
     const dtype = String(data?.type || '').toLowerCase();
     const isCall = !!(data?.caller || dtype === 'call' || dtype === 'group_call' || String(notification.title || '').toLowerCase().includes('call'));
-    const channelId = isCall ? 'connecther_calls' : 'connecther_messages';
+    const channelId = isCall
+      ? 'connecther_calls'
+      : (dtype === 'friend' || dtype === 'friend_request' ? 'connecther_notifications' : 'connecther_messages');
     const actions = isCall ? ['Accept', 'Decline'] : ['View'];
 
     PushNotification.localNotification({
@@ -495,6 +497,15 @@ export class PushNotificationService {
             }
           } catch (e) {
             console.log('Navigate to CommunityIncomingCall failed:', e);
+          }
+          break;
+        case 'friend':
+        case 'friend_request':
+          // Navigate to Notification screen for friend/follow requests
+          try {
+            navigate('Notification');
+          } catch (e) {
+            console.log('Navigate to Notification failed:', e);
           }
           break;
         case 'event':

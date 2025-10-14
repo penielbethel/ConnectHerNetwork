@@ -249,10 +249,10 @@ const App: React.FC = () => {
         <Stack.Screen name="Search" component={SearchScreen} />
         <Stack.Screen name="PostDetail" component={PostDetailScreen} />
         <Stack.Screen name="CreateCommunity" component={CreateCommunityScreen} />
-        <Stack.Screen name="CommunityChat" component={CommunityChatScreen} />
+        <Stack.Screen name="CommunityChat" component={CommunityChatScreen} options={{ headerShown: false }} />
         <Stack.Screen name="CommunityCall" component={CommunityCallScreen} options={{ headerShown: false }} />
         <Stack.Screen name="CommunityIncomingCall" component={CommunityIncomingCallScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="Conversation" component={ConversationScreen} />
+        <Stack.Screen name="Conversation" component={ConversationScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Call" component={CallScreen} />
         <Stack.Screen name="IncomingCall" component={IncomingCallScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Verification" component={VerificationScreen} options={{ headerShown: false }} />

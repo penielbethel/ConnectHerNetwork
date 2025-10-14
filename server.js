@@ -8,6 +8,8 @@ const fs = require("fs");
 require("dotenv").config();
 require('events').EventEmitter.defaultMaxListeners = 30; 
 const app = express();
+// 🔔 Firebase Admin for push notifications
+const admin = require('./firebase');
 
 // 🛠️ CORS Middleware
 const corsOptions = {
@@ -222,6 +224,97 @@ app.post('/friend-accept', async (req, res) => {
       console.warn('⚠️ Socket emit failed for friendship-accepted:', emitErr);
     }
 
+    // Push notifications to both users (multi-device)
+    try {
+      const [u1, u2] = await Promise.all([
+        User.findOne({ username: user1 }),
+        User.findOne({ username: user2 }),
+      ]);
+
+      const titleToRequester = 'Friend Request Accepted';
+      const bodyToRequester = `@${user1} accepted your friend request`;
+      const titleToAccepter = 'Friendship Created';
+      const bodyToAccepter = `You are now friends with @${user2}`;
+
+      // Save to DB for requester
+      try {
+        await Notification.create({
+          to: user2,
+          from: user1,
+          type: 'other',
+          title: titleToRequester,
+          content: bodyToRequester,
+        });
+        const io = req.app.get('io');
+        if (io) io.to(user2).emit('new-notification', { to: user2, from: user1, type: 'other', title: titleToRequester, content: bodyToRequester, createdAt: new Date() });
+      } catch (_) {}
+
+      // Save to DB for accepter (cross-device awareness)
+      try {
+        await Notification.create({
+          to: user1,
+          from: user2,
+          type: 'other',
+          title: titleToAccepter,
+          content: bodyToAccepter,
+        });
+        const io = req.app.get('io');
+        if (io) io.to(user1).emit('new-notification', { to: user1, from: user2, type: 'other', title: titleToAccepter, content: bodyToAccepter, createdAt: new Date() });
+      } catch (_) {}
+
+      const sendToTokens = async (tokens = [], title = '', body = '', data = {}) => {
+        if (!Array.isArray(tokens) || tokens.length === 0) return;
+        const messages = tokens.map((token) => ({
+          token,
+          notification: { title, body, sound: 'notify' },
+          android: {
+            priority: 'high',
+            notification: { channel_id: 'connecther_notifications', sound: 'default', visibility: 'public' },
+          },
+          apns: { payload: { aps: { sound: 'default' } } },
+          data: {
+            type: 'friend',
+            action: 'accepted',
+            user1,
+            user2,
+            ...Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
+          },
+        }));
+
+        const results = await Promise.allSettled(messages.map((m) => admin.messaging().send(m)));
+        // Cleanup invalid tokens
+        const invalid = [];
+        results.forEach((r, i) => {
+          if (r.status === 'rejected') {
+            const code = r.reason?.errorInfo?.code;
+            if (['messaging/registration-token-not-registered', 'messaging/invalid-argument'].includes(code)) {
+              invalid.push(tokens[i]);
+            }
+          }
+        });
+        return invalid;
+      };
+
+      // Notify original requester (user2)
+      const invalid2 = await sendToTokens(u2?.fcmTokens || [], titleToRequester, bodyToRequester, { username: user1 });
+      if (invalid2?.length) {
+        try {
+          u2.fcmTokens = (u2.fcmTokens || []).filter((t) => !invalid2.includes(t));
+          await u2.save();
+        } catch (_) {}
+      }
+      // Notify accepter (user1)
+      const invalid1 = await sendToTokens(u1?.fcmTokens || [], titleToAccepter, bodyToAccepter, { username: user2 });
+      if (invalid1?.length) {
+        try {
+          u1.fcmTokens = (u1.fcmTokens || []).filter((t) => !invalid1.includes(t));
+          await u1.save();
+        } catch (_) {}
+      }
+    } catch (pushErr) {
+      console.warn('⚠️ Push notifications for friend-accept failed:', pushErr);
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error("❌ Error accepting request:", err);
@@ -242,6 +335,79 @@ app.post('/friend-decline', async (req, res) => {
       io.to(to).emit('refresh-suggestions');
     } catch (emitErr) {
       console.warn('⚠️ Socket emit failed for friendship-declined:', emitErr);
+    }
+
+    // Push notifications to requester (from) and decliner (to)
+    try {
+      const [uDecliner, uRequester] = await Promise.all([
+        User.findOne({ username: to }),
+        User.findOne({ username: from }),
+      ]);
+
+      const titleToRequester = 'Friend Request Declined';
+      const bodyToRequester = `@${to} declined your friend request`;
+      const titleToDecliner = 'Request Declined';
+      const bodyToDecliner = `You declined @${from}'s friend request`;
+
+      // Save to DB entries
+      try {
+        await Notification.create({ to: from, from: to, type: 'other', title: titleToRequester, content: bodyToRequester });
+        const io = req.app.get('io');
+        if (io) io.to(from).emit('new-notification', { to: from, from: to, type: 'other', title: titleToRequester, content: bodyToRequester, createdAt: new Date() });
+      } catch (_) {}
+      try {
+        await Notification.create({ to: to, from: from, type: 'other', title: titleToDecliner, content: bodyToDecliner });
+        const io = req.app.get('io');
+        if (io) io.to(to).emit('new-notification', { to: to, from: from, type: 'other', title: titleToDecliner, content: bodyToDecliner, createdAt: new Date() });
+      } catch (_) {}
+
+      const sendToTokens = async (tokens = [], title = '', body = '', data = {}) => {
+        if (!Array.isArray(tokens) || tokens.length === 0) return;
+        const messages = tokens.map((token) => ({
+          token,
+          notification: { title, body, sound: 'notify' },
+          android: {
+            priority: 'high',
+            notification: { channel_id: 'connecther_notifications', sound: 'default', visibility: 'public' },
+          },
+          apns: { payload: { aps: { sound: 'default' } } },
+          data: {
+            type: 'friend',
+            action: 'declined',
+            from,
+            to,
+            ...Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
+          },
+        }));
+        const results = await Promise.allSettled(messages.map((m) => admin.messaging().send(m)));
+        const invalid = [];
+        results.forEach((r, i) => {
+          if (r.status === 'rejected') {
+            const code = r.reason?.errorInfo?.code;
+            if (['messaging/registration-token-not-registered', 'messaging/invalid-argument'].includes(code)) {
+              invalid.push(tokens[i]);
+            }
+          }
+        });
+        return invalid;
+      };
+
+      const invalidRequester = await sendToTokens(uRequester?.fcmTokens || [], titleToRequester, bodyToRequester, { username: to });
+      if (invalidRequester?.length) {
+        try {
+          uRequester.fcmTokens = (uRequester.fcmTokens || []).filter((t) => !invalidRequester.includes(t));
+          await uRequester.save();
+        } catch (_) {}
+      }
+      const invalidDecliner = await sendToTokens(uDecliner?.fcmTokens || [], titleToDecliner, bodyToDecliner, { username: from });
+      if (invalidDecliner?.length) {
+        try {
+          uDecliner.fcmTokens = (uDecliner.fcmTokens || []).filter((t) => !invalidDecliner.includes(t));
+          await uDecliner.save();
+        } catch (_) {}
+      }
+    } catch (pushErr) {
+      console.warn('⚠️ Push notifications for friend-decline failed:', pushErr);
     }
 
     res.json({ success: true });
