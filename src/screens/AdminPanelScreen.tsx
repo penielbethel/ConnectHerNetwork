@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import apiService from '../services/ApiService';
 import { globalStyles, colors } from '../styles/globalStyles';
+import { ThemeContext } from '../context/ThemeContext';
 import DocumentPicker from 'react-native-document-picker';
 
 type Sponsor = {
@@ -31,6 +32,7 @@ type SponsorPost = {
 };
 
 const AdminPanelScreen: React.FC = () => {
+  const { theme } = useContext(ThemeContext);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userCount, setUserCount] = useState<number | null>(null);
@@ -198,9 +200,12 @@ const AdminPanelScreen: React.FC = () => {
   }
 
   return (
-    <ScrollView style={globalStyles.container} contentContainerStyle={{ paddingBottom: 24 }}>
+    <ScrollView
+      style={[globalStyles.container, { backgroundColor: theme === 'dark' ? colors.dark.bg : colors.light.bg }]}
+      contentContainerStyle={{ paddingBottom: 24 }}
+    >
       <Text style={styles.sectionTitle}>Overview</Text>
-      <View style={styles.card}>
+      <View style={[styles.card, theme === 'dark' ? null : { backgroundColor: colors.light.card, borderColor: colors.border }]}>
         <View style={styles.row}>
           <Text style={styles.keyText}>Total Users</Text>
           <Text style={styles.valueText}>{userCount ?? '—'}</Text>
@@ -211,7 +216,7 @@ const AdminPanelScreen: React.FC = () => {
       </View>
 
       <Text style={styles.sectionTitle}>Register Sponsor</Text>
-      <View style={styles.card}>
+      <View style={[styles.card, theme === 'dark' ? null : { backgroundColor: colors.light.card, borderColor: colors.border }]}>
         <TextInput
           style={styles.input}
           placeholder="Company Name"
@@ -256,7 +261,7 @@ const AdminPanelScreen: React.FC = () => {
       </View>
 
       <Text style={styles.sectionTitle}>Registered Sponsors</Text>
-      <View style={styles.card}>
+      <View style={[styles.card, theme === 'dark' ? null : { backgroundColor: colors.light.card, borderColor: colors.border }]}>
         {sponsors.length > 0 ? (
           sponsors.map((s) => (
             <View key={s._id} style={{ marginBottom: 16 }}>

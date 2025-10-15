@@ -271,16 +271,20 @@ const CommunityCallScreen: React.FC = () => {
   };
 
   const renderParticipant = ({ item }: { item: Participant }) => (
-    <View style={styles.participantRow}>
-      {item.avatar ? (
-        <Image source={{ uri: item.avatar }} style={styles.participantAvatar} />
+    <View style={styles.participantTile}>
+      {type === 'video' && item.stream ? (
+        <RTCView streamURL={item.stream?.toURL()} style={styles.remoteTile} />
       ) : (
-        <View style={[styles.participantAvatar, styles.avatarPlaceholder]} />
+        <View style={styles.audioTile}>
+          {item.avatar ? (
+            <Image source={{ uri: item.avatar }} style={styles.participantAvatar} />
+          ) : (
+            <View style={[styles.participantAvatar, styles.avatarPlaceholder]} />
+          )}
+          <Text style={styles.participantName}>{item.name || item.username}</Text>
+          <Text style={styles.participantStatus}>{item.muted ? 'Muted' : 'Live'}</Text>
+        </View>
       )}
-      <View style={{ flex: 1 }}>
-        <Text style={styles.participantName}>{item.name || item.username}</Text>
-        <Text style={styles.participantStatus}>{item.muted ? 'Muted' : 'Live'}</Text>
-      </View>
       {(isCreator || isAdmin) && (
         <TouchableOpacity style={[styles.btn, item.muted ? styles.unmute : styles.mute]} onPress={() => adminToggleMute(item)}>
           <Text style={styles.btnText}>{item.muted ? 'Unmute' : 'Mute'}</Text>
@@ -307,8 +311,9 @@ const CommunityCallScreen: React.FC = () => {
           data={participants}
           keyExtractor={(p) => p.username}
           renderItem={renderParticipant}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-          contentContainerStyle={{ padding: 12 }}
+          numColumns={2}
+          columnWrapperStyle={{ justifyContent: 'space-between', paddingHorizontal: 12 }}
+          contentContainerStyle={{ paddingVertical: 12 }}
         />
       </View>
       <View style={styles.bottomBar}>
@@ -333,12 +338,13 @@ const styles = StyleSheet.create({
   btn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 24 },
   primary: { backgroundColor: colors.primary },
   btnText: { color: '#fff', fontWeight: '600' },
-  participantRow: { ...globalStyles.flexRowBetween, alignItems: 'center', paddingVertical: 8 },
-  participantAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 10 },
+  participantTile: { width: '48%', aspectRatio: 1, borderRadius: 10, overflow: 'hidden', backgroundColor: colors.card, marginBottom: 12 },
+  remoteTile: { width: '100%', height: '100%' },
+  audioTile: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 12 },
+  participantAvatar: { width: 44, height: 44, borderRadius: 22, marginBottom: 8 },
   avatarPlaceholder: { backgroundColor: '#333' },
-  participantName: { color: colors.text, fontSize: 14 },
+  participantName: { color: colors.text, fontSize: 14, fontWeight: '600' },
   participantStatus: { color: colors.textMuted, fontSize: 12 },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
 });
 
 export default CommunityCallScreen;

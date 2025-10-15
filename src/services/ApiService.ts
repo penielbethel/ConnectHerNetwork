@@ -20,15 +20,19 @@ export class ApiService {
   private devHost: string | null = null;
 
   constructor() {
-    // Prefer local dev server when available; fallback to production
+    // Prefer production API by default for smoother loading on devices
+    // Developers can re-enable local API by toggling the flag below if needed
+    const preferProd = true;
     this.devHost = getDevHost();
-    if (__DEV__ && this.devHost) {
+    if (!preferProd && __DEV__ && this.devHost) {
       const localRoot = `http://${this.devHost}:3000`;
       this.rootUrl = localRoot;
       this.baseUrl = `${localRoot}/api`;
     } else {
       this.baseUrl = 'https://connecther.network/api';
       this.rootUrl = 'https://connecther.network';
+      // Avoid emulator-specific fallbacks when forcing production
+      this.devHost = null;
     }
     console.log('ApiService baseUrl:', this.baseUrl, 'rootUrl:', this.rootUrl);
   }
@@ -103,6 +107,15 @@ export class ApiService {
       : Array.isArray(p?.likes)
       ? p.likes
       : [];
+    const savedBy = Array.isArray(p?.savedBy) ? p.savedBy : [];
+    const savesCount = typeof p?.saves === 'number' ? p.saves : undefined;
+    const sharesCount = typeof p?.shares === 'number'
+      ? p.shares
+      : Array.isArray(p?.shares)
+      ? p.shares.length
+      : Array.isArray(p?.resharedBy)
+      ? p.resharedBy.length
+      : undefined;
 
     return {
       _id: p._id,
@@ -118,6 +131,10 @@ export class ApiService {
       // Preserve numeric likes if backend uses a counter; UI is defensive
       likes: typeof p?.likes === 'number' ? p.likes : likedBy,
       likedBy,
+      // Saves and shares normalization for preview metrics
+      savedBy,
+      saves: savesCount,
+      shares: sharesCount,
       comments: Array.isArray(p?.comments) ? p.comments.map((c: any) => this.normalizeComment(c)) : [],
       createdAt: p?.createdAt,
     };
@@ -214,7 +231,12 @@ export class ApiService {
       }
       // Suppress noisy logs for expected client-handled statuses
       const status = (error as any)?.status;
-      if (status !== 404) {
+      if (typeof status === 'number' && status >= 500) {
+        if (__DEV__) {
+          console.debug('API 5xx suppressed:', status, endpoint);
+        }
+        // Do not warn for server errors; caller handles fallback UX
+      } else if (status !== 404) {
         console.warn('API request warning:', error);
       }
       throw error;

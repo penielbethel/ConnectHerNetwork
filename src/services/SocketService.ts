@@ -179,7 +179,7 @@ class SocketService {
   // =====================
   // Group Call (Community)
   // =====================
-  startGroupCall(data: { from: string; communityId: string; communityName: string; members: string[] }) {
+  startGroupCall(data: { from: string; communityId: string; communityName: string; members: string[]; type?: 'audio' | 'video' }) {
     this.emit('incoming-group-call', data);
   }
 

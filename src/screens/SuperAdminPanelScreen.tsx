@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import {
   View,
   Text,
@@ -14,8 +14,10 @@ import {
 import adminService from '../services/AdminService';
 import apiService from '../services/ApiService';
 import { globalStyles, colors } from '../styles/globalStyles';
+import { ThemeContext } from '../context/ThemeContext';
 
 const SuperAdminPanelScreen: React.FC = () => {
+  const { theme } = useContext(ThemeContext);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<any[]>([]);
   const [analytics, setAnalytics] = useState<any | null>(null);
@@ -176,9 +178,12 @@ const SuperAdminPanelScreen: React.FC = () => {
   }
 
   return (
-    <ScrollView style={globalStyles.container} contentContainerStyle={{ paddingBottom: 20 }}>
+    <ScrollView
+      style={[globalStyles.container, { backgroundColor: theme === 'dark' ? colors.dark.bg : colors.light.bg }]}
+      contentContainerStyle={{ paddingBottom: 20 }}
+    >
       <Text style={styles.sectionTitle}>Admin Analytics</Text>
-      <View style={styles.card}>
+      <View style={[styles.card, theme === 'dark' ? null : { backgroundColor: colors.light.card, borderColor: colors.border }]}>
         {analytics && Object.keys(analytics).length > 0 ? (
           Object.entries(analytics).map(([key, value]) => (
             <View key={key} style={styles.row}>
@@ -214,7 +219,7 @@ const SuperAdminPanelScreen: React.FC = () => {
       </View>
 
       <Text style={styles.sectionTitle}>Generate Invites</Text>
-      <View style={styles.card}>
+      <View style={[styles.card, theme === 'dark' ? null : { backgroundColor: colors.light.card, borderColor: colors.border }]}>
         <View style={{ flexDirection: 'row' }}>
           <TouchableOpacity
             style={[globalStyles.button, styles.actionButton]}
@@ -246,7 +251,7 @@ const SuperAdminPanelScreen: React.FC = () => {
       </View>
 
       <Text style={styles.sectionTitle}>User Management</Text>
-      <View style={styles.card}>
+      <View style={[styles.card, theme === 'dark' ? null : { backgroundColor: colors.light.card, borderColor: colors.border }]}>
         <View style={{ marginBottom: 10 }}>
           <TextInput
             style={styles.input}

@@ -20,9 +20,9 @@ export const colors = {
   light: {
     bg: '#ffffff',
     text: '#222222',
-    card: '#f8f9fa',
+    card: '#ffffff',
     inputBg: '#ffffff',
-    iconColor: '#ff69b4',
+    iconColor: '#222222',
     primary: '#ff69b4',
     secondary: '#ffb6c1',
     accent: '#ff1493',
@@ -52,12 +52,12 @@ export const globalStyles = StyleSheet.create({
   // Container styles
   container: {
     flex: 1,
-    backgroundColor: colors.dark.bg,
+    backgroundColor: colors.bg,
     padding: 16,
   },
   safeArea: {
     flex: 1,
-    backgroundColor: colors.dark.bg,
+    backgroundColor: colors.bg,
   },
   scrollContainer: {
     flexGrow: 1,
@@ -66,11 +66,11 @@ export const globalStyles = StyleSheet.create({
   
   // Card styles
   card: {
-    backgroundColor: colors.dark.card,
+    backgroundColor: colors.card,
     borderRadius: 12,
     padding: 16,
     marginVertical: 8,
-    shadowColor: '#ff69b420',
+    shadowColor: colors.border,
     shadowOffset: {
       width: 0,
       height: 2,
@@ -83,46 +83,50 @@ export const globalStyles = StyleSheet.create({
   // Text styles
   text: {
     fontSize: 16,
-    color: colors.dark.text,
+    color: colors.text,
     fontFamily: 'System',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: colors.dark.text,
+    color: colors.text,
     marginBottom: 16,
   },
   subtitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.dark.text,
+    color: colors.text,
     marginBottom: 12,
   },
   caption: {
     fontSize: 14,
-    color: colors.dark.text,
+    color: colors.text,
     opacity: 0.7,
+  },
+  textMuted: {
+    fontSize: 14,
+    color: colors.textMuted,
   },
   
   // Input styles
   input: {
-    backgroundColor: colors.dark.inputBg,
-    color: colors.dark.text,
+    backgroundColor: colors.inputBg,
+    color: colors.text,
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: colors.dark.card,
+    borderColor: colors.card,
     marginVertical: 8,
   },
   textarea: {
-    backgroundColor: colors.dark.inputBg,
-    color: colors.dark.text,
+    backgroundColor: colors.inputBg,
+    color: colors.text,
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: colors.dark.card,
+    borderColor: colors.card,
     marginVertical: 8,
     minHeight: 100,
     textAlignVertical: 'top',
@@ -130,14 +134,14 @@ export const globalStyles = StyleSheet.create({
   
   // Button styles
   button: {
-    backgroundColor: colors.dark.primary,
+    backgroundColor: colors.primary,
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
     marginVertical: 8,
   },
   buttonSecondary: {
-    backgroundColor: colors.dark.secondary,
+    backgroundColor: colors.secondary,
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
@@ -146,7 +150,7 @@ export const globalStyles = StyleSheet.create({
   buttonOutline: {
     backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: colors.dark.primary,
+    borderColor: colors.primary,
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
@@ -158,7 +162,7 @@ export const globalStyles = StyleSheet.create({
     fontWeight: 'bold',
   },
   buttonTextOutline: {
-    color: colors.dark.primary,
+    color: colors.primary,
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -195,7 +199,7 @@ export const globalStyles = StyleSheet.create({
   
   // Profile styles
   profileContainer: {
-    backgroundColor: colors.dark.card,
+    backgroundColor: colors.card,
     borderRadius: 12,
     padding: 20,
     alignItems: 'center',
@@ -205,7 +209,7 @@ export const globalStyles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: colors.dark.primary,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
@@ -218,7 +222,7 @@ export const globalStyles = StyleSheet.create({
   
   // Icon styles
   icon: {
-    color: colors.dark.iconColor,
+    color: colors.iconColor,
   },
   
   // Responsive styles

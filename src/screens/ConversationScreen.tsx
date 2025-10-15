@@ -14,7 +14,12 @@ import {
   Pressable,
   Vibration,
   Share,
+  Keyboard,
+  BackHandler,
+  DeviceEventEmitter,
+  Modal,
 } from 'react-native';
+import Video from 'react-native-video';
 import {useRoute, useNavigation, useIsFocused, RouteProp} from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -26,6 +31,8 @@ import {colors, globalStyles} from '../styles/globalStyles';
 import audioRecorderService from '../services/AudioRecorder';
 import { PermissionsManager } from '../utils/permissions';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
+import IncomingCallModal from '../components/IncomingCallModal';
+import { initCallNotifications } from '../services/CallNotifications';
 
 interface Message {
   _id: string;
@@ -89,6 +96,13 @@ const ConversationScreen = () => {
   const [recordFileUri, setRecordFileUri] = useState<string | null>(null);
   const [starredIds, setStarredIds] = useState<string[]>([]);
   const [showMenu, setShowMenu] = useState<boolean>(false);
+  const [keyboardVisible, setKeyboardVisible] = useState<boolean>(false);
+  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
+  // Incoming call state
+  const [incomingVisible, setIncomingVisible] = useState(false);
+  const [incomingCaller, setIncomingCaller] = useState('');
+  const [incomingAvatar, setIncomingAvatar] = useState<string | undefined>(undefined);
+  const [incomingType, setIncomingType] = useState<'audio' | 'video'>('audio');
   const emojis: string[] = ['😀','😂','😍','👍','🙏','🎉','😎','❤️','🔥','🥳','😢','🤔','👏','💯'];
   const handleEmojiSelect = (emoji: string) => {
     setMessageText(prev => prev + emoji);
@@ -98,6 +112,15 @@ const ConversationScreen = () => {
     loadCurrentUser();
     loadMessages();
     setupSocketListeners();
+    // Initialize call notifications channel and listeners
+    initCallNotifications();
+    const incomingSub = DeviceEventEmitter.addListener('incoming_call', (data: any) => {
+      const caller = data?.caller || data?.from || recipientUsername;
+      setIncomingCaller(caller);
+      setIncomingAvatar(data?.avatar);
+      setIncomingType((data?.callType === 'video') ? 'video' : 'audio');
+      setIncomingVisible(true);
+    });
     
     return () => {
       // Cleanup socket listeners
@@ -112,8 +135,28 @@ const ConversationScreen = () => {
         socket.off('user-offline');
         socket.off('update-online-users');
       }
+      try { incomingSub.remove(); } catch {}
     };
   }, []);
+
+  // Prevent input bar from hanging: track keyboard and consume back when visible
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    const backSub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (keyboardVisible) {
+        Keyboard.dismiss();
+        setShowEmojiPanel(false);
+        return true;
+      }
+      return false;
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      backSub.remove();
+    };
+  }, [keyboardVisible]);
 
   // Reload messages whenever this screen gains focus
   useEffect(() => {
@@ -479,6 +522,8 @@ const handleSendMessage = async () => {
       setReplyingTo(null);
       setMessageText('');
       scrollToBottom();
+      setShowEmojiPanel(false);
+      Keyboard.dismiss();
       try { Vibration.vibrate(10); } catch {}
     } catch (error) {
       console.error('Error sending media message:', error);
@@ -504,6 +549,8 @@ const handleSendMessage = async () => {
     setMessages(prev => [...prev, tempMessage]);
     setMessageText('');
     scrollToBottom();
+    setShowEmojiPanel(false);
+    Keyboard.dismiss();
     // Haptic + subtle click sound on send
     try { Vibration.vibrate(10); } catch {}
     try {
@@ -814,15 +861,28 @@ const handleSendMessage = async () => {
   };
 
   const sendVoiceNote = async () => {
-    if (!recordFileUri) return;
-    const audioFile = {
-      uri: recordFileUri.startsWith('file://') ? recordFileUri : `file://${recordFileUri}`,
-      type: 'audio/m4a',
-      name: `voice-note-${Date.now()}.m4a`,
-    } as any;
-    await handleFileUpload(audioFile);
-    setRecordTimeMs(0);
-    setRecordFileUri(null);
+    try {
+      let uri = recordFileUri;
+      if (isRecording) {
+        uri = await audioRecorderService.stopRecording();
+        setIsRecording(false);
+      }
+      if (!uri) return;
+      const audioFile = {
+        uri: uri.startsWith('file://') ? uri : `file://${uri}`,
+        type: 'audio/m4a',
+        name: `voice-note-${Date.now()}.m4a`,
+      } as any;
+      await handleFileUpload(audioFile);
+    } catch (err) {
+      console.error('sendVoiceNote error', err);
+      Alert.alert('Error', 'Failed to send voice note');
+    } finally {
+      setRecordTimeMs(0);
+      setRecordFileUri(null);
+      setShowEmojiPanel(false);
+      Keyboard.dismiss();
+    }
   };
 
   const handleFileUpload = async (file: any) => {
@@ -906,10 +966,19 @@ const handleSendMessage = async () => {
           
           {item.type === 'video' && item.file && (
             <>
-              <View style={styles.videoContainer}>
-                <Icon name="play-circle-filled" size={40} color={colors.text} />
-                <Text style={styles.fileName}>{item.file.name}</Text>
-              </View>
+              <Pressable style={styles.videoContainer} onPress={() => setPreviewVideoUrl(item.file!.url)}>
+                <Video
+                  source={{ uri: item.file!.url }}
+                  style={styles.videoPreview}
+                  paused={true}
+                  controls={false}
+                  resizeMode="cover"
+                />
+                <View style={styles.videoOverlay}>
+                  <Icon name="play-circle-filled" size={48} color="#fff" />
+                </View>
+              </Pressable>
+              <Text style={styles.fileName}>{item.file.name}</Text>
               <View style={styles.mediaActionsRow}>
                 <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handleDownload(item.file!)}>
                   <Icon name="download" size={18} color={colors.text} />
@@ -1028,12 +1097,12 @@ const handleSendMessage = async () => {
   return (
     <KeyboardAvoidingView 
       style={globalStyles.container}
-      behavior={'padding'}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 80}>
       
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => { Keyboard.dismiss(); setShowEmojiPanel(false); navigation.goBack(); }}>
           <Icon name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         
@@ -1076,6 +1145,23 @@ const handleSendMessage = async () => {
         </View>
       </View>
 
+      {/* Full-screen video preview modal */}
+      {previewVideoUrl && (
+        <Modal visible={!!previewVideoUrl} transparent={true} onRequestClose={() => setPreviewVideoUrl(null)}>
+          <View style={styles.fullscreenOverlay}>
+            <Video
+              source={{ uri: previewVideoUrl }}
+              style={styles.fullscreenVideo}
+              controls={true}
+              resizeMode="contain"
+            />
+            <TouchableOpacity style={styles.modalClose} onPress={() => setPreviewVideoUrl(null)}>
+              <Icon name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </Modal>
+      )}
+
       {/* Messages */}
       <FlatList
         ref={flatListRef}
@@ -1105,6 +1191,21 @@ const handleSendMessage = async () => {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Incoming Call Modal */}
+      <IncomingCallModal
+        visible={incomingVisible}
+        callerName={incomingCaller || recipientName}
+        callerAvatar={incomingAvatar || recipientAvatar}
+        callType={incomingType}
+        onAccept={() => {
+          setIncomingVisible(false);
+          (navigation as any).navigate('Call', { to: incomingCaller || recipientUsername, type: incomingType });
+        }}
+        onDecline={() => {
+          setIncomingVisible(false);
+        }}
+      />
 
       {/* Reply/Edit banner above input */}
       {(editingId || replyingTo) && (
@@ -1741,6 +1842,46 @@ const styles = StyleSheet.create({
   headerMenuText: {
     marginLeft: 8,
     color: colors.text,
+  },
+  videoContainer: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    marginTop: 6,
+  },
+  videoPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  videoOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenVideo: {
+    width: '100%',
+    height: '80%',
+    backgroundColor: '#000',
+  },
+  modalClose: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius: 24,
   },
   composeBanner: {
     ...globalStyles.flexRowBetween,

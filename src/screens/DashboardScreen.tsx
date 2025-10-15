@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback, useRef} from 'react';
+import React, {useState, useEffect, useCallback, useRef, useContext} from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   FlatList,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import Video from 'react-native-video';
 import {Share} from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
@@ -27,6 +28,7 @@ import apiService from '../services/ApiService';
 import socketService from '../services/SocketService';
 import {colors, globalStyles} from '../styles/globalStyles';
 import LinkedText from '../components/LinkedText';
+import { ThemeContext } from '../context/ThemeContext';
 
 interface Post {
   _id: string;
@@ -41,6 +43,8 @@ interface Post {
   comments: any[];
   shares?: number;
   likedBy?: string[];
+  savedBy?: string[];
+  saves?: number;
   createdAt: string;
 }
 
@@ -52,6 +56,7 @@ interface User {
 }
 
 const DashboardScreen = () => {
+  const { theme, setTheme } = useContext(ThemeContext);
   const navigation = useNavigation();
   const [posts, setPosts] = useState<Post[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -75,7 +80,8 @@ const DashboardScreen = () => {
   const [previewPost, setPreviewPost] = useState<Post | null>(null);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
-  const mediaWidth = Math.round(Dimensions.get('window').width - 40);
+// Use full card width minus horizontal margins (20) and card padding (24)
+const mediaWidth = Math.round(Dimensions.get('window').width - 44);
   const screenWidth = Dimensions.get('window').width;
   const screenHeight = Dimensions.get('window').height;
   const [showQuickMenu, setShowQuickMenu] = useState(false);
@@ -121,6 +127,14 @@ const DashboardScreen = () => {
       })();
     }
   }, [currentUser]);
+
+  // Auto-hide quick options menu after 3 seconds of inactivity
+  useEffect(() => {
+    if (showQuickMenu) {
+      const timer = setTimeout(() => setShowQuickMenu(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showQuickMenu]);
 
   const getAvatarUri = (uri?: string) => {
     if (uri && uri.trim()) return uri;
@@ -625,34 +639,48 @@ const DashboardScreen = () => {
             const typeStr = (file?.type || '').toLowerCase();
             const isVideo = typeStr.includes('video');
             const itemWidth = mediaWidth;
-            const itemHeight = Math.round(mediaWidth * 0.56);
+            const fw = Number((file as any)?.thumbnailWidth) || Number((file as any)?.width) || undefined;
+            const fh = Number((file as any)?.thumbnailHeight) || Number((file as any)?.height) || undefined;
+            const aspect = fw && fh && fh !== 0
+              ? fw / fh
+              : (isVideo
+                ? (() => {
+                    // Fallback orientation for videos when width/height are missing
+                    const urlStr = String(file?.url || '').toLowerCase();
+                    const nameStr = String((file as any)?.name || '').toLowerCase();
+                    const hints = ['portrait', 'vertical', '9x16', '9:16', 'tall'];
+                    const maybePortrait = hints.some(h => urlStr.includes(h) || nameStr.includes(h));
+                    return maybePortrait ? (9 / 16) : (16 / 9);
+                  })()
+                : 4 / 3);
+            const computedHeight = Math.round(itemWidth / aspect);
+            const maxHeight = Math.round(screenHeight * 0.8);
+            const itemHeight = Math.min(Math.max(140, computedHeight), maxHeight);
             if (isVideo) {
-              const html = `<!DOCTYPE html><html><head><meta name=viewport content='width=device-width,initial-scale=1'>
-              <style>body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;}video{width:100%;height:100%;object-fit:cover}</style>
-              </head><body>
-              <video id='v' src='${file?.url || ''}' autoplay muted playsinline controls></video>
-              <script>var v=document.getElementById('v'); v.muted=true; v.play();</script>
-              </body></html>`;
+              const poster = (file as any)?.thumbnailUrl || (apiService as any)['getCloudinaryVideoThumbnail']?.(String(file?.url || '')) || '';
               return (
                 <TouchableOpacity key={index} activeOpacity={0.85} onPress={() => openMediaPreview(post, index)}>
                   <View style={{ width: itemWidth, height: itemHeight, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' }}>
-                    <WebView
-                      source={{ html }}
-                      style={styles.videoWebView}
-                      javaScriptEnabled
-                      domStorageEnabled
-                      mediaPlaybackRequiresUserAction={false}
-                      allowsInlineMediaPlayback
+                    <Video
+                      source={{ uri: String(file?.url || '') }}
+                      style={{ width: '100%', height: '100%' }}
+                      poster={poster || undefined}
+                      resizeMode="cover"
+                      paused={true}
+                      controls={false}
                     />
+                    <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
+                      <Icon name="play-circle-filled" size={48} color="#fff" />
+                    </View>
                   </View>
                 </TouchableOpacity>
               );
             }
             return (
-              <TouchableOpacity key={index} activeOpacity={0.85} onPress={() => openImagePreview(file.url)}>
+              <TouchableOpacity key={index} activeOpacity={0.85} onPress={() => openMediaPreview(post, index)}>
                 <Image
                   source={{uri: file.url}}
-                  style={[styles.mediaImage, { width: itemWidth, height: Math.round(mediaWidth * 0.75) }]}
+                  style={[styles.mediaImage, { width: itemWidth, height: Math.min(Math.round(itemWidth / (aspect || (4/3))), maxHeight) }]}
                   resizeMode="cover"
                 />
               </TouchableOpacity>
@@ -894,7 +922,7 @@ const DashboardScreen = () => {
   );
 
   return (
-    <View style={globalStyles.container}>
+    <View style={[globalStyles.container, { backgroundColor: theme === 'dark' ? colors.dark.bg : colors.light.bg }] }>
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
@@ -943,6 +971,13 @@ const DashboardScreen = () => {
           <View style={styles.quickMenu}>
             <TouchableOpacity
               style={styles.quickMenuItem}
+              onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            >
+              <Icon name={theme === 'dark' ? 'brightness-high' : 'brightness-4'} size={20} color={colors.text} />
+              <Text style={styles.quickMenuText}>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickMenuItem}
               onPress={() => navigation.navigate('Search' as never)}
             >
               <Icon name="search" size={20} color={colors.text} />
@@ -984,7 +1019,7 @@ const DashboardScreen = () => {
 
           {/* Suggestions */}
           {suggestedUsers.length > 0 && (
-            <ScrollView horizontal style={styles.suggestionsRow} contentContainerStyle={styles.suggestionsContainer}>
+            <ScrollView horizontal style={styles.suggestionsRow} contentContainerStyle={styles.suggestionsContainer} showsHorizontalScrollIndicator={false}>
               {suggestedUsers.map(u => (
                 <TouchableOpacity
                   key={u.username}
@@ -1073,17 +1108,17 @@ const DashboardScreen = () => {
         </View>
       </Modal>
 
-      {/* Image Preview Modal (white background full-screen) */}
+      {/* Image Preview Modal (theme-based background) */}
       <Modal
         visible={imagePreviewVisible}
         transparent={false}
         animationType="fade"
         onRequestClose={closeImagePreview}
       >
-        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+        <View style={{ flex: 1, backgroundColor: theme === 'dark' ? '#000' : '#fff' }}>
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 56, justifyContent: 'center', alignItems: 'flex-end', paddingHorizontal: 12 }}>
             <TouchableOpacity onPress={closeImagePreview} style={{ padding: 8 }}>
-              <Icon name="close" size={28} color="#333" />
+              <Icon name="close" size={28} color={theme === 'dark' ? '#fff' : '#333'} />
             </TouchableOpacity>
           </View>
           {!!imagePreviewSource && (
@@ -1123,16 +1158,16 @@ const DashboardScreen = () => {
                 );
               }
               if (isVideo) {
-                const html = `<!DOCTYPE html><html><head><meta name=viewport content='width=device-width,initial-scale=1'><style>body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;}video{width:100%;height:100%;object-fit:contain}</style></head><body><video id='v' src='${item.url}' autoplay controls playsinline></video><script>var v=document.getElementById('v'); v.muted=false; v.play();</script></body></html>`;
+                const poster = (item as any)?.thumbnailUrl || (apiService as any)['getCloudinaryVideoThumbnail']?.(String(item?.url || '')) || '';
                 return (
                   <View style={[styles.previewItem, { width: screenWidth, height: screenHeight }]}> 
-                    <WebView
-                      source={{ html }}
-                      style={styles.previewWebView}
-                      javaScriptEnabled
-                      domStorageEnabled
-                      mediaPlaybackRequiresUserAction={false}
-                      allowsInlineMediaPlayback
+                    <Video
+                      source={{ uri: String(item?.url || '') }}
+                      style={styles.previewImage}
+                      poster={poster || undefined}
+                      controls={true}
+                      resizeMode="contain"
+                      paused={false}
                     />
                   </View>
                 );
@@ -1163,6 +1198,11 @@ const DashboardScreen = () => {
                 const likesCount = typeof previewPost.likes === 'number' ? (previewPost.likes as any) : likedBy.length;
                 const commentsCount = Array.isArray(previewPost.comments) ? previewPost.comments.length : 0;
                 const sharesCount = typeof previewPost.shares === 'number' ? (previewPost.shares as number) : 0;
+                const savesCount = typeof (previewPost as any).saves === 'number'
+                  ? ((previewPost as any).saves as number)
+                  : Array.isArray((previewPost as any).savedBy)
+                  ? ((previewPost as any).savedBy as any[]).length
+                  : 0;
                 return (
                   <>
                     <View style={styles.previewStatItem}>
@@ -1176,6 +1216,10 @@ const DashboardScreen = () => {
                     <View style={styles.previewStatItem}>
                       <Icon name="share" size={20} color="#fff" />
                       <Text style={styles.previewStatText}>{sharesCount}</Text>
+                    </View>
+                    <View style={styles.previewStatItem}>
+                      <Icon name="bookmark" size={20} color="#fff" />
+                      <Text style={styles.previewStatText}>{savesCount}</Text>
                     </View>
                   </>
                 );
@@ -1698,6 +1742,70 @@ const styles = StyleSheet.create({
   modalActions: {
     ...globalStyles.flexRowBetween,
     marginTop: 12,
+  },
+  // --- Media preview styles ---
+  previewContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  previewItem: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  previewWebView: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'transparent',
+  },
+  previewDoc: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewDocText: {
+    color: '#fff',
+    marginTop: 10,
+  },
+  previewTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 56,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingHorizontal: 12,
+  },
+  previewCloseButton: {
+    padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 24,
+  },
+  previewStats: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-evenly',
+    paddingVertical: 12,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  previewStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  previewStatText: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });
 

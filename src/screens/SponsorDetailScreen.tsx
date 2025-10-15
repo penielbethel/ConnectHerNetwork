@@ -127,7 +127,7 @@ const SponsorDetailScreen: React.FC = () => {
   return (
     <View style={globalStyles.container}>
       <ScrollView
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={'#e91e63'} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         contentContainerStyle={styles.scrollContent}
       >
         <View style={styles.header}> 
@@ -187,9 +187,9 @@ const styles = StyleSheet.create({
     ...globalStyles.flexRow,
     alignItems: 'center',
     borderBottomWidth: 0,
-    backgroundColor: '#ffe3ef',
+    backgroundColor: colors.secondary,
     paddingVertical: 16,
-    shadowColor: '#e91e63',
+    shadowColor: colors.primary,
     shadowOpacity: 0.15,
     shadowRadius: 6,
   },
@@ -203,17 +203,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   company: {
-    color: '#c2185b',
+    color: colors.primary,
     fontSize: 18,
     fontWeight: '700',
   },
   location: {
-    color: '#7a2750',
+    color: colors.textMuted,
     fontSize: 14,
     marginTop: 2,
   },
   website: {
-    color: '#c2185b',
+    color: colors.primary,
     fontSize: 12,
     marginTop: 2,
   },
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   linkBtn: {
-    backgroundColor: '#e91e63',
+    backgroundColor: colors.primary,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 18,

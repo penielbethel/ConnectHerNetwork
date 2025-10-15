@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import { View, Text, StyleSheet, useColorScheme, Image, FlatList, RefreshControl, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { colors, globalStyles } from '../styles/globalStyles';
+import { ThemeContext } from '../context/ThemeContext';
 import apiService from '../services/ApiService';
 
 interface Sponsor {
@@ -15,7 +16,7 @@ interface Sponsor {
 }
 
 const SponsorsScreen: React.FC = () => {
-  const isDark = useColorScheme() === 'dark';
+  const { theme } = useContext(ThemeContext);
   const navigation = useNavigation();
   const [sponsors, setSponsors] = useState<Sponsor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +50,10 @@ const SponsorsScreen: React.FC = () => {
   };
 
   const renderSponsor = ({ item }: { item: Sponsor }) => (
-    <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('SponsorDetail' as never, { sponsorId: item._id, name: item.companyName } as never)}>
+    <TouchableOpacity
+      style={[styles.card, theme === 'dark' ? null : { backgroundColor: colors.light.card, borderColor: colors.border }]}
+      onPress={() => navigation.navigate('SponsorDetail' as never, { sponsorId: item._id, name: item.companyName } as never)}
+    >
       {item.logo ? (
         <Image source={{ uri: getAvatarUri(item.logo) }} style={styles.logo} />
       ) : null}
@@ -60,7 +64,7 @@ const SponsorsScreen: React.FC = () => {
   );
 
   return (
-    <View style={globalStyles.container}>
+    <View style={[globalStyles.container, { backgroundColor: theme === 'dark' ? colors.dark.bg : colors.light.bg }]}>
       <View style={styles.header}> 
         <Text style={styles.headerTitle}>Sponsors</Text>
       </View>
@@ -73,7 +77,7 @@ const SponsorsScreen: React.FC = () => {
             keyExtractor={(s) => s._id}
             renderItem={renderSponsor}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={'#e91e63'} />
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
             }
             showsVerticalScrollIndicator={false}
             showsHorizontalScrollIndicator={false}
@@ -97,7 +101,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#e91e63',
+    color: colors.primary,
   },
   content: {
     ...globalStyles.padding,

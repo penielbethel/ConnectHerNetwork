@@ -398,7 +398,7 @@ const SettingsScreen: React.FC = () => {
             <Icon 
               name={item.icon} 
               size={24} 
-              color={item.id === 'deleteAccount' ? colors.error : colors.dark.primary} 
+              color={item.id === 'deleteAccount' ? colors.error : colors.primary} 
             />
           </View>
           <View style={styles.itemText}>
@@ -420,14 +420,14 @@ const SettingsScreen: React.FC = () => {
               value={item.value}
               onValueChange={item.onToggle}
               trackColor={{ 
-                false: colors.dark.text + '40', 
-                true: colors.dark.primary + '80' 
+                false: colors.border, 
+                true: colors.primary 
               }}
-              thumbColor={item.value ? colors.dark.primary : colors.dark.text + '80'}
+              thumbColor={item.value ? colors.primary : colors.iconColor}
             />
           )}
           {item.type === 'navigation' && (
-            <Icon name="chevron-right" size={24} color={colors.dark.text + '80'} />
+            <Icon name="chevron-right" size={24} color={colors.textMuted} />
           )}
         </View>
       </TouchableOpacity>
@@ -451,7 +451,7 @@ const SettingsScreen: React.FC = () => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Icon name="arrow-back" size={24} color={colors.dark.text} />
+          <Icon name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.title}>Settings</Text>
         <View style={styles.placeholder} />
@@ -460,7 +460,7 @@ const SettingsScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         {isLoading && (
           <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color={colors.dark.primary} />
+            <ActivityIndicator size="large" color={colors.primary} />
           </View>
         )}
         
@@ -494,7 +494,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.dark.card,
+    borderBottomColor: colors.border,
   },
   backButton: {
     padding: 8,
@@ -516,7 +516,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: colors.dark.bg + '80',
+    backgroundColor: 'rgba(0,0,0,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
@@ -525,7 +525,7 @@ const styles = StyleSheet.create({
     ...globalStyles.text,
     fontSize: 18,
     fontWeight: '600',
-    color: colors.dark.primary,
+    color: colors.primary,
     marginTop: 24,
     marginBottom: 12,
   },
@@ -535,7 +535,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 16,
     paddingHorizontal: 16,
-    backgroundColor: colors.dark.card,
+    backgroundColor: colors.surface,
     borderRadius: 12,
     marginBottom: 8,
   },
@@ -548,7 +548,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.dark.primary + '20',
+    backgroundColor: colors.secondary,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -564,7 +564,7 @@ const styles = StyleSheet.create({
   itemSubtitle: {
     ...globalStyles.text,
     fontSize: 14,
-    color: colors.dark.text + '80',
+    color: colors.textMuted,
     marginTop: 2,
   },
   itemRight: {

@@ -11,6 +11,7 @@ import {
   Platform,
   Modal,
   Share,
+  Keyboard,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -22,7 +23,7 @@ import { Linking, Alert } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import DocumentPicker from 'react-native-document-picker';
 import audioRecorderService from '../services/AudioRecorder';
-import { PermissionsAndroid } from 'react-native';
+import { PermissionsManager } from '../utils/permissions';
 import RecordingWaveform from '../components/RecordingWaveform';
 
 type RouteParams = {
@@ -221,6 +222,7 @@ const CommunityChatScreen: React.FC = () => {
         communityId,
         communityName: communityName || (community?.name || ''),
         members: memberUsernames,
+        type: 'audio',
       });
       // Trigger FCM push to notify background users
       try {
@@ -241,8 +243,32 @@ const CommunityChatScreen: React.FC = () => {
   };
 
   const handleVideoGroupCall = async () => {
-    // For now, reuse the voice call room; server-side may add video later
-    await handleVoiceGroupCall();
+    try {
+      if (!currentUser?.username) return;
+      const memberUsernames = Array.isArray((community as any)?.members)
+        ? (community as any).members
+        : members.map(m => m.username);
+      socketService.startGroupCall({
+        from: currentUser.username,
+        communityId,
+        communityName: communityName || (community?.name || ''),
+        members: memberUsernames,
+        type: 'video',
+      });
+      try {
+        await (apiService as any).notifyCommunityGroupCallStart(communityId, currentUser.username, 'video');
+      } catch (_) {}
+      // @ts-ignore
+      navigation.navigate('CommunityCall', {
+        communityId,
+        communityName: communityName || (community?.name || ''),
+        mode: 'caller',
+        type: 'video',
+        caller: { username: currentUser.username, name: currentUser.name, avatar: currentUser.avatar },
+      });
+    } catch (e) {
+      // ignore
+    }
   };
 
   const sendText = async () => {
@@ -271,15 +297,8 @@ const CommunityChatScreen: React.FC = () => {
 
   const requestAudioPermission = async () => {
     try {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        {
-          title: 'Microphone Permission',
-          message: 'Microphone access is required to record voice notes.',
-          buttonPositive: 'OK',
-        }
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
+      const perm = await PermissionsManager.requestAudioPermission();
+      return !!perm?.granted;
     } catch (e) {
       return false;
     }
@@ -323,9 +342,14 @@ const CommunityChatScreen: React.FC = () => {
 
   const sendVoiceNote = async () => {
     try {
-      if (!recordFileUri) return;
+      let uri = recordFileUri;
+      if (isRecording) {
+        uri = await audioRecorderService.stopRecording();
+        setIsRecording(false);
+      }
+      if (!uri) return;
       const audioFile = {
-        uri: recordFileUri.startsWith('file://') ? recordFileUri : `file://${recordFileUri}`,
+        uri: uri.startsWith('file://') ? uri : `file://${uri}`,
         type: 'audio/m4a',
         name: `voice-note-${Date.now()}.m4a`,
       } as any;
@@ -376,6 +400,8 @@ const CommunityChatScreen: React.FC = () => {
     } finally {
       setRecordTimeMs(0);
       setRecordFileUri(null);
+      setEmojiVisible(false);
+      Keyboard.dismiss();
     }
   };
 

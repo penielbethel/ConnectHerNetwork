@@ -59,24 +59,19 @@ import { RootStackParamList } from './src/types/navigation';
 
 // Styles
 import { globalStyles } from './src/styles/globalStyles';
+import { ThemeContext, persistTheme, applyThemeColors } from './src/context/ThemeContext';
 // Navigation helpers
 import { navigationRef, navigate } from './src/navigation/RootNavigation';
 
-// Theme colors
-const colors = {
-  primary: '#6c63ff',
-  background: '#121212',
-  card: '#1f1f1f',
-  text: '#ffffff',
-  border: '#272727',
-  notification: '#ffb703',
-};
+// Use palette from globalStyles colors (mutated via ThemeContext)
+import { colors } from './src/styles/globalStyles';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
 const App: React.FC = () => {
   const colorScheme = useColorScheme();
-  const isDarkMode = colorScheme === 'dark';
+  const [appTheme, setAppTheme] = useState<'light' | 'dark'>(colorScheme === 'dark' ? 'dark' : 'light');
+  const isDarkMode = appTheme === 'dark';
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
@@ -140,6 +135,18 @@ const App: React.FC = () => {
           } catch (e) {
             console.error('[InitFAIL] SocketService.initialize', e);
           }
+        }
+
+        // Theme: load persisted selection, default to system scheme
+        try {
+          const t = await AsyncStorage.getItem('appTheme');
+          const mode = t === 'light' || t === 'dark' ? t : (colorScheme === 'dark' ? 'dark' : 'light');
+          setAppTheme(mode);
+          applyThemeColors(mode);
+        } catch (_) {
+          const mode = colorScheme === 'dark' ? 'dark' : 'light';
+          setAppTheme(mode);
+          applyThemeColors(mode);
         }
       } catch (error) {
         console.error('Initialization error:', error);
@@ -229,7 +236,17 @@ const App: React.FC = () => {
   }
 
   return (
-    <NavigationContainer theme={navTheme} ref={navigationRef}>
+    <ThemeContext.Provider
+      value={{
+        theme: appTheme,
+        setTheme: (mode) => {
+          setAppTheme(mode);
+          persistTheme(mode);
+          applyThemeColors(mode);
+        },
+      }}
+    >
+      <NavigationContainer theme={navTheme} ref={navigationRef}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <Stack.Navigator
         initialRouteName={isAuthenticated ? 'Dashboard' : 'Login'}
@@ -264,7 +281,8 @@ const App: React.FC = () => {
         <Stack.Screen name="StartNewChat" component={StartNewChatScreen} />
       </Stack.Navigator>
       {__DEV__ ? <DevLogOverlay /> : null}
-    </NavigationContainer>
+      </NavigationContainer>
+    </ThemeContext.Provider>
   );
 };
 
