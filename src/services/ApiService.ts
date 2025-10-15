@@ -1686,17 +1686,18 @@ export class ApiService {
   }
 
   async lockCommunity(communityId: string) {
+    const stored = await AsyncStorage.getItem('currentUser');
+    const current = stored ? JSON.parse(stored) : null;
+    const username = current?.username;
+    const userPayload = { username, Username: username, userName: username };
     try {
-      const stored = await AsyncStorage.getItem('currentUser');
-      const current = stored ? JSON.parse(stored) : null;
-      const username = current?.username;
       return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/lock`, {
         method: 'POST',
-        body: JSON.stringify({ username }),
+        body: JSON.stringify(userPayload),
       });
     } catch (error: any) {
       const payload = {
-        username,
+        ...userPayload,
         id: communityId,
         communityId,
         action: 'lock',
@@ -1725,13 +1726,13 @@ export class ApiService {
             try {
               return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/lock-state`, {
                 method: 'POST',
-                body: JSON.stringify({ username, locked: true }),
+                body: JSON.stringify({ ...userPayload, locked: true }),
               });
             } catch (_e4) {
               try {
                 return await this.makeRequest('/communities/lock', {
                   method: 'POST',
-                  body: JSON.stringify({ id: communityId, communityId, username }),
+                  body: JSON.stringify({ id: communityId, communityId, ...userPayload }),
                 });
               } catch (_e5) {
                 console.error('lockCommunity error:', error);
@@ -1745,17 +1746,18 @@ export class ApiService {
   }
 
   async unlockCommunity(communityId: string) {
+    const stored = await AsyncStorage.getItem('currentUser');
+    const current = stored ? JSON.parse(stored) : null;
+    const username = current?.username;
+    const userPayload = { username, Username: username, userName: username };
     try {
-      const stored = await AsyncStorage.getItem('currentUser');
-      const current = stored ? JSON.parse(stored) : null;
-      const username = current?.username;
       return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/unlock`, {
         method: 'POST',
-        body: JSON.stringify({ username }),
+        body: JSON.stringify(userPayload),
       });
     } catch (error: any) {
       const payload = {
-        username,
+        ...userPayload,
         id: communityId,
         communityId,
         action: 'unlock',
@@ -1784,13 +1786,13 @@ export class ApiService {
             try {
               return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/lock-state`, {
                 method: 'POST',
-                body: JSON.stringify({ username, locked: false }),
+                body: JSON.stringify({ ...userPayload, locked: false }),
               });
             } catch (_e4) {
               try {
                 return await this.makeRequest('/communities/unlock', {
                   method: 'POST',
-                  body: JSON.stringify({ id: communityId, communityId, username }),
+                  body: JSON.stringify({ id: communityId, communityId, ...userPayload }),
                 });
               } catch (_e5) {
                 console.error('unlockCommunity error:', error);
