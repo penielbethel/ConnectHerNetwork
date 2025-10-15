@@ -1200,10 +1200,16 @@ const handleSendMessage = async () => {
         callType={incomingType}
         onAccept={() => {
           setIncomingVisible(false);
-          (navigation as any).navigate('Call', { to: incomingCaller || recipientUsername, type: incomingType });
+          try {
+            socketService.acceptCall({ from: currentUser?.username, to: incomingCaller || recipientUsername });
+          } catch (_) {}
+          (navigation as any).navigate('Call', { to: incomingCaller || recipientUsername, type: incomingType, mode: 'callee' });
         }}
         onDecline={() => {
           setIncomingVisible(false);
+          try {
+            socketService.rejectCall({ from: currentUser?.username, to: incomingCaller || recipientUsername });
+          } catch (_) {}
         }}
       />
 

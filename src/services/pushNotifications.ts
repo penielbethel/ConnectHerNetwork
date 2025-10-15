@@ -147,12 +147,28 @@ export class PushNotificationService {
             const communityId = data?.communityId;
             const communityName = data?.communityName;
             if (action === 'Accept' && communityId) {
-              navigate('CommunityIncomingCall', {
+              try {
+                const stored = await AsyncStorage.getItem('currentUser');
+                const me = stored ? JSON.parse(stored) : null;
+                const username = me?.username;
+                const name = me?.name || username;
+                const avatar = me?.avatar;
+                if (username) {
+                  socketService.joinGroupCall({
+                    username,
+                    communityId,
+                    communityName,
+                    name,
+                    avatar,
+                  });
+                }
+              } catch (_) {}
+              navigate('CommunityCall', {
                 communityId,
                 communityName,
-                caller: { username: caller },
-                type,
                 mode: 'callee',
+                type,
+                caller: { username: caller },
               });
             } else if (action === 'Decline' && communityId) {
               try {
@@ -432,21 +448,25 @@ export class PushNotificationService {
   }
 
   showLocalNotification(notificationData: NotificationData): void {
+    const dtype = String(notificationData?.data?.type || '').toLowerCase();
+    const isCall = dtype === 'call' || dtype === 'group_call' || dtype === 'incoming_call' ||
+      String(notificationData.title || '').toLowerCase().includes('call');
     PushNotification.localNotification({
       title: notificationData.title,
       message: notificationData.body,
-      channelId: notificationData.channelId || 'connecther_notifications',
+      channelId: isCall ? 'connecther_calls' : (notificationData.channelId || 'connecther_notifications'),
       priority: notificationData.priority || 'max',
       importance: 'max',
       vibrate: notificationData.vibrate !== false,
       allowWhileIdle: true,
       ignoreInForeground: false,
       visibility: 'public',
-      fullScreenIntent: true,
-      autoCancel: true,
+      fullScreenIntent: isCall,
+      autoCancel: !isCall,
       playSound: true,
       soundName: notificationData.sound || 'default',
       userInfo: notificationData.data,
+      actions: isCall ? ['Accept', 'Decline'] : undefined,
     });
   }
 
@@ -461,6 +481,18 @@ export class PushNotificationService {
         case 'message':
           // Navigate to messages screen
           console.log('Navigate to messages');
+          break;
+        case 'incoming_call':
+          // Local incoming call notification from CallNotifications
+          try {
+            const caller = (data as any)?.caller || (data as any)?.from || (data as any)?.username;
+            const callType = ((data as any)?.callType === 'video' || (data as any)?.type === 'video') ? 'video' : 'audio';
+            if (caller) {
+              navigate('IncomingCall', { caller, type: callType });
+            }
+          } catch (e) {
+            console.log('Navigate to IncomingCall (incoming_call) failed:', e);
+          }
           break;
         case 'call':
           // Navigate to full-screen incoming call UI

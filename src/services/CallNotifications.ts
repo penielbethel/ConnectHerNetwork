@@ -37,6 +37,7 @@ function showIncomingCallNotification(payload: any) {
     fullScreenIntent: true,
     invokeApp: true,
     userInfo: { type: 'incoming_call', caller, callType: type },
+    actions: ['Accept', 'Decline'],
   });
 }
 

@@ -182,15 +182,40 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated]);
 
+  // Ensure IncomingCall UI also appears when private-offer arrives
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const offerHandler = (payload: { from: string; type?: 'audio' | 'video' }) => {
+      try {
+        navigate('IncomingCall', { caller: payload.from, type: (payload.type || 'audio') as 'audio' | 'video' });
+      } catch (e) {
+        console.error('[NavFAIL] IncomingCall via private-offer navigate', e);
+      }
+    };
+    try {
+      SocketService.on('private-offer', offerHandler as any);
+    } catch (e) {
+      console.error('[SocketFAIL] private-offer listener', e);
+    }
+    return () => {
+      try {
+        SocketService.off('private-offer', offerHandler as any);
+      } catch (e) {}
+    };
+  }, [isAuthenticated]);
+
   // Listen for incoming group calls and navigate to community incoming call screen
   useEffect(() => {
     if (!isAuthenticated) return;
     const groupHandler = (payload: { from: string; communityId: string; communityName: string; type?: 'audio' | 'video' }) => {
       try {
         // Show local push notification as well
-        PushNotificationService.getInstance().displayNotification({
+        PushNotificationService.getInstance().showLocalNotification({
           title: 'Group Call',
-          message: `${payload.from} is calling in ${payload.communityName}`,
+          body: `${payload.from} is calling in ${payload.communityName}`,
+          data: { type: 'group_call', ...payload },
+          channelId: 'connecther_calls',
+          priority: 'high',
         });
       } catch (_) {}
       try {
