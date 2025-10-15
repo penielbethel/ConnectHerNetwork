@@ -22,6 +22,7 @@ import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import FAIcon from 'react-native-vector-icons/FontAwesome5';
 import { getFlagEmojiForLocation } from '../utils/flags';
 import { debounce } from 'lodash';
 import apiService from '../services/ApiService';
@@ -80,6 +81,7 @@ const DashboardScreen = () => {
   const [previewPost, setPreviewPost] = useState<Post | null>(null);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
+  const [authorRoles, setAuthorRoles] = useState<Record<string, string>>({});
 // Use full card width minus horizontal margins (20) and card padding (24)
 const mediaWidth = Math.round(Dimensions.get('window').width - 44);
   const screenWidth = Dimensions.get('window').width;
@@ -127,6 +129,42 @@ const mediaWidth = Math.round(Dimensions.get('window').width - 44);
       })();
     }
   }, [currentUser]);
+
+  // Enrich posts with author role information to show admin/superadmin crown
+  useEffect(() => {
+    const loadRoles = async () => {
+      try {
+        const list = posts || [];
+        const usernames = Array.from(
+          new Set(
+            list
+              .map(p => p?.author?.username)
+              .filter((u): u is string => typeof u === 'string' && !!u)
+          )
+        ).filter(u => !authorRoles[u]);
+        if (usernames.length === 0) return;
+        const fetched = await Promise.all(
+          usernames.map(async (u) => {
+            try {
+              const user = await apiService.getUserByUsername(u);
+              const role: string = String((user as any)?.role || '').toLowerCase();
+              return { u, role };
+            } catch (_e) {
+              return { u, role: '' };
+            }
+          })
+        );
+        const next: Record<string, string> = { ...authorRoles };
+        for (const { u, role } of fetched) {
+          if (u) next[u] = role;
+        }
+        setAuthorRoles(next);
+      } catch (_err) {
+        // ignore role enrichment failures
+      }
+    };
+    if (posts && posts.length > 0) loadRoles();
+  }, [posts]);
 
   // Auto-hide quick options menu after 3 seconds of inactivity
   useEffect(() => {
@@ -606,7 +644,20 @@ const mediaWidth = Math.round(Dimensions.get('window').width - 44);
             <Text style={globalStyles.textMuted}>@{post?.author?.username || 'unknown'}</Text>
           </View>
         </TouchableOpacity>
-        <Text style={globalStyles.textMuted}>{formatTime(post.createdAt)}</Text>
+        <View style={styles.postHeaderRight}>
+          {(() => {
+            const role = String(authorRoles[post?.author?.username || ''] || '').toLowerCase();
+            const isAdmin = role === 'admin' || role === 'superadmin';
+            if (!isAdmin) return null;
+            const crownColor = role === 'superadmin' ? '#8e44ad' : '#FFD700';
+            return (
+              <View style={styles.adminCrownRight}>
+                <FAIcon name="crown" size={14} color={crownColor} />
+              </View>
+            );
+          })()}
+          <Text style={globalStyles.textMuted}>{formatTime(post.createdAt)}</Text>
+        </View>
       </View>
 
       {!!post.content && (
@@ -1500,6 +1551,23 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     position: 'relative',
+  },
+  crownBadge: {
+    position: 'absolute',
+    top: -6,
+    left: -6,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  postHeaderRight: {
+    alignItems: 'flex-end',
+  },
+  adminCrownRight: {
+    marginBottom: 2,
   },
   flagBadgeSmall: {
     position: 'absolute',

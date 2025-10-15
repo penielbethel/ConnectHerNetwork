@@ -1456,21 +1456,54 @@ export class ApiService {
       const current = stored ? JSON.parse(stored) : null;
       const username = current?.username;
 
-      const data = await this.makeRequest('/communities/all');
-      const raw = Array.isArray(data)
-        ? data
-        : (data as any)?.communities || [];
+      const primary = await this.makeRequest('/communities/all');
+      const raw = Array.isArray(primary)
+        ? primary
+        : (primary as any)?.communities || (primary as any)?.data?.communities || [];
 
       const communities = raw.map((c: any) => ({
         ...c,
         memberCount: Array.isArray(c?.members) ? c.members.length : 0,
         isJoined: username ? Array.isArray(c?.members) && c.members.includes(username) : false,
       }));
-
       return { success: true, communities } as any;
-    } catch (error) {
-      console.error('getCommunities error:', error);
-      return { success: false, communities: [] } as any;
+    } catch (error: any) {
+      // Fallback to alternate endpoints if /communities/all fails (404/5xx)
+      try {
+        const alt = await this.makeRequest('/communities');
+        const raw = Array.isArray(alt)
+          ? alt
+          : (alt as any)?.communities || (alt as any)?.data?.communities || [];
+        const stored = await AsyncStorage.getItem('currentUser');
+        const current = stored ? JSON.parse(stored) : null;
+        const username = current?.username;
+        const communities = raw.map((c: any) => ({
+          ...c,
+          memberCount: Array.isArray(c?.members) ? c.members.length : 0,
+          isJoined: username ? Array.isArray(c?.members) && c.members.includes(username) : false,
+        }));
+        return { success: true, communities } as any;
+      } catch (fallbackErr: any) {
+        // Secondary fallback for possible legacy route naming
+        try {
+          const alt2 = await this.makeRequest('/community/all');
+          const raw2 = Array.isArray(alt2)
+            ? alt2
+            : (alt2 as any)?.communities || (alt2 as any)?.data?.communities || [];
+          const stored = await AsyncStorage.getItem('currentUser');
+          const current = stored ? JSON.parse(stored) : null;
+          const username = current?.username;
+          const communities2 = raw2.map((c: any) => ({
+            ...c,
+            memberCount: Array.isArray(c?.members) ? c.members.length : 0,
+            isJoined: username ? Array.isArray(c?.members) && c.members.includes(username) : false,
+          }));
+          return { success: true, communities: communities2 } as any;
+        } catch (_e) {
+          console.error('getCommunities error:', fallbackErr);
+          return { success: false, communities: [] } as any;
+        }
+      }
     }
   }
 
@@ -1649,6 +1682,124 @@ export class ApiService {
     } catch (error) {
       console.error('leaveCommunity error:', error);
       throw error;
+    }
+  }
+
+  async lockCommunity(communityId: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+      return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/lock`, {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      });
+    } catch (error: any) {
+      const payload = {
+        username,
+        id: communityId,
+        communityId,
+        action: 'lock',
+        locked: true,
+        isLocked: true,
+        status: 'locked',
+      };
+      try {
+        return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+      } catch (_e1) {
+        try {
+          return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}`, {
+            method: 'PATCH',
+            body: JSON.stringify(payload),
+          });
+        } catch (_e2) {
+          try {
+            return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/update`, {
+              method: 'POST',
+              body: JSON.stringify(payload),
+            });
+          } catch (_e3) {
+            try {
+              return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/lock-state`, {
+                method: 'POST',
+                body: JSON.stringify({ username, locked: true }),
+              });
+            } catch (_e4) {
+              try {
+                return await this.makeRequest('/communities/lock', {
+                  method: 'POST',
+                  body: JSON.stringify({ id: communityId, communityId, username }),
+                });
+              } catch (_e5) {
+                console.error('lockCommunity error:', error);
+                throw error;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  async unlockCommunity(communityId: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+      return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/unlock`, {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      });
+    } catch (error: any) {
+      const payload = {
+        username,
+        id: communityId,
+        communityId,
+        action: 'unlock',
+        locked: false,
+        isLocked: false,
+        status: 'unlocked',
+      };
+      try {
+        return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+      } catch (_e1) {
+        try {
+          return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}`, {
+            method: 'PATCH',
+            body: JSON.stringify(payload),
+          });
+        } catch (_e2) {
+          try {
+            return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/update`, {
+              method: 'POST',
+              body: JSON.stringify(payload),
+            });
+          } catch (_e3) {
+            try {
+              return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/lock-state`, {
+                method: 'POST',
+                body: JSON.stringify({ username, locked: false }),
+              });
+            } catch (_e4) {
+              try {
+                return await this.makeRequest('/communities/unlock', {
+                  method: 'POST',
+                  body: JSON.stringify({ id: communityId, communityId, username }),
+                });
+              } catch (_e5) {
+                console.error('unlockCommunity error:', error);
+                throw error;
+              }
+            }
+          }
+        }
+      }
     }
   }
 

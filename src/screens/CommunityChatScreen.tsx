@@ -64,6 +64,10 @@ const CommunityChatScreen: React.FC = () => {
   const [avatarPreviewVisible, setAvatarPreviewVisible] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const atBottomRef = useRef(true);
+  // Derived privileges & lock state
+  const meUsername = currentUser?.username;
+  const meIsAdminOrCreator = !!members.find(m => m.username === meUsername && (m.isAdmin || m.isCreator));
+  const isGroupLocked = !!(community?.isLocked || community?.locked || (community?.status === 'locked'));
   // Voice note state
   const [isRecording, setIsRecording] = useState(false);
   const [recordTimeMs, setRecordTimeMs] = useState(0);
@@ -274,6 +278,10 @@ const CommunityChatScreen: React.FC = () => {
   const sendText = async () => {
     const text = inputText.trim();
     if (!text) return;
+    if (isGroupLocked && !meIsAdminOrCreator) {
+      Alert.alert('Group locked', 'Only admins can send messages right now.');
+      return;
+    }
     setInputText('');
     try {
       const res = await apiService.sendCommunityTextMessage(communityId, text, replyTo || undefined);
@@ -342,6 +350,10 @@ const CommunityChatScreen: React.FC = () => {
 
   const sendVoiceNote = async () => {
     try {
+      if (isGroupLocked && !meIsAdminOrCreator) {
+        Alert.alert('Group locked', 'Only admins can send messages right now.');
+        return;
+      }
       let uri = recordFileUri;
       if (isRecording) {
         uri = await audioRecorderService.stopRecording();
@@ -407,6 +419,10 @@ const CommunityChatScreen: React.FC = () => {
 
   const sendMediaWithCaption = async (fileUris: string[], caption?: string) => {
     try {
+      if (isGroupLocked && !meIsAdminOrCreator) {
+        Alert.alert('Group locked', 'Only admins can send messages right now.');
+        return;
+      }
       if (!currentUser?.username) return;
       // Step 1: Upload each file to get persistent URLs (server expects media array, not raw files)
       const uploaded: Array<{ url: string; type?: string; name?: string }> = [];
@@ -476,6 +492,10 @@ const CommunityChatScreen: React.FC = () => {
 
   const handleAttachMedia = async () => {
     try {
+      if (isGroupLocked && !meIsAdminOrCreator) {
+        Alert.alert('Group locked', 'Only admins can attach media right now.');
+        return;
+      }
       const res = await launchImageLibrary({
         mediaType: 'mixed',
         selectionLimit: 5,
@@ -493,6 +513,10 @@ const CommunityChatScreen: React.FC = () => {
 
   const handleAttachFiles = async () => {
     try {
+      if (isGroupLocked && !meIsAdminOrCreator) {
+        Alert.alert('Group locked', 'Only admins can attach files right now.');
+        return;
+      }
       const picks = await DocumentPicker.pick({
         type: [DocumentPicker.types.allFiles],
         allowMultiSelection: true,
@@ -521,6 +545,38 @@ const CommunityChatScreen: React.FC = () => {
     } catch (e: any) {
       const msg = e?.message || 'Failed to clear messages.';
       Alert.alert('Error', msg);
+    } finally {
+      setMenuVisible(false);
+    }
+  };
+
+  const handleLockGroup = async () => {
+    try {
+      if (!meIsAdminOrCreator) {
+        Alert.alert('Not allowed', 'Only the creator or admins can lock the group.');
+        return;
+      }
+      await (apiService as any).lockCommunity(communityId);
+      await loadCommunityData();
+      Alert.alert('Locked', 'The group is now locked.');
+    } catch (e: any) {
+      Alert.alert('Failed', e?.message || 'Could not lock the group.');
+    } finally {
+      setMenuVisible(false);
+    }
+  };
+
+  const handleUnlockGroup = async () => {
+    try {
+      if (!meIsAdminOrCreator) {
+        Alert.alert('Not allowed', 'Only the creator or admins can unlock the group.');
+        return;
+      }
+      await (apiService as any).unlockCommunity(communityId);
+      await loadCommunityData();
+      Alert.alert('Unlocked', 'The group is now unlocked.');
+    } catch (e: any) {
+      Alert.alert('Failed', e?.message || 'Could not unlock the group.');
     } finally {
       setMenuVisible(false);
     }
@@ -596,16 +652,20 @@ const CommunityChatScreen: React.FC = () => {
               ) : null}
             </View>
           </View>
-          <View style={styles.headerStatsRow}>
-            <View style={styles.statsChip}>
-              <Icon name="people" size={14} color={colors.primary} style={styles.statsIcon} />
-              <Text style={styles.headerStatsText}>{members.length}</Text>
-            </View>
-            <View style={styles.statsChip}>
-              <Icon name="star" size={14} color={colors.primary} style={styles.statsIcon} />
-              <Text style={styles.headerStatsText}>{members.filter(m => m.isAdmin || m.isCreator).length}</Text>
-            </View>
+        <View style={styles.headerStatsRow}>
+          <View style={styles.statsChip}>
+            <Icon name="people" size={14} color={colors.primary} style={styles.statsIcon} />
+            <Text style={styles.headerStatsText}>{members.length}</Text>
           </View>
+          <View style={styles.statsChip}>
+            <Icon name="star" size={14} color={colors.primary} style={styles.statsIcon} />
+            <Text style={styles.headerStatsText}>{members.filter(m => m.isAdmin || m.isCreator).length}</Text>
+          </View>
+          <View style={styles.statsChip}>
+            <Icon name={isGroupLocked ? 'lock' : 'lock-open'} size={14} color={colors.primary} style={styles.statsIcon} />
+            <Text style={styles.headerStatsText}>{isGroupLocked ? 'Locked' : 'Unlocked'}</Text>
+          </View>
+        </View>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={() => setMenuVisible(true)} style={styles.actionBtn}>
@@ -641,23 +701,24 @@ const CommunityChatScreen: React.FC = () => {
       )}
 
       <View style={styles.inputBar}>
-        <TouchableOpacity style={styles.attachBtn} onPress={handleAttachMedia}>
+        <TouchableOpacity style={styles.attachBtn} onPress={handleAttachMedia} disabled={isGroupLocked && !meIsAdminOrCreator}>
           <Icon name="attach-file" size={20} color={colors.text} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.emojiBtn} onPress={() => setEmojiVisible(v => !v)}>
+        <TouchableOpacity style={styles.emojiBtn} onPress={() => { if (isGroupLocked && !meIsAdminOrCreator) { Alert.alert('Group locked', 'Only admins can use emojis right now.'); return; } setEmojiVisible(v => !v); }}>
           <Icon name="insert-emoticon" size={22} color={colors.text} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.emojiBtn} onPress={isRecording ? stopRecording : startRecording}>
+        <TouchableOpacity style={styles.emojiBtn} onPress={() => { if (isGroupLocked && !meIsAdminOrCreator) { Alert.alert('Group locked', 'Only admins can record right now.'); return; } (isRecording ? stopRecording() : startRecording()); }}>
           <Icon name={isRecording ? 'stop-circle' : 'mic'} size={22} color={colors.text} />
         </TouchableOpacity>
         <TextInput
           style={styles.input}
-          placeholder="Type a message"
+          placeholder={isGroupLocked && !meIsAdminOrCreator ? 'Group is locked' : 'Type a message'}
           placeholderTextColor={colors.textMuted}
           value={inputText}
           onChangeText={setInputText}
+          editable={!(isGroupLocked && !meIsAdminOrCreator)}
         />
-        <TouchableOpacity style={styles.sendBtn} onPress={sendText}>
+        <TouchableOpacity style={styles.sendBtn} onPress={sendText} disabled={isGroupLocked && !meIsAdminOrCreator}>
           <Icon name="send" size={20} color={'#fff'} />
         </TouchableOpacity>
       </View>
@@ -757,6 +818,19 @@ const CommunityChatScreen: React.FC = () => {
               <Icon name="group" size={18} color={colors.text} />
               <Text style={styles.menuItemText}>Members</Text>
             </TouchableOpacity>
+            {meIsAdminOrCreator && (
+              isGroupLocked ? (
+                <TouchableOpacity style={styles.menuItem} onPress={handleUnlockGroup}>
+                  <Icon name="lock-open" size={18} color={colors.text} />
+                  <Text style={styles.menuItemText}>Unlock group</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.menuItem} onPress={handleLockGroup}>
+                  <Icon name="lock" size={18} color={colors.text} />
+                  <Text style={styles.menuItemText}>Lock group</Text>
+                </TouchableOpacity>
+              )
+            )}
             <TouchableOpacity style={styles.menuItem} onPress={handleClearMyMessages}>
               <Icon name="delete-sweep" size={18} color={colors.text} />
               <Text style={styles.menuItemText}>Clear my messages</Text>
