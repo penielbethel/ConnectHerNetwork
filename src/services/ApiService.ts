@@ -1793,22 +1793,42 @@ export class ApiService {
                   body: JSON.stringify({ ...userPayload, locked: true }),
                 });
               } catch (_rootLockStateErr) {}
-              try {
-                return await this.makeRequest('/communities/lock', {
-                  method: 'POST',
-                  body: JSON.stringify({ id: communityId, communityId, ...userPayload }),
-                });
-              } catch (_e5) {
-                try {
-                  return await this.makeRootRequest('/communities/lock', {
-                    method: 'POST',
-                    body: JSON.stringify({ id: communityId, communityId, ...userPayload }),
-                  });
-                } catch (_rootLockLegacyErr) {
-                  console.error('lockCommunity error:', error);
-                  throw error;
+              // Legacy/alternative lock endpoints
+              const legacyBodies = [
+                { id: communityId, communityId, ...userPayload },
+                { groupId: communityId, ...userPayload },
+                { community: communityId, ...userPayload },
+                { id: communityId, Username: userPayload.Username },
+              ];
+              const legacyRoutes = [
+                '/communities/lock',
+                `/communities/${encodeURIComponent(communityId)}/lock`,
+                '/community/lock',
+                `/community/${encodeURIComponent(communityId)}/lock`,
+                '/groups/lock',
+                `/groups/${encodeURIComponent(communityId)}/lock`,
+                '/group/lock',
+                `/group/${encodeURIComponent(communityId)}/lock`,
+              ];
+              for (const route of legacyRoutes) {
+                for (const body of legacyBodies) {
+                  try {
+                    return await this.makeRequest(route, {
+                      method: 'POST',
+                      body: JSON.stringify(body),
+                    });
+                  } catch (_) {
+                    try {
+                      return await this.makeRootRequest(route, {
+                        method: 'POST',
+                        body: JSON.stringify(body),
+                      });
+                    } catch (_) {}
+                  }
                 }
               }
+              console.error('lockCommunity error:', error);
+              throw error;
             }
           }
         }
@@ -1892,22 +1912,42 @@ export class ApiService {
                   body: JSON.stringify({ ...userPayload, locked: false }),
                 });
               } catch (_rootLockStateErr) {}
-              try {
-                return await this.makeRequest('/communities/unlock', {
-                  method: 'POST',
-                  body: JSON.stringify({ id: communityId, communityId, ...userPayload }),
-                });
-              } catch (_e5) {
-                try {
-                  return await this.makeRootRequest('/communities/unlock', {
-                    method: 'POST',
-                    body: JSON.stringify({ id: communityId, communityId, ...userPayload }),
-                  });
-                } catch (_rootUnlockLegacyErr) {
-                  console.error('unlockCommunity error:', error);
-                  throw error;
+              // Legacy/alternative unlock endpoints
+              const legacyBodies = [
+                { id: communityId, communityId, ...userPayload },
+                { groupId: communityId, ...userPayload },
+                { community: communityId, ...userPayload },
+                { id: communityId, Username: userPayload.Username },
+              ];
+              const legacyRoutes = [
+                '/communities/unlock',
+                `/communities/${encodeURIComponent(communityId)}/unlock`,
+                '/community/unlock',
+                `/community/${encodeURIComponent(communityId)}/unlock`,
+                '/groups/unlock',
+                `/groups/${encodeURIComponent(communityId)}/unlock`,
+                '/group/unlock',
+                `/group/${encodeURIComponent(communityId)}/unlock`,
+              ];
+              for (const route of legacyRoutes) {
+                for (const body of legacyBodies) {
+                  try {
+                    return await this.makeRequest(route, {
+                      method: 'POST',
+                      body: JSON.stringify(body),
+                    });
+                  } catch (_) {
+                    try {
+                      return await this.makeRootRequest(route, {
+                        method: 'POST',
+                        body: JSON.stringify(body),
+                      });
+                    } catch (_) {}
+                  }
                 }
               }
+              console.error('unlockCommunity error:', error);
+              throw error;
             }
           }
         }
