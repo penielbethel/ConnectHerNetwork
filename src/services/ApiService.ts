@@ -1484,24 +1484,56 @@ export class ApiService {
         }));
         return { success: true, communities } as any;
       } catch (fallbackErr: any) {
-        // Secondary fallback for possible legacy route naming
+        // Try root-level endpoints (legacy servers without /api prefix)
         try {
-          const alt2 = await this.makeRequest('/community/all');
-          const raw2 = Array.isArray(alt2)
-            ? alt2
-            : (alt2 as any)?.communities || (alt2 as any)?.data?.communities || [];
+          const altRoot = await this.makeRootRequest('/communities/all');
+          const rawRoot = Array.isArray(altRoot)
+            ? altRoot
+            : (altRoot as any)?.communities || (altRoot as any)?.data?.communities || [];
           const stored = await AsyncStorage.getItem('currentUser');
           const current = stored ? JSON.parse(stored) : null;
           const username = current?.username;
-          const communities2 = raw2.map((c: any) => ({
+          const communities = rawRoot.map((c: any) => ({
             ...c,
             memberCount: Array.isArray(c?.members) ? c.members.length : 0,
             isJoined: username ? Array.isArray(c?.members) && c.members.includes(username) : false,
           }));
-          return { success: true, communities: communities2 } as any;
-        } catch (_e) {
-          console.error('getCommunities error:', fallbackErr);
-          return { success: false, communities: [] } as any;
+          return { success: true, communities } as any;
+        } catch (_rootAllErr) {
+          try {
+            const altRoot2 = await this.makeRootRequest('/communities');
+            const rawRoot2 = Array.isArray(altRoot2)
+              ? altRoot2
+              : (altRoot2 as any)?.communities || (altRoot2 as any)?.data?.communities || [];
+            const stored = await AsyncStorage.getItem('currentUser');
+            const current = stored ? JSON.parse(stored) : null;
+            const username = current?.username;
+            const communities = rawRoot2.map((c: any) => ({
+              ...c,
+              memberCount: Array.isArray(c?.members) ? c.members.length : 0,
+              isJoined: username ? Array.isArray(c?.members) && c.members.includes(username) : false,
+            }));
+            return { success: true, communities } as any;
+          } catch (_rootListErr) {
+            try {
+              const altRoot3 = await this.makeRootRequest('/community/all');
+              const rawRoot3 = Array.isArray(altRoot3)
+                ? altRoot3
+                : (altRoot3 as any)?.communities || (altRoot3 as any)?.data?.communities || [];
+              const stored = await AsyncStorage.getItem('currentUser');
+              const current = stored ? JSON.parse(stored) : null;
+              const username = current?.username;
+              const communities = rawRoot3.map((c: any) => ({
+                ...c,
+                memberCount: Array.isArray(c?.members) ? c.members.length : 0,
+                isJoined: username ? Array.isArray(c?.members) && c.members.includes(username) : false,
+              }));
+              return { success: true, communities } as any;
+            } catch (_e) {
+              console.error('getCommunities error:', fallbackErr);
+              return { success: false, communities: [] } as any;
+            }
+          }
         }
       }
     }
@@ -1696,6 +1728,13 @@ export class ApiService {
         body: JSON.stringify(userPayload),
       });
     } catch (error: any) {
+      // Try root-level lock route
+      try {
+        return await this.makeRootRequest(`/communities/${encodeURIComponent(communityId)}/lock`, {
+          method: 'POST',
+          body: JSON.stringify(userPayload),
+        });
+      } catch (_rootLockErr) {}
       const payload = {
         ...userPayload,
         id: communityId,
@@ -1729,14 +1768,46 @@ export class ApiService {
                 body: JSON.stringify({ ...userPayload, locked: true }),
               });
             } catch (_e4) {
+              // Root-level update attempts
+              try {
+                return await this.makeRootRequest(`/communities/${encodeURIComponent(communityId)}`, {
+                  method: 'PUT',
+                  body: JSON.stringify(payload),
+                });
+              } catch (_rootPutErr) {}
+              try {
+                return await this.makeRootRequest(`/communities/${encodeURIComponent(communityId)}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify(payload),
+                });
+              } catch (_rootPatchErr) {}
+              try {
+                return await this.makeRootRequest(`/communities/${encodeURIComponent(communityId)}/update`, {
+                  method: 'POST',
+                  body: JSON.stringify(payload),
+                });
+              } catch (_rootUpdateErr) {}
+              try {
+                return await this.makeRootRequest(`/communities/${encodeURIComponent(communityId)}/lock-state`, {
+                  method: 'POST',
+                  body: JSON.stringify({ ...userPayload, locked: true }),
+                });
+              } catch (_rootLockStateErr) {}
               try {
                 return await this.makeRequest('/communities/lock', {
                   method: 'POST',
                   body: JSON.stringify({ id: communityId, communityId, ...userPayload }),
                 });
               } catch (_e5) {
-                console.error('lockCommunity error:', error);
-                throw error;
+                try {
+                  return await this.makeRootRequest('/communities/lock', {
+                    method: 'POST',
+                    body: JSON.stringify({ id: communityId, communityId, ...userPayload }),
+                  });
+                } catch (_rootLockLegacyErr) {
+                  console.error('lockCommunity error:', error);
+                  throw error;
+                }
               }
             }
           }
@@ -1756,6 +1827,13 @@ export class ApiService {
         body: JSON.stringify(userPayload),
       });
     } catch (error: any) {
+      // Try root-level unlock route
+      try {
+        return await this.makeRootRequest(`/communities/${encodeURIComponent(communityId)}/unlock`, {
+          method: 'POST',
+          body: JSON.stringify(userPayload),
+        });
+      } catch (_rootUnlockErr) {}
       const payload = {
         ...userPayload,
         id: communityId,
@@ -1789,14 +1867,46 @@ export class ApiService {
                 body: JSON.stringify({ ...userPayload, locked: false }),
               });
             } catch (_e4) {
+              // Root-level update attempts
+              try {
+                return await this.makeRootRequest(`/communities/${encodeURIComponent(communityId)}`, {
+                  method: 'PUT',
+                  body: JSON.stringify(payload),
+                });
+              } catch (_rootPutErr) {}
+              try {
+                return await this.makeRootRequest(`/communities/${encodeURIComponent(communityId)}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify(payload),
+                });
+              } catch (_rootPatchErr) {}
+              try {
+                return await this.makeRootRequest(`/communities/${encodeURIComponent(communityId)}/update`, {
+                  method: 'POST',
+                  body: JSON.stringify(payload),
+                });
+              } catch (_rootUpdateErr) {}
+              try {
+                return await this.makeRootRequest(`/communities/${encodeURIComponent(communityId)}/lock-state`, {
+                  method: 'POST',
+                  body: JSON.stringify({ ...userPayload, locked: false }),
+                });
+              } catch (_rootLockStateErr) {}
               try {
                 return await this.makeRequest('/communities/unlock', {
                   method: 'POST',
                   body: JSON.stringify({ id: communityId, communityId, ...userPayload }),
                 });
               } catch (_e5) {
-                console.error('unlockCommunity error:', error);
-                throw error;
+                try {
+                  return await this.makeRootRequest('/communities/unlock', {
+                    method: 'POST',
+                    body: JSON.stringify({ id: communityId, communityId, ...userPayload }),
+                  });
+                } catch (_rootUnlockLegacyErr) {
+                  console.error('unlockCommunity error:', error);
+                  throw error;
+                }
               }
             }
           }
