@@ -2299,6 +2299,29 @@ export class ApiService {
       throw err;
     }
   }
+
+  // Delete the currently authenticated account (or an identifier if provided)
+  async deleteAccount(identifier?: string) {
+    try {
+      let id = identifier;
+      if (!id) {
+        try {
+          const userJson = await AsyncStorage.getItem('currentUser');
+          const user = userJson ? JSON.parse(userJson) : null;
+          id = user?.username || user?._id || user?.id || user?.email || undefined;
+        } catch (_) {}
+      }
+      const body = id ? { identifier: id } : {};
+      return this.makeRequest('/auth/delete-account', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      console.error('deleteAccount error:', err);
+      throw err;
+    }
+  }
 }
 
 // Export a lazy singleton to avoid constructor side effects during module import.

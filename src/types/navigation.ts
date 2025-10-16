@@ -60,6 +60,7 @@ export type RootStackParamList = {
     email?: string;
     phone?: string;
   };
+  NewUserVerification: undefined;
   CreateCommunity: undefined;
   Settings: undefined;
   Search: undefined;

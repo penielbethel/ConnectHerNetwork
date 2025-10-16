@@ -42,6 +42,7 @@ const CommunityChatScreen = requireSafe(() => require('./src/screens/CommunityCh
 const CommunityCallScreen = requireSafe(() => require('./src/screens/CommunityCallScreen'), 'CommunityCallScreen');
 const CommunityIncomingCallScreen = requireSafe(() => require('./src/screens/CommunityIncomingCallScreen'), 'CommunityIncomingCallScreen');
 const VerificationScreen = requireSafe(() => require('./src/screens/VerificationScreen'), 'VerificationScreen');
+const NewUserVerificationScreen = requireSafe(() => require('./src/screens/NewUserVerificationScreen'), 'NewUserVerificationScreen');
 const TermsAttestationScreen = requireSafe(() => require('./src/screens/TermsAttestationScreen'), 'TermsAttestationScreen');
 const SponsorsScreen = requireSafe(() => require('./src/screens/SponsorsScreen'), 'SponsorsScreen');
 const SponsorDetailScreen = requireSafe(() => require('./src/screens/SponsorDetailScreen'), 'SponsorDetailScreen');
@@ -76,6 +77,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState<boolean>(false);
+  const [verificationCompleted, setVerificationCompleted] = useState<boolean>(false);
 
   useEffect(() => {
     LogBox.ignoreLogs([
@@ -145,6 +147,12 @@ const App: React.FC = () => {
           setTermsAccepted(att === 'true');
         } catch (_) {}
 
+        // Load New User Verification completion state
+        try {
+          const v = await AsyncStorage.getItem('verificationCompleted_v1');
+          setVerificationCompleted(v === 'true');
+        } catch (_) {}
+
         // Theme: load persisted selection, default to system scheme
         try {
           const t = await AsyncStorage.getItem('appTheme');
@@ -166,16 +174,25 @@ const App: React.FC = () => {
     initializeApp();
   }, []);
 
-  // Gate access to dashboard until Terms are accepted
+  // Gate access: first require New User Verification, then Terms acceptance
   useEffect(() => {
-    if (isAuthenticated && !termsAccepted) {
+    if (!isAuthenticated) return;
+    if (!verificationCompleted) {
+      try {
+        navigate('NewUserVerification');
+      } catch (e) {
+        console.error('[NavFAIL] NewUserVerification navigate', e);
+      }
+      return;
+    }
+    if (!termsAccepted) {
       try {
         navigate('TermsAttestation');
       } catch (e) {
         console.error('[NavFAIL] TermsAttestation navigate', e);
       }
     }
-  }, [isAuthenticated, termsAccepted]);
+  }, [isAuthenticated, verificationCompleted, termsAccepted]);
 
   // Listen for incoming call socket events and navigate to IncomingCall
   useEffect(() => {
@@ -293,7 +310,13 @@ const App: React.FC = () => {
       <NavigationContainer theme={navTheme} ref={navigationRef}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <Stack.Navigator
-        initialRouteName={isAuthenticated ? (termsAccepted ? 'Dashboard' : 'TermsAttestation') : 'Login'}
+        initialRouteName={
+          isAuthenticated
+            ? (!verificationCompleted
+                ? 'NewUserVerification'
+                : (!termsAccepted ? 'TermsAttestation' : 'Dashboard'))
+            : 'Login'
+        }
         screenOptions={{
           header: (props) => <TopNav {...props} />,
           headerStyle: {
@@ -318,6 +341,7 @@ const App: React.FC = () => {
         <Stack.Screen name="Call" component={CallScreen} />
         <Stack.Screen name="IncomingCall" component={IncomingCallScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Verification" component={VerificationScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="NewUserVerification" component={NewUserVerificationScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TermsAttestation" component={TermsAttestationScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Sponsors" component={SponsorsScreen} />
         <Stack.Screen name="SponsorDetail" component={SponsorDetailScreen} />

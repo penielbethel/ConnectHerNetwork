@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, globalStyles } from '../styles/globalStyles';
+import ApiService from '../services/ApiService';
 
 const TermsAttestationScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -15,6 +16,32 @@ const TermsAttestationScreen: React.FC = () => {
       // ignore storage errors; proceed to dashboard
     }
     navigation.navigate('Dashboard' as never);
+  };
+
+  const handleDeclineExit = async () => {
+    try {
+      const userJson = await AsyncStorage.getItem('currentUser');
+      const user = userJson ? JSON.parse(userJson) : null;
+      const identifier = user?.username || user?._id || user?.id || user?.email;
+
+      try {
+        await ApiService.deleteAccount(identifier);
+      } catch (e) {
+        // If server deletion fails, still proceed with local sign-out
+        console.error('[DeleteAccountFAIL]', e);
+      }
+
+      await AsyncStorage.multiRemove([
+        'authToken',
+        'currentUser',
+        'termsAccepted_v1',
+        'verificationCompleted_v1',
+      ]);
+      navigation.navigate('Login' as never);
+      Alert.alert('Account Deleted', 'Your account has been deleted and you have been signed out.');
+    } catch (e) {
+      Alert.alert('Error', 'Could not complete deletion. Please try again.');
+    }
   };
 
   return (
@@ -82,6 +109,10 @@ const TermsAttestationScreen: React.FC = () => {
         <TouchableOpacity style={styles.acceptButton} onPress={handleAccept}>
           <Text style={styles.acceptText}>✅ Accept & Continue</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.declineButton} onPress={handleDeclineExit}>
+          <Text style={styles.declineText}>❌ Decline & Exit</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -142,6 +173,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   acceptText: {
+    ...globalStyles.buttonText,
+  },
+  declineButton: {
+    ...globalStyles.button,
+    backgroundColor: '#d32f2f',
+    marginTop: 12,
+    alignSelf: 'center',
+    paddingHorizontal: 24,
+  },
+  declineText: {
     ...globalStyles.buttonText,
   },
 });
