@@ -6,6 +6,10 @@ buildscript {
         minSdkVersion = 21
         compileSdkVersion = 34
         targetSdkVersion = 34
+        // Kotlin version for modules that apply the Kotlin Android plugin
+        kotlinVersion = "1.8.22"
+        // Make RN version available to autolinked modules requiring ext.reactNativeVersion
+        reactNativeVersion = "0.73.2"
 
         // We use NDK 23 which has both M1 support and is the side-by-side NDK version from AGP.
         ndkVersion = "23.1.7779620"
@@ -24,6 +28,8 @@ buildscript {
         classpath("com.facebook.react:react-native-gradle-plugin")
         // Add this line to include the Google Services plugin
         classpath('com.google.gms:google-services:4.4.1') 
+        // Kotlin Gradle plugin for Kotlin Android modules
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}")
     }
 }
 
@@ -44,5 +50,11 @@ allprojects {
         google()
         mavenCentral()
         maven { url 'https://www.jitpack.io' }
+    }
+    // Ensure RN libraries resolve react-android with an explicit version when not declared
+    configurations.all {
+        resolutionStrategy {
+            force "com.facebook.react:react-android:${reactNativeVersion}"
+        }
     }
 }

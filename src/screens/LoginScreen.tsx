@@ -10,6 +10,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useNavigation} from '@react-navigation/native';
@@ -19,7 +20,7 @@ import {launchImageLibrary} from 'react-native-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Geolocation from '@react-native-community/geolocation';
 import {check, request, PERMISSIONS, RESULTS, openSettings} from 'react-native-permissions';
-import RNAndroidLocationEnabler from 'react-native-android-location-enabler';
+// Use core RN Linking to open Android Location Settings when provider is off
 
 const LoginScreen = () => {
   const navigation = useNavigation();
@@ -234,17 +235,16 @@ const LoginScreen = () => {
         return;
       }
 
-      // On Android, prompt to enable location services (GPS/Network) if disabled
+      // On Android, offer to open device Location Settings to turn on provider
       if (Platform.OS === 'android') {
-        try {
-          await RNAndroidLocationEnabler.promptForEnableLocationIfNeeded({
-            interval: 10000,
-            fastInterval: 5000,
-          });
-        } catch (enableErr) {
-          // User canceled enabling; still allow manual entry
-          console.warn('Location services enable prompt declined:', enableErr);
-        }
+        Alert.alert(
+          'Turn On Location',
+          'Your device location services may be off. Enable GPS/Location and try again.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Location Settings', onPress: () => Linking.sendIntent?.('android.settings.LOCATION_SOURCE_SETTINGS') },
+          ]
+        );
       }
 
       const tryGetPosition = (opts: Geolocation.GeoOptions): Promise<Geolocation.GeoPosition> => {
@@ -264,9 +264,14 @@ const LoginScreen = () => {
         const msg1 = String(err1?.message || '').toLowerCase();
         // If provider disabled, try to prompt to enable again and fallback to low accuracy
         if (Platform.OS === 'android' && (err1?.code === 2 || /provider/i.test(msg1))) {
-          try {
-            await RNAndroidLocationEnabler.promptForEnableLocationIfNeeded({ interval: 10000, fastInterval: 5000 });
-          } catch (_) {}
+          Alert.alert(
+            'Location Disabled',
+            'Please turn on device location services (GPS).',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Location Settings', onPress: () => Linking.sendIntent?.('android.settings.LOCATION_SOURCE_SETTINGS') },
+            ]
+          );
         }
         try {
           const pos2 = await tryGetPosition({ enableHighAccuracy: false, timeout: 20000, maximumAge: 15000 });
