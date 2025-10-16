@@ -18,7 +18,7 @@ import {colors, globalStyles} from '../styles/globalStyles';
 import {launchImageLibrary} from 'react-native-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Geolocation from '@react-native-community/geolocation';
-import {check, request, PERMISSIONS, RESULTS} from 'react-native-permissions';
+import {check, request, PERMISSIONS, RESULTS, openSettings} from 'react-native-permissions';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
@@ -221,7 +221,14 @@ const LoginScreen = () => {
         final = await request(permission);
       }
       if (final !== RESULTS.GRANTED) {
-        Alert.alert('Permission Required', 'Location permission is needed to auto-detect your location.');
+        Alert.alert(
+          'Permission Required',
+          'Location permission is needed to auto-detect your location.',
+          [
+            {text: 'Cancel', style: 'cancel'},
+            {text: 'Open Settings', onPress: () => openSettings().catch(() => {})},
+          ]
+        );
         setDetectingLocation(false);
         return;
       }
@@ -234,7 +241,30 @@ const LoginScreen = () => {
         },
         (error) => {
           console.warn('Geolocation error:', error);
-          Alert.alert('Location Error', 'Unable to fetch location. Please try again.');
+          const msg = String(error?.message || '').toLowerCase();
+          if (error?.code === 1 || /permission/i.test(msg)) {
+            Alert.alert(
+              'Permission Denied',
+              'Precise location is required. Please grant permission.',
+              [
+                {text: 'Cancel', style: 'cancel'},
+                {text: 'Open Settings', onPress: () => openSettings().catch(() => {})},
+              ]
+            );
+          } else if (error?.code === 2 && (/provider/i.test(msg) || /disabled/i.test(msg))) {
+            Alert.alert(
+              'Location Disabled',
+              'Enable device location services (GPS) and try again.',
+              [
+                {text: 'Cancel', style: 'cancel'},
+                {text: 'Open Settings', onPress: () => openSettings().catch(() => {})},
+              ]
+            );
+          } else if (error?.code === 3) {
+            Alert.alert('Timeout', 'Could not get location within the time limit. Try again.');
+          } else {
+            Alert.alert('Location Error', 'Unable to fetch location. Please try again.');
+          }
           setDetectingLocation(false);
         },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
