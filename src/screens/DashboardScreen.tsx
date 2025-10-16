@@ -1048,6 +1048,13 @@ const mediaWidth = Math.round(Dimensions.get('window').width - 44);
               <Icon name="settings" size={20} color={colors.text} />
               <Text style={styles.quickMenuText}>Settings</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickMenuItem}
+              onPress={() => navigation.navigate('HelpDesk' as never)}
+            >
+              <Icon name="help-outline" size={20} color={colors.text} />
+              <Text style={styles.quickMenuText}>Help Desk</Text>
+            </TouchableOpacity>
             {(currentUser?.role === 'admin' || currentUser?.role === 'superadmin') && (
               <TouchableOpacity
                 style={styles.quickMenuItem}
