@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Linking, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import FAIcon from 'react-native-vector-icons/FontAwesome5';
 import { colors, globalStyles } from '../styles/globalStyles';
 
 const openUrl = async (url: string) => {
@@ -21,8 +22,25 @@ const HelpDeskScreen: React.FC = () => {
   const navigation = useNavigation();
 
   const handleEmail = () => openUrl('mailto:support@connecther.network?subject=ConnectHer%20Support');
-  const handleWhatsApp1 = () => openUrl('https://wa.me/2348072220696');
-  const handleWhatsApp2 = () => openUrl('https://wa.me/2349014093003');
+  const openWhatsApp = async (phone: string) => {
+    const candidates = [
+      `whatsapp://send?phone=${phone}`,
+      `https://api.whatsapp.com/send?phone=${phone}`,
+      `https://wa.me/${phone}`,
+    ];
+    for (const url of candidates) {
+      try {
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+          await Linking.openURL(url);
+          return;
+        }
+      } catch (_) {}
+    }
+    Alert.alert('WhatsApp not available', 'Unable to open WhatsApp on this device.');
+  };
+  const handleWhatsApp1 = () => openWhatsApp('2348072220696');
+  const handleWhatsApp2 = () => openWhatsApp('2349014093003');
 
   return (
     <View style={[globalStyles.container, styles.container]}>
@@ -80,13 +98,13 @@ const HelpDeskScreen: React.FC = () => {
           <Text style={[styles.cardText, { marginTop: 8 }]}>WhatsApp Support:</Text>
           <View style={styles.linkRow}>
             <TouchableOpacity style={styles.linkButton} onPress={handleWhatsApp1}>
-              <Icon name="whatsapp" size={18} color="#25D366" />
+              <FAIcon name="whatsapp" size={18} color="#25D366" />
               <Text style={styles.linkButtonText}>+234 807 222 0696</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.linkRow}>
             <TouchableOpacity style={styles.linkButton} onPress={handleWhatsApp2}>
-              <Icon name="whatsapp" size={18} color="#25D366" />
+              <FAIcon name="whatsapp" size={18} color="#25D366" />
               <Text style={styles.linkButtonText}>+234 901 409 3003</Text>
             </TouchableOpacity>
           </View>

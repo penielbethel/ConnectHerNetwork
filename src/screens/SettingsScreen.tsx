@@ -8,13 +8,18 @@ import {
   ScrollView,
   Switch,
   ActivityIndicator,
+  Linking,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import FAIcon from 'react-native-vector-icons/FontAwesome5';
 import { colors, globalStyles } from '../styles/globalStyles';
 import { PermissionsManager } from '../utils/permissions';
 import { PushNotificationService } from '../services/pushNotifications';
+import ApiService from '../services/ApiService';
 
 interface SettingsItem {
   id: string;
@@ -44,6 +49,10 @@ const SettingsScreen: React.FC = () => {
     locationServices: false,
     biometricAuth: false,
   });
+  const [deleteFlowStep, setDeleteFlowStep] = useState<'idle' | 'reason' | 'suggestions' | 'confirm' | 'processing'>('idle');
+  const [selectedReason, setSelectedReason] = useState<string>('');
+  const [additionalReason, setAdditionalReason] = useState<string>('');
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -76,6 +85,36 @@ const SettingsScreen: React.FC = () => {
       console.error('Error saving settings:', error);
       Alert.alert('Error', 'Failed to save settings');
     }
+  };
+
+  const openEmail = async () => {
+    const url = 'mailto:support@connecther.network?subject=ConnectHer%20Support';
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) await Linking.openURL(url);
+      else Alert.alert('Email unavailable', 'Unable to open your email client.');
+    } catch (e) {
+      Alert.alert('Email error', 'Unable to open email client.');
+    }
+  };
+
+  const openWhatsApp = async (phone: string) => {
+    const candidates = [
+      `whatsapp://send?phone=${phone}`,
+      `https://api.whatsapp.com/send?phone=${phone}`,
+      `https://wa.me/${phone}`,
+    ];
+    for (const url of candidates) {
+      try {
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+          await Linking.openURL(url);
+          return true;
+        }
+      } catch (_) {}
+    }
+    Alert.alert('WhatsApp not available', 'Unable to open WhatsApp on this device.');
+    return false;
   };
 
   const handleToggle = (key: keyof typeof settings) => {
@@ -175,37 +214,50 @@ const SettingsScreen: React.FC = () => {
   };
 
   const handleDeleteAccount = () => {
+    setDeleteFlowStep('reason');
+  };
+
+  const cancelDeleteFlow = () => setDeleteFlowStep('idle');
+  const proceedFromReason = () => setDeleteFlowStep('suggestions');
+  const proceedToConfirm = () => setDeleteFlowStep('confirm');
+
+  const finalizeDeletion = async () => {
     Alert.alert(
-      'Delete Account',
-      'This action cannot be undone. All your data will be permanently deleted.',
+      'Confirm Account Deletion',
+      'Are you sure you want to terminate your account? You will not be able to retrieve it.',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'No, keep my account', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Yes, delete',
           style: 'destructive',
-          onPress: () => {
-            Alert.alert(
-              'Confirm Deletion',
-              'Type "DELETE" to confirm account deletion',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Confirm',
-                  style: 'destructive',
-                  onPress: async () => {
-                    // Implement account deletion API call here
-                    Alert.alert('Account Deleted', 'Your account has been deleted');
-                    navigation.reset({
-                      index: 0,
-                      routes: [{ name: 'Login' as never }],
-                    });
-                  },
-                },
-              ]
-            );
+          onPress: async () => {
+            try {
+              setProcessing(true);
+              setDeleteFlowStep('processing');
+              try {
+                await ApiService.deleteAccount();
+              } catch (e) {
+                console.error('deleteAccount error:', e);
+              }
+              try {
+                await AsyncStorage.multiRemove([
+                  'authToken',
+                  'currentUser',
+                  'verificationCompleted_v1',
+                  'termsAccepted_v1',
+                ]);
+              } catch (_) {}
+              Alert.alert('Account Deleted', 'Your account has been deleted');
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' as never }],
+              });
+            } finally {
+              setProcessing(false);
+            }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -464,7 +516,7 @@ const SettingsScreen: React.FC = () => {
           </View>
         )}
         
-        {settingsItems
+       {settingsItems
           .filter((item) => {
             if (item.id === 'superAdminPanel') return currentUserRole === 'superadmin';
             if (item.id === 'adminPanel') return currentUserRole === 'admin' || currentUserRole === 'superadmin';
@@ -482,6 +534,109 @@ const SettingsScreen: React.FC = () => {
           );
         })}
       </ScrollView>
+
+      {/* Delete Flow Modals */}
+      <Modal visible={deleteFlowStep === 'reason'} transparent animationType="slide" onRequestClose={cancelDeleteFlow}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Before you go, can you tell us why?</Text>
+            {['Privacy concerns','Too many notifications','Found another platform','Harassment or safety issues','Hard to use or bugs','Other'].map((r) => (
+              <TouchableOpacity key={r} style={styles.reasonRow} onPress={() => setSelectedReason(r)}>
+                <Icon name={selectedReason === r ? 'radio-button-checked' : 'radio-button-unchecked'} size={20} color={colors.primary} />
+                <Text style={styles.reasonText}>{r}</Text>
+              </TouchableOpacity>
+            ))}
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Anything else you want us to know?"
+              placeholderTextColor={colors.textMuted}
+              value={additionalReason}
+              onChangeText={setAdditionalReason}
+              multiline
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={globalStyles.secondaryButton} onPress={cancelDeleteFlow}>
+                <Text style={globalStyles.secondaryButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={globalStyles.button} onPress={proceedFromReason}>
+                <Text style={globalStyles.buttonText}>Continue</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={deleteFlowStep === 'suggestions'} transparent animationType="slide" onRequestClose={cancelDeleteFlow}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Here are some options that might help</Text>
+            <Text style={styles.modalHint}>We’d love to keep you. Try these before deleting:</Text>
+            <View style={styles.suggestionItem}>
+              <Icon name="notifications-off" size={18} color={colors.text} />
+              <Text style={styles.suggestionText}>Mute notifications or reduce frequency</Text>
+            </View>
+            <View style={styles.suggestionItem}>
+              <Icon name="privacy-tip" size={18} color={colors.text} />
+              <Text style={styles.suggestionText}>Review privacy settings and visibility controls</Text>
+            </View>
+            <View style={styles.suggestionItem}>
+              <Icon name="report" size={18} color={colors.text} />
+              <Text style={styles.suggestionText}>Report abuse, block harassers, and let us help</Text>
+            </View>
+            <View style={styles.suggestionItem}>
+              <FAIcon name="hands-helping" size={18} color={colors.text} />
+              <Text style={styles.suggestionText}>Talk to support — we respond quickly</Text>
+            </View>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={globalStyles.secondaryButton} onPress={cancelDeleteFlow}>
+                <Text style={globalStyles.secondaryButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={globalStyles.button} onPress={proceedToConfirm}>
+                <Text style={globalStyles.buttonText}>I still want to delete</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ height: 8 }} />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.supportButton} onPress={openEmail}>
+                <Icon name="email" size={18} color={colors.text} />
+                <Text style={styles.supportText}>Email Support</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.supportButton} onPress={() => openWhatsApp('2348072220696')}>
+                <FAIcon name="whatsapp" size={18} color="#25D366" />
+                <Text style={styles.supportText}>WhatsApp Support</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={deleteFlowStep === 'confirm'} transparent animationType="slide" onRequestClose={cancelDeleteFlow}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Are you sure you want to terminate your account?</Text>
+            <Text style={styles.modalHint}>
+              This permanently deletes your profile, posts, messages, and connections. You will not be able to retrieve your account.
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={globalStyles.secondaryButton} onPress={cancelDeleteFlow}>
+                <Text style={globalStyles.secondaryButtonText}>No, keep my account</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[globalStyles.button, { backgroundColor: '#d32f2f' }]} onPress={finalizeDeletion}>
+                <Text style={globalStyles.buttonText}>Yes, delete my account</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={deleteFlowStep === 'processing'} transparent animationType="fade" onRequestClose={() => {}}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.processingCard}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.processingText}>Deleting your account…</Text>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -569,6 +724,92 @@ const styles = StyleSheet.create({
   },
   itemRight: {
     marginLeft: 12,
+  },
+  // Delete flow styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: colors.surface,
+    padding: 16,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+  },
+  modalTitle: {
+    ...globalStyles.text,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  modalHint: {
+    ...globalStyles.text,
+    marginBottom: 10,
+  },
+  modalInput: {
+    minHeight: 80,
+    color: colors.text,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    padding: 10,
+    textAlignVertical: 'top',
+    marginTop: 8,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    gap: 8,
+  },
+  reasonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+  },
+  reasonText: {
+    ...globalStyles.text,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+  },
+  suggestionText: {
+    ...globalStyles.text,
+  },
+  processingCard: {
+    backgroundColor: colors.surface,
+    marginHorizontal: 20,
+    marginBottom: 40,
+    padding: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    gap: 10,
+  },
+  processingText: {
+    ...globalStyles.text,
+    marginTop: 10,
+  },
+  supportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.secondary,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  supportText: {
+    ...globalStyles.text,
+    fontWeight: '600',
   },
 });
 

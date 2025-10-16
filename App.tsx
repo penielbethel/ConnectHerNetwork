@@ -52,6 +52,7 @@ const CallScreen = requireSafe(() => require('./src/screens/CallScreen'), 'CallS
 const IncomingCallScreen = requireSafe(() => require('./src/screens/IncomingCallScreen'), 'IncomingCallScreen');
 const StartNewChatScreen = requireSafe(() => require('./src/screens/StartNewChatScreen'), 'StartNewChatScreen');
 const HelpDeskScreen = requireSafe(() => require('./src/screens/HelpDeskScreen'), 'HelpDeskScreen');
+const SettingsScreen = requireSafe(() => require('./src/screens/SettingsScreen'), 'SettingsScreen');
 
 // Services
 import SocketService from './src/services/SocketService';
@@ -350,6 +351,7 @@ const App: React.FC = () => {
         <Stack.Screen name="AdminPanel" component={AdminPanelScreen} />
         <Stack.Screen name="StartNewChat" component={StartNewChatScreen} />
         <Stack.Screen name="HelpDesk" component={HelpDeskScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
       {__DEV__ ? <DevLogOverlay /> : null}
       </NavigationContainer>
