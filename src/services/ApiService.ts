@@ -357,12 +357,88 @@ export class ApiService {
     username: string;
     email: string;
     password: string;
-    avatar?: string;
+    // Additional fields used by backend and web signup
+    birthday?: string;
+    location?: string;
+    gender?: 'Female' | 'Company';
+    adminToken?: string;
+    // Avatar is required by backend; accept common shapes from pickers
+    avatar: { uri: string; type?: string; name?: string } | { path: string; mime?: string; name?: string } | string;
   }) {
-    return this.makeRequest('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(userData),
-    });
+    try {
+      const formData = new FormData();
+
+      const append = (key: string, value: any) => {
+        if (value !== undefined && value !== null) {
+          formData.append(key, String(value));
+        }
+      };
+
+      append('firstName', userData.firstName);
+      append('surname', userData.surname);
+      append('username', userData.username);
+      append('email', userData.email);
+      append('password', userData.password);
+      append('birthday', userData.birthday);
+      append('location', userData.location);
+      append('gender', userData.gender || 'Female');
+      append('adminToken', userData.adminToken);
+
+      const avatar = userData.avatar as any;
+      if (avatar) {
+        let file: any = null;
+        if (typeof avatar === 'string') {
+          const name = String(avatar).split('/').pop() || `avatar_${Date.now()}.jpg`;
+          file = { uri: avatar, name, type: 'image/jpeg' };
+        } else if (avatar.uri) {
+          const name = avatar.name || String(avatar.uri).split('/').pop() || `avatar_${Date.now()}.jpg`;
+          const type = avatar.type || 'image/jpeg';
+          file = { uri: avatar.uri, name, type };
+        } else if (avatar.path) {
+          const rawPath = avatar.path;
+          const name = avatar.name || String(rawPath).split('/').pop() || `avatar_${Date.now()}.jpg`;
+          const type = avatar.mime || 'image/jpeg';
+          const uri = Platform.OS === 'android' && !String(rawPath).startsWith('file://') ? `file://${rawPath}` : rawPath;
+          file = { uri, name, type };
+        }
+        if (file) {
+          // @ts-ignore FormData file object
+          formData.append('avatar', file);
+        }
+      }
+
+      const res = await this.makeRequest('/auth/register', {
+        method: 'POST',
+        // Let fetch set proper multipart boundary automatically
+        body: formData,
+      });
+
+      // Normalize and persist current user similar to web flow
+      const user = (res as any)?.user || res;
+      if (user && user.username) {
+        if (!user.joined) user.joined = new Date().toISOString().split('T')[0];
+        if (!user.name && user.firstName && user.surname) {
+          user.name = `${user.firstName} ${user.surname}`;
+        }
+        try {
+          await AsyncStorage.setItem('username', user.username);
+          await AsyncStorage.setItem('currentUser', JSON.stringify({
+            username: user.username,
+            name: user.name,
+            firstName: user.firstName,
+            surname: user.surname,
+            avatar: this.normalizeAvatar(user.avatar),
+            location: user.location,
+            role: user.role,
+          }));
+        } catch (_e) {}
+      }
+
+      return res;
+    } catch (err) {
+      console.error('register error:', err);
+      throw err;
+    }
   }
 
   async verifyEmail(token: string) {

@@ -15,6 +15,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useNavigation} from '@react-navigation/native';
 import apiService from '../services/ApiService';
 import {colors, globalStyles} from '../styles/globalStyles';
+import {launchImageLibrary} from 'react-native-image-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import Geolocation from '@react-native-community/geolocation';
+import {check, request, PERMISSIONS, RESULTS} from 'react-native-permissions';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
@@ -36,6 +40,14 @@ const LoginScreen = () => {
     password: '',
     confirmPassword: '',
   });
+
+  // Additional signup fields aligned with backend and web signup
+  const [avatar, setAvatar] = useState<{uri: string; type?: string; name?: string} | null>(null);
+  const [gender, setGender] = useState<'Female' | 'Company'>('Female');
+  const [birthday, setBirthday] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [locationText, setLocationText] = useState('');
+  const [adminToken, setAdminToken] = useState('');
 
   useEffect(() => {
     checkAuthStatus();
@@ -121,9 +133,15 @@ const LoginScreen = () => {
       Alert.alert('Error', 'Passwords do not match');
       return;
     }
+    // Enforce strong password for regular users (no admin token)
+    const strongPasswordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{6,}$/;
+    if (!adminToken && !strongPasswordRegex.test(registerData.password)) {
+      Alert.alert('Error', 'Password must include at least one uppercase letter, one number, and one special character.');
+      return;
+    }
 
-    if (registerData.password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+    if (!avatar) {
+      Alert.alert('Error', 'Please upload a profile picture (avatar).');
       return;
     }
 
@@ -135,12 +153,17 @@ const LoginScreen = () => {
         username: registerData.username,
         email: registerData.email,
         password: registerData.password,
+        birthday,
+        location: locationText,
+        gender,
+        adminToken: adminToken || undefined,
+        avatar: avatar,
       });
 
-      if (response.success) {
+      if (response?.user) {
         Alert.alert(
           'Registration Successful',
-          'Please check your email to verify your account.',
+          'Account created. Please sign in to continue.',
           [
             {
               text: 'OK',
@@ -156,6 +179,70 @@ const LoginScreen = () => {
       Alert.alert('Error', error?.message || 'Network error. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const pickAvatar = async () => {
+    try {
+      const res = await launchImageLibrary({ mediaType: 'photo', quality: 0.7 });
+      const asset = res?.assets?.[0];
+      if (asset?.uri) {
+        setAvatar({
+          uri: asset.uri,
+          type: asset.type || 'image/jpeg',
+          name: asset.fileName || 'avatar.jpg',
+        });
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Failed to select image');
+    }
+  };
+
+  const formatDate = (date: Date) => {
+    const y = date.getFullYear();
+    const m = `${date.getMonth() + 1}`.padStart(2, '0');
+    const d = `${date.getDate()}`.padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  const onChangeBirthday = (_event: any, selectedDate?: Date) => {
+    setShowDatePicker(false);
+    if (selectedDate) setBirthday(formatDate(selectedDate));
+  };
+
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const detectLocation = async () => {
+    try {
+      setDetectingLocation(true);
+      const permission = Platform.OS === 'ios' ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION;
+      const status = await check(permission);
+      let final = status;
+      if (status !== RESULTS.GRANTED) {
+        final = await request(permission);
+      }
+      if (final !== RESULTS.GRANTED) {
+        Alert.alert('Permission Required', 'Location permission is needed to auto-detect your location.');
+        setDetectingLocation(false);
+        return;
+      }
+
+      Geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          setLocationText(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+          setDetectingLocation(false);
+        },
+        (error) => {
+          console.warn('Geolocation error:', error);
+          Alert.alert('Location Error', 'Unable to fetch location. Please try again.');
+          setDetectingLocation(false);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      );
+    } catch (err) {
+      console.warn('detectLocation error:', err);
+      setDetectingLocation(false);
+      Alert.alert('Error', 'Failed to detect location.');
     }
   };
 
@@ -261,6 +348,82 @@ const LoginScreen = () => {
         secureTextEntry
       />
 
+      {/* Gender selection */}
+      <Text style={styles.label}>Gender</Text>
+      <View style={{ flexDirection: 'row', marginBottom: 12 }}>
+        {(['Female', 'Company'] as const).map((g) => (
+          <TouchableOpacity
+            key={g}
+            style={[styles.segment, gender === g ? styles.segmentActive : styles.segmentInactive]}
+            onPress={() => setGender(g)}
+          >
+            <Text style={gender === g ? styles.segmentTextActive : styles.segmentTextInactive}>{g}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Birthday */}
+      <Text style={styles.label}>Date of Birth</Text>
+      <TouchableOpacity
+        style={[globalStyles.input, styles.input, { justifyContent: 'center', height: 48 }]}
+        onPress={() => setShowDatePicker(true)}
+        activeOpacity={0.7}
+      >
+        <Text style={{ color: birthday ? colors.text : colors.textMuted }}>
+          {birthday || 'Select your birthday'}
+        </Text>
+      </TouchableOpacity>
+      {showDatePicker && (
+        <DateTimePicker
+          value={birthday ? new Date(birthday) : new Date(2000, 0, 1)}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={onChangeBirthday}
+          maximumDate={new Date()}
+        />
+      )}
+
+      {/* Location */}
+      <Text style={styles.label}>Location</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+        <View style={{ flex: 1 }}>
+          <TextInput
+            style={[globalStyles.input, styles.input]}
+            placeholder="City, Country or coordinates"
+            placeholderTextColor={colors.textMuted}
+            value={locationText}
+            onChangeText={setLocationText}
+          />
+        </View>
+        <TouchableOpacity
+          style={{ marginLeft: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 6, backgroundColor: colors.primary }}
+          onPress={detectLocation}
+          disabled={detectingLocation}
+        >
+          <Text style={{ color: colors.buttonText || '#fff' }}>{detectingLocation ? 'Detecting...' : 'Use Current'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Admin Token (optional) */}
+      <TextInput
+        style={[globalStyles.input, styles.input]}
+        placeholder="Admin Token (optional)"
+        placeholderTextColor={colors.textMuted}
+        value={adminToken}
+        onChangeText={setAdminToken}
+        autoCapitalize="none"
+      />
+
+      {/* Avatar Upload */}
+      <View style={{ alignItems: 'center', marginVertical: 10 }}>
+        {avatar ? (
+          <Image source={{ uri: avatar.uri }} style={{ width: 96, height: 96, borderRadius: 48, marginBottom: 8 }} />
+        ) : null}
+        <TouchableOpacity style={[globalStyles.button, styles.button]} onPress={pickAvatar}>
+          <Text style={globalStyles.buttonText}>{avatar ? 'Change Profile Picture' : 'Upload Profile Picture'}</Text>
+        </TouchableOpacity>
+      </View>
+
       <TouchableOpacity
         style={[globalStyles.button, styles.button]}
         onPress={handleRegister}
@@ -359,6 +522,29 @@ const styles = StyleSheet.create({
   linkText: {
     color: colors.primary,
     fontWeight: 'bold',
+  },
+  // Segmented control styles for gender selection
+  segment: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginRight: 8,
+    borderWidth: 1,
+  },
+  segmentActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  segmentInactive: {
+    backgroundColor: 'transparent',
+    borderColor: colors.border || '#ccc',
+  },
+  segmentTextActive: {
+    color: colors.buttonText || '#fff',
+    fontWeight: '600',
+  },
+  segmentTextInactive: {
+    color: colors.textSecondary,
   },
 });
 
