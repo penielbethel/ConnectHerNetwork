@@ -282,6 +282,53 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated]);
 
+  // Load per-user biometric setting and prompt if authenticated
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        let key = 'userSettings';
+        const userStr = await AsyncStorage.getItem('currentUser');
+        const user = userStr ? JSON.parse(userStr) : null;
+        if (user?.username) key = `userSettings:${user.username}`;
+        const settingsJson = await AsyncStorage.getItem(key);
+        const uiSettings = settingsJson ? JSON.parse(settingsJson) : {};
+        const biometricOn = !!uiSettings?.biometricAuth;
+        if (!cancelled) setBiometricEnabled(biometricOn);
+        if (biometricOn && isAuthenticated) {
+          const ok = await BiometricService.getInstance().promptUnlock('Unlock ConnectHer');
+          if (!cancelled) setLocked(!ok);
+        }
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
+
+  // Prompt for biometric unlock on app resume if enabled (fresh per-user read)
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (state) => {
+      try {
+        if (state === 'active' && isAuthenticated) {
+          let key = 'userSettings';
+          const userStr = await AsyncStorage.getItem('currentUser');
+          const user = userStr ? JSON.parse(userStr) : null;
+          if (user?.username) key = `userSettings:${user.username}`;
+          const settingsJson = await AsyncStorage.getItem(key);
+          const uiSettings = settingsJson ? JSON.parse(settingsJson) : {};
+          const biometricOn = !!uiSettings?.biometricAuth;
+          setBiometricEnabled(biometricOn);
+          if (biometricOn) {
+            const ok = await BiometricService.getInstance().promptUnlock('Unlock ConnectHer');
+            setLocked(!ok);
+          }
+        }
+      } catch (_) {}
+    });
+    return () => {
+      try { sub.remove(); } catch (_) {}
+    };
+  }, [isAuthenticated]);
+
   const navTheme = {
     ...DefaultTheme,
     colors: {
@@ -395,30 +442,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-        // Load user settings to determine biometric gate
-        try {
-          const settingsJson = await AsyncStorage.getItem('userSettings');
-          const uiSettings = settingsJson ? JSON.parse(settingsJson) : {};
-          const biometricOn = !!uiSettings?.biometricAuth;
-          setBiometricEnabled(biometricOn);
-          if (biometricOn && token && userData) {
-            const ok = await BiometricService.getInstance().promptUnlock('Unlock ConnectHer');
-            setLocked(!ok);
-          }
-        } catch (_) {}
-  // Prompt for biometric unlock on app resume if enabled
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', async (state) => {
-      try {
-        if (state === 'active' && isAuthenticated && biometricEnabled) {
-          const ok = await BiometricService.getInstance().promptUnlock('Unlock ConnectHer');
-          setLocked(!ok);
-        }
-      } catch (e) {
-        // swallow
-      }
-    });
-    return () => {
-      try { sub.remove(); } catch (_) {}
-    };
-  }, [isAuthenticated, biometricEnabled]);

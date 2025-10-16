@@ -95,7 +95,25 @@ const mediaWidth = Math.round(Dimensions.get('window').width - 44);
   const handleAddFriend = async (username: string) => {
     try {
       await apiService.sendFriendRequest(username);
-      Alert.alert('Success', 'Friend request sent');
+      Alert.alert(
+        'Friend Request Sent',
+        'Your request has been sent.',
+        [
+          {
+            text: 'Cancel Request',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await apiService.cancelFriendRequest(username);
+                Alert.alert('Canceled', 'Friend request canceled');
+              } catch (err) {
+                Alert.alert('Error', 'Could not cancel the request');
+              }
+            },
+          },
+          { text: 'OK', style: 'default' },
+        ]
+      );
     } catch (e) {
       Alert.alert('Error', 'Could not send friend request');
     }
@@ -1020,13 +1038,6 @@ const mediaWidth = Math.round(Dimensions.get('window').width - 44);
         {/* Quick options menu */}
         {showQuickMenu && (
           <View style={styles.quickMenu}>
-            <TouchableOpacity
-              style={styles.quickMenuItem}
-              onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            >
-              <Icon name={theme === 'dark' ? 'brightness-high' : 'brightness-4'} size={20} color={colors.text} />
-              <Text style={styles.quickMenuText}>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</Text>
-            </TouchableOpacity>
             <TouchableOpacity
               style={styles.quickMenuItem}
               onPress={() => navigation.navigate('Search' as never)}

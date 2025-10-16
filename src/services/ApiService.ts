@@ -797,6 +797,30 @@ export class ApiService {
     }
   }
 
+  // Cancel/withdraw a previously sent friend request
+  async cancelFriendRequest(targetUsername: string) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const from = current?.username;
+
+      if (!from) {
+        console.warn('cancelFriendRequest: missing current user');
+        return { success: false };
+      }
+
+      const res = await this.makeRootRequest('/friend-decline', {
+        method: 'POST',
+        body: JSON.stringify({ from, to: targetUsername }),
+      });
+
+      return (res && typeof res === 'object') ? res : { success: true };
+    } catch (error) {
+      console.error('cancelFriendRequest error:', error);
+      return { success: false };
+    }
+  }
+
   // Follow/unfollow leverage friend request system for now
   async followUser(targetUsername: string) {
     try {

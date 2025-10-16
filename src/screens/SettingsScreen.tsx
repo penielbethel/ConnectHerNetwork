@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import { PermissionsManager } from '../utils/permissions';
 import { PushNotificationService } from '../services/pushNotifications';
 import ApiService from '../services/ApiService';
 import BiometricService from '../services/BiometricService';
+import { ThemeContext, persistTheme } from '../context/ThemeContext';
 
 interface SettingsItem {
   id: string;
@@ -35,7 +36,9 @@ interface SettingsItem {
 
 const SettingsScreen: React.FC = () => {
   const navigation = useNavigation();
+  const { theme, setTheme } = useContext(ThemeContext);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   
   const [isLoading, setIsLoading] = useState(false);
   const [settings, setSettings] = useState({
@@ -61,17 +64,25 @@ const SettingsScreen: React.FC = () => {
 
   const loadSettings = async () => {
     try {
-      const savedSettings = await AsyncStorage.getItem('userSettings');
-      if (savedSettings) {
-        setSettings(JSON.parse(savedSettings));
-      }
-      // Also load current user role to conditionally show admin entries
+      // Determine per-user settings key
+      let settingsKey = 'userSettings';
       try {
         const userData = await AsyncStorage.getItem('currentUser');
         const parsed = userData ? JSON.parse(userData) : null;
         setCurrentUserRole(parsed?.role || null);
+        setCurrentUsername(parsed?.username || null);
+        if (parsed?.username) settingsKey = `userSettings:${parsed.username}`;
       } catch (e) {
         console.error('Error loading current user:', e);
+      }
+
+      // Load per-user settings first, fall back to legacy global key
+      const savedPerUser = await AsyncStorage.getItem(settingsKey);
+      if (savedPerUser) {
+        setSettings(JSON.parse(savedPerUser));
+      } else {
+        const legacy = await AsyncStorage.getItem('userSettings');
+        if (legacy) setSettings(JSON.parse(legacy));
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -80,7 +91,8 @@ const SettingsScreen: React.FC = () => {
 
   const saveSettings = async (newSettings: typeof settings) => {
     try {
-      await AsyncStorage.setItem('userSettings', JSON.stringify(newSettings));
+      const key = currentUsername ? `userSettings:${currentUsername}` : 'userSettings';
+      await AsyncStorage.setItem(key, JSON.stringify(newSettings));
       setSettings(newSettings);
     } catch (error) {
       console.error('Error saving settings:', error);
@@ -161,9 +173,7 @@ const SettingsScreen: React.FC = () => {
   const handleLocationPermissions = async () => {
     setIsLoading(true);
     try {
-      const permissionsManager = new PermissionsManager();
-      const granted = await permissionsManager.requestLocationPermission();
-      
+      const { granted } = await PermissionsManager.requestLocationPermission();
       if (granted) {
         Alert.alert('Success', 'Location permissions granted');
         handleToggle('locationServices');
@@ -176,6 +186,14 @@ const SettingsScreen: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleThemeToggle = () => {
+    const nextMode = settings.darkMode ? 'light' : 'dark';
+    setTheme(nextMode);
+    persistTheme(nextMode);
+    const newSettings = { ...settings, darkMode: !settings.darkMode };
+    saveSettings(newSettings);
   };
 
   const handleClearCache = () => {
@@ -212,7 +230,10 @@ const SettingsScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await AsyncStorage.multiRemove(['currentUser', 'authToken', 'userSettings']);
+              const legacyKey = 'userSettings';
+              const perUserKey = currentUsername ? `userSettings:${currentUsername}` : null;
+              const keys = ['currentUser', 'authToken', legacyKey].concat(perUserKey ? [perUserKey] : []);
+              await AsyncStorage.multiRemove(keys);
               navigation.reset({
                 index: 0,
                 routes: [{ name: 'Login' as never }],
@@ -312,7 +333,7 @@ const SettingsScreen: React.FC = () => {
       value: settings.vibrationEnabled,
       onToggle: () => handleToggle('vibrationEnabled'),
     },
-    
+
     // Privacy & Security Section
     {
       id: 'locationServices',
@@ -331,6 +352,16 @@ const SettingsScreen: React.FC = () => {
       type: 'toggle',
       value: settings.biometricAuth,
       onToggle: () => handleToggle('biometricAuth'),
+    },
+    // Appearance Section
+    {
+      id: 'darkMode',
+      title: 'Dark Mode',
+      subtitle: 'Use dark theme',
+      icon: 'brightness-4',
+      type: 'toggle',
+      value: settings.darkMode,
+      onToggle: () => handleThemeToggle(),
     },
     
     // Data & Storage Section
@@ -500,10 +531,11 @@ const SettingsScreen: React.FC = () => {
   const getSectionTitle = (index: number) => {
     if (index === 0) return 'Notifications';
     if (index === 4) return 'Privacy & Security';
-    if (index === 6) return 'Data & Storage';
-    if (index === 8) return 'Account Management';
-    if (index === 11) return 'Support';
-    if (index === 13) return 'Actions';
+    if (index === 6) return 'Appearance';
+    if (index === 7) return 'Data & Storage';
+    if (index === 9) return 'Account Management';
+    if (index === 14) return 'Support';
+    if (index === 16) return 'Actions';
     return null;
   };
 
