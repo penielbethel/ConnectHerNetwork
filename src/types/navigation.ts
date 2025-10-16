@@ -1,6 +1,7 @@
 export type RootStackParamList = {
   Login: undefined;
   Dashboard: undefined;
+  TermsAttestation: undefined;
   Chat: undefined;
   Conversation: {
     chatId?: string;

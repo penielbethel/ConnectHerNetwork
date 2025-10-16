@@ -42,6 +42,7 @@ const CommunityChatScreen = requireSafe(() => require('./src/screens/CommunityCh
 const CommunityCallScreen = requireSafe(() => require('./src/screens/CommunityCallScreen'), 'CommunityCallScreen');
 const CommunityIncomingCallScreen = requireSafe(() => require('./src/screens/CommunityIncomingCallScreen'), 'CommunityIncomingCallScreen');
 const VerificationScreen = requireSafe(() => require('./src/screens/VerificationScreen'), 'VerificationScreen');
+const TermsAttestationScreen = requireSafe(() => require('./src/screens/TermsAttestationScreen'), 'TermsAttestationScreen');
 const SponsorsScreen = requireSafe(() => require('./src/screens/SponsorsScreen'), 'SponsorsScreen');
 const SponsorDetailScreen = requireSafe(() => require('./src/screens/SponsorDetailScreen'), 'SponsorDetailScreen');
 const SuperAdminPanelScreen = requireSafe(() => require('./src/screens/SuperAdminPanelScreen'), 'SuperAdminPanelScreen');
@@ -74,6 +75,7 @@ const App: React.FC = () => {
   const isDarkMode = appTheme === 'dark';
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState<boolean>(false);
 
   useEffect(() => {
     LogBox.ignoreLogs([
@@ -137,6 +139,12 @@ const App: React.FC = () => {
           }
         }
 
+        // Load Terms & Conditions attestation state
+        try {
+          const att = await AsyncStorage.getItem('termsAccepted_v1');
+          setTermsAccepted(att === 'true');
+        } catch (_) {}
+
         // Theme: load persisted selection, default to system scheme
         try {
           const t = await AsyncStorage.getItem('appTheme');
@@ -157,6 +165,17 @@ const App: React.FC = () => {
 
     initializeApp();
   }, []);
+
+  // Gate access to dashboard until Terms are accepted
+  useEffect(() => {
+    if (isAuthenticated && !termsAccepted) {
+      try {
+        navigate('TermsAttestation');
+      } catch (e) {
+        console.error('[NavFAIL] TermsAttestation navigate', e);
+      }
+    }
+  }, [isAuthenticated, termsAccepted]);
 
   // Listen for incoming call socket events and navigate to IncomingCall
   useEffect(() => {
@@ -274,7 +293,7 @@ const App: React.FC = () => {
       <NavigationContainer theme={navTheme} ref={navigationRef}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <Stack.Navigator
-        initialRouteName={isAuthenticated ? 'Dashboard' : 'Login'}
+        initialRouteName={isAuthenticated ? (termsAccepted ? 'Dashboard' : 'TermsAttestation') : 'Login'}
         screenOptions={{
           header: (props) => <TopNav {...props} />,
           headerStyle: {
@@ -299,6 +318,7 @@ const App: React.FC = () => {
         <Stack.Screen name="Call" component={CallScreen} />
         <Stack.Screen name="IncomingCall" component={IncomingCallScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Verification" component={VerificationScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="TermsAttestation" component={TermsAttestationScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Sponsors" component={SponsorsScreen} />
         <Stack.Screen name="SponsorDetail" component={SponsorDetailScreen} />
         <Stack.Screen name="SuperAdminPanel" component={SuperAdminPanelScreen} />
