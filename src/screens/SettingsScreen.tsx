@@ -20,6 +20,7 @@ import { colors, globalStyles } from '../styles/globalStyles';
 import { PermissionsManager } from '../utils/permissions';
 import { PushNotificationService } from '../services/pushNotifications';
 import ApiService from '../services/ApiService';
+import BiometricService from '../services/BiometricService';
 
 interface SettingsItem {
   id: string;
@@ -117,7 +118,19 @@ const SettingsScreen: React.FC = () => {
     return false;
   };
 
-  const handleToggle = (key: keyof typeof settings) => {
+  const handleToggle = async (key: keyof typeof settings) => {
+    if (key === 'biometricAuth' && !settings.biometricAuth) {
+      const { available } = await BiometricService.getInstance().isSensorAvailable();
+      if (!available) {
+        Alert.alert('Biometrics Unavailable', 'Your device does not support biometric authentication.');
+        return;
+      }
+      const ok = await BiometricService.getInstance().promptUnlock('Enable biometric login');
+      if (!ok) {
+        Alert.alert('Biometric Setup', 'Authentication failed or was canceled.');
+        return;
+      }
+    }
     const newSettings = {
       ...settings,
       [key]: !settings[key],
@@ -395,9 +408,7 @@ const SettingsScreen: React.FC = () => {
       subtitle: 'Get help and contact support',
       icon: 'help',
       type: 'navigation',
-      onPress: () => {
-        Alert.alert('Help & Support', 'Support screen coming soon');
-      },
+      onPress: () => navigation.navigate('HelpDesk' as never),
     },
     {
       id: 'about',

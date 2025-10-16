@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { StatusBar, View, ActivityIndicator, useColorScheme, LogBox } from 'react-native';
+import { StatusBar, View, ActivityIndicator, useColorScheme, LogBox, AppState, Modal, TouchableOpacity, Text } from 'react-native';
 
 // Components
 import TopNav from './src/components/TopNav';
@@ -57,6 +57,7 @@ const SettingsScreen = requireSafe(() => require('./src/screens/SettingsScreen')
 // Services
 import SocketService from './src/services/SocketService';
 import PushNotificationService from './src/services/pushNotifications';
+import BiometricService from './src/services/BiometricService';
 
 // Types
 import { RootStackParamList } from './src/types/navigation';
@@ -80,6 +81,8 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState<boolean>(false);
   const [verificationCompleted, setVerificationCompleted] = useState<boolean>(false);
+  const [biometricEnabled, setBiometricEnabled] = useState<boolean>(false);
+  const [locked, setLocked] = useState<boolean>(false);
 
   useEffect(() => {
     LogBox.ignoreLogs([
@@ -354,9 +357,68 @@ const App: React.FC = () => {
         <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
       {__DEV__ ? <DevLogOverlay /> : null}
+      {/* Biometric lock overlay */}
+      <Modal visible={locked} transparent animationType="fade" onRequestClose={() => {}}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: colors.card, borderRadius: 12, padding: 16, width: '90%' }}>
+            <Text style={{ ...globalStyles.text, fontSize: 18, fontWeight: '700', marginBottom: 10 }}>Unlock Required</Text>
+            <Text style={{ ...globalStyles.text, marginBottom: 16 }}>Authenticate with your fingerprint to continue.</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <TouchableOpacity
+                style={globalStyles.secondaryButton}
+                onPress={async () => {
+                  try {
+                    await AsyncStorage.multiRemove(['authToken', 'currentUser']);
+                  } catch (_) {}
+                  setLocked(false);
+                  setIsAuthenticated(false);
+                }}
+              >
+                <Text style={globalStyles.secondaryButtonText}>Logout</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={globalStyles.button}
+                onPress={async () => {
+                  const ok = await BiometricService.getInstance().promptUnlock('Unlock ConnectHer');
+                  setLocked(!ok);
+                }}
+              >
+                <Text style={globalStyles.buttonText}>Unlock</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       </NavigationContainer>
     </ThemeContext.Provider>
   );
 };
 
 export default App;
+        // Load user settings to determine biometric gate
+        try {
+          const settingsJson = await AsyncStorage.getItem('userSettings');
+          const uiSettings = settingsJson ? JSON.parse(settingsJson) : {};
+          const biometricOn = !!uiSettings?.biometricAuth;
+          setBiometricEnabled(biometricOn);
+          if (biometricOn && token && userData) {
+            const ok = await BiometricService.getInstance().promptUnlock('Unlock ConnectHer');
+            setLocked(!ok);
+          }
+        } catch (_) {}
+  // Prompt for biometric unlock on app resume if enabled
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (state) => {
+      try {
+        if (state === 'active' && isAuthenticated && biometricEnabled) {
+          const ok = await BiometricService.getInstance().promptUnlock('Unlock ConnectHer');
+          setLocked(!ok);
+        }
+      } catch (e) {
+        // swallow
+      }
+    });
+    return () => {
+      try { sub.remove(); } catch (_) {}
+    };
+  }, [isAuthenticated, biometricEnabled]);
