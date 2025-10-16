@@ -19,6 +19,7 @@ import {launchImageLibrary} from 'react-native-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Geolocation from '@react-native-community/geolocation';
 import {check, request, PERMISSIONS, RESULTS, openSettings} from 'react-native-permissions';
+import RNAndroidLocationEnabler from 'react-native-android-location-enabler';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
@@ -233,16 +234,50 @@ const LoginScreen = () => {
         return;
       }
 
-      Geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude } = pos.coords;
+      // On Android, prompt to enable location services (GPS/Network) if disabled
+      if (Platform.OS === 'android') {
+        try {
+          await RNAndroidLocationEnabler.promptForEnableLocationIfNeeded({
+            interval: 10000,
+            fastInterval: 5000,
+          });
+        } catch (enableErr) {
+          // User canceled enabling; still allow manual entry
+          console.warn('Location services enable prompt declined:', enableErr);
+        }
+      }
+
+      const tryGetPosition = (opts: Geolocation.GeoOptions): Promise<Geolocation.GeoPosition> => {
+        return new Promise((resolve, reject) => {
+          Geolocation.getCurrentPosition(resolve, reject, opts);
+        });
+      };
+
+      try {
+        const pos = await tryGetPosition({ enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
+        const { latitude, longitude } = pos.coords;
+        setLocationText(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+        setDetectingLocation(false);
+        return;
+      } catch (err1: any) {
+        console.warn('Geolocation high accuracy failed:', err1);
+        const msg1 = String(err1?.message || '').toLowerCase();
+        // If provider disabled, try to prompt to enable again and fallback to low accuracy
+        if (Platform.OS === 'android' && (err1?.code === 2 || /provider/i.test(msg1))) {
+          try {
+            await RNAndroidLocationEnabler.promptForEnableLocationIfNeeded({ interval: 10000, fastInterval: 5000 });
+          } catch (_) {}
+        }
+        try {
+          const pos2 = await tryGetPosition({ enableHighAccuracy: false, timeout: 20000, maximumAge: 15000 });
+          const { latitude, longitude } = pos2.coords;
           setLocationText(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
           setDetectingLocation(false);
-        },
-        (error) => {
-          console.warn('Geolocation error:', error);
-          const msg = String(error?.message || '').toLowerCase();
-          if (error?.code === 1 || /permission/i.test(msg)) {
+          return;
+        } catch (err2: any) {
+          console.warn('Geolocation low accuracy failed:', err2);
+          const msg2 = String(err2?.message || '').toLowerCase();
+          if (err2?.code === 1 || /permission/i.test(msg2)) {
             Alert.alert(
               'Permission Denied',
               'Precise location is required. Please grant permission.',
@@ -251,7 +286,7 @@ const LoginScreen = () => {
                 {text: 'Open Settings', onPress: () => openSettings().catch(() => {})},
               ]
             );
-          } else if (error?.code === 2 && (/provider/i.test(msg) || /disabled/i.test(msg))) {
+          } else if (err2?.code === 2 && (/provider/i.test(msg2) || /disabled/i.test(msg2))) {
             Alert.alert(
               'Location Disabled',
               'Enable device location services (GPS) and try again.',
@@ -260,15 +295,14 @@ const LoginScreen = () => {
                 {text: 'Open Settings', onPress: () => openSettings().catch(() => {})},
               ]
             );
-          } else if (error?.code === 3) {
+          } else if (err2?.code === 3) {
             Alert.alert('Timeout', 'Could not get location within the time limit. Try again.');
           } else {
             Alert.alert('Location Error', 'Unable to fetch location. Please try again.');
           }
           setDetectingLocation(false);
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-      );
+        }
+      }
     } catch (err) {
       console.warn('detectLocation error:', err);
       setDetectingLocation(false);
