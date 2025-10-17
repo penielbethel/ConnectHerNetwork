@@ -88,6 +88,10 @@ const ProfileScreen = () => {
   const [showDobPicker, setShowDobPicker] = useState(false);
   const [dobTempDate, setDobTempDate] = useState<Date | null>(null);
   const [friendRequestSent, setFriendRequestSent] = useState<boolean>(false);
+  // Add presence state
+  const [isOnline, setIsOnline] = useState<boolean>(false);
+  const [lastSeen, setLastSeen] = useState<string | null>(null);
+  const [showAvatarPreview, setShowAvatarPreview] = useState<boolean>(false);
   
   const refreshRelationshipState = useCallback(async () => {
     try {
@@ -107,6 +111,54 @@ const ProfileScreen = () => {
   useEffect(() => {
     loadCurrentUser();
   }, []);
+
+  // Initialize presence listeners and fetch last-seen for target user
+  useEffect(() => {
+    const username = route.params?.username || currentUser?.username;
+    if (!username) return;
+
+    // Seed isOnline for own profile
+    if (currentUser?.username && currentUser.username === username) {
+      setIsOnline(true);
+    }
+
+    // Ensure socket is ready
+    socketService.initialize();
+
+    const updateOnlineUsers = (usernames: string[]) => {
+      setIsOnline(usernames.includes(username));
+    };
+    const onUserOnline = (u: string) => {
+      if (u === username) setIsOnline(true);
+    };
+    const onUserOffline = async (u: string) => {
+      if (u === username) {
+        setIsOnline(false);
+        try {
+          const res = await apiService.getLastSeen(u);
+          setLastSeen((res as any)?.lastSeen || null);
+        } catch (_) {}
+      }
+    };
+
+    socketService.on('update-online-users', updateOnlineUsers);
+    socketService.on('user-online', onUserOnline);
+    socketService.on('user-offline', onUserOffline);
+
+    // Fetch last-seen initially
+    (async () => {
+      try {
+        const res = await apiService.getLastSeen(username);
+        setLastSeen((res as any)?.lastSeen || null);
+      } catch (_) {}
+    })();
+
+    return () => {
+      socketService.off('update-online-users', updateOnlineUsers);
+      socketService.off('user-online', onUserOnline);
+      socketService.off('user-offline', onUserOffline);
+    };
+  }, [route.params?.username, currentUser?.username]);
 
   useEffect(() => {
     if (currentUser) {
@@ -492,6 +544,7 @@ const ProfileScreen = () => {
         >
           <View style={styles.avatarRingContainer}>
             <Image source={{ uri: getAvatarUri(post?.author?.avatar) }} style={styles.profileAvatar} />
+            {isOnline && <View style={styles.onlineIndicator} />}
             {(() => {
               const flag = getFlagEmojiForLocation((post as any)?.author?.location);
               return flag ? (
@@ -710,26 +763,27 @@ const ProfileScreen = () => {
     );
   }
 
+  // Set header title to owner's display name
+  useEffect(() => {
+    try {
+      if (profile?.name) {
+        // @ts-ignore
+        navigation.setOptions({ title: profile.name });
+      }
+    } catch (e) {
+      // swallow
+    }
+  }, [profile?.name]);
+
   const flagEmoji = profile.location ? getFlagEmojiForLocation(profile.location) : '';
 
   return (
     <View style={globalStyles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Icon name="arrow-back" size={24} color="#C71585" />
+      <Modal visible={showAvatarPreview} transparent animationType="fade" onRequestClose={() => setShowAvatarPreview(false)}>
+        <TouchableOpacity activeOpacity={1} style={styles.avatarPreviewOverlay} onPress={() => setShowAvatarPreview(false)}>
+          <Image source={{ uri: getAvatarUri(profile.avatar) }} style={styles.avatarPreviewImage} resizeMode="contain" />
         </TouchableOpacity>
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>{profile.name}</Text>
-          <Text style={styles.headerSubtitle}>{posts.length} posts</Text>
-        </View>
-        {profile.isOwnProfile && (
-          <TouchableOpacity onPress={handleLogout}>
-            <Icon name="logout" size={24} color="#C71585" />
-          </TouchableOpacity>
-        )}
-      </View>
-
+      </Modal>
       <ScrollView
         style={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
@@ -738,14 +792,15 @@ const ProfileScreen = () => {
         <View style={styles.profileSection}>
           <View style={styles.profileHeader}>
             <View style={styles.avatarRingContainer}>
-              <TouchableOpacity onPress={profile.isOwnProfile ? handleChangeAvatar : undefined}>
+              <TouchableOpacity onPress={() => setShowAvatarPreview(true)}>
                 <Image source={{uri: getAvatarUri(profile.avatar)}} style={styles.profileAvatar} />
                 {profile.isOwnProfile && (
-                  <View style={styles.avatarOverlay}>
+                  <TouchableOpacity style={styles.avatarOverlay} onPress={handleChangeAvatar}>
                     <Icon name="camera-alt" size={20} color={colors.text} />
-                  </View>
+                  </TouchableOpacity>
                 )}
               </TouchableOpacity>
+              {isOnline && <View style={styles.onlineIndicator} />}
               {!!flagEmoji && (
                 <View style={styles.flagBadgeProfile}>
                   <Text style={styles.flagBadgeText}>{flagEmoji}</Text>
@@ -772,6 +827,16 @@ const ProfileScreen = () => {
           <View style={styles.profileDetails}>
             <Text style={styles.profileName}>{profile.name}</Text>
             <Text style={styles.profileUsername}>@{profile.username}</Text>
+            <View style={styles.presenceRow}>
+              {isOnline ? (
+                <View style={styles.presenceBadge}>
+                  <View style={styles.presenceDot} />
+                  <Text style={styles.presenceText}>Online</Text>
+                </View>
+              ) : lastSeen ? (
+                <Text style={styles.presenceText}>Last seen {formatTime(lastSeen)}</Text>
+              ) : null}
+            </View>
             
             {profile.bio && (
               <Text style={styles.profileBio}>{profile.bio}</Text>
@@ -1003,6 +1068,17 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
   },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.success,
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
   avatarRing: {
     padding: 3,
     borderRadius: 46,
@@ -1027,6 +1103,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  avatarPreviewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarPreviewImage: {
+    width: '100%',
+    height: '100%',
   },
   statsContainer: {
     ...globalStyles.flexRow,
@@ -1058,6 +1144,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textMuted,
     marginBottom: 10,
+  },
+  // Presence styles for online/last-seen badge
+  presenceRow: {
+    ...globalStyles.flexRow,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  presenceBadge: {
+    ...globalStyles.flexRow,
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.success,
+    backgroundColor: colors.surface,
+  },
+  presenceDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.success,
+    marginRight: 6,
+  },
+  presenceText: {
+    fontSize: 12,
+    color: colors.textMuted,
   },
   profileBio: {
     fontSize: 16,

@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar, View, ActivityIndicator, useColorScheme, LogBox, AppState, Modal, TouchableOpacity, Text } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 
 // Components
 import TopNav from './src/components/TopNav';
@@ -72,6 +73,26 @@ import { navigationRef, navigate } from './src/navigation/RootNavigation';
 import { colors } from './src/styles/globalStyles';
 
 const Stack = createStackNavigator<RootStackParamList>();
+
+const ProfileHeader: React.FC<any> = ({ navigation, back, options }) => {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', height: 56, paddingHorizontal: 12, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+      {back ? (
+        <TouchableOpacity onPress={() => navigation.goBack()} accessibilityRole="button" accessibilityLabel="Go back" style={{ padding: 8 }}>
+          <Icon name="arrow-back" size={24} color={colors.primary} />
+        </TouchableOpacity>
+      ) : (
+        <View style={{ width: 40 }} />
+      )}
+      <View style={{ flex: 1, alignItems: 'center' }}>
+        <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.text }}>
+          {options?.title || 'Profile'}
+        </Text>
+      </View>
+      <View style={{ width: 40 }} />
+    </View>
+  );
+};
 
 const App: React.FC = () => {
   const colorScheme = useColorScheme();
@@ -380,7 +401,14 @@ const App: React.FC = () => {
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Dashboard" component={DashboardScreen} />
         <Stack.Screen name="Community" component={CommunityScreen} />
-        <Stack.Screen name="Profile" component={ProfileScreen} />
+        <Stack.Screen
+          name="Profile"
+          component={ProfileScreen}
+          options={({ route }) => ({
+            header: (props) => <ProfileHeader {...props} />,
+            title: route.params?.username ? String(route.params?.username) : 'Profile',
+          })}
+        />
         <Stack.Screen name="Chat" component={ChatScreen} />
         <Stack.Screen name="Notification" component={NotificationScreen} />
         <Stack.Screen name="Search" component={SearchScreen} />
