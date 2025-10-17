@@ -54,6 +54,7 @@ const IncomingCallScreen = requireSafe(() => require('./src/screens/IncomingCall
 const StartNewChatScreen = requireSafe(() => require('./src/screens/StartNewChatScreen'), 'StartNewChatScreen');
 const HelpDeskScreen = requireSafe(() => require('./src/screens/HelpDeskScreen'), 'HelpDeskScreen');
 const SettingsScreen = requireSafe(() => require('./src/screens/SettingsScreen'), 'SettingsScreen');
+const OfflineScreen = requireSafe(() => require('./src/screens/OfflineScreen'), 'OfflineScreen');
 
 // Services
 import SocketService from './src/services/SocketService';
@@ -104,6 +105,7 @@ const App: React.FC = () => {
   const [verificationCompleted, setVerificationCompleted] = useState<boolean>(false);
   const [biometricEnabled, setBiometricEnabled] = useState<boolean>(false);
   const [locked, setLocked] = useState<boolean>(false);
+  const [isConnected, setIsConnected] = useState<boolean>(true);
 
   useEffect(() => {
     LogBox.ignoreLogs([
@@ -350,6 +352,47 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated]);
 
+  // Connectivity: simple polling check to determine online/offline
+  useEffect(() => {
+    let mounted = true;
+    let timer: any = null;
+
+    const timeoutFetch = async (url: string, ms: number): Promise<boolean> => {
+      try {
+        const res = await Promise.race([
+          fetch(url, { method: 'GET' }),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+        ]);
+        if (!res || typeof (res as any).status !== 'number') return false;
+        const status = (res as any).status as number;
+        return status === 204 || (status >= 200 && status < 400);
+      } catch (_) {
+        return false;
+      }
+    };
+
+    const checkConnectivity = async () => {
+      const okGstatic = await timeoutFetch('https://connectivitycheck.gstatic.com/generate_204', 3500);
+      const okAlt = okGstatic ? true : await timeoutFetch('https://www.google.com', 3500);
+      if (mounted) setIsConnected(!!(okGstatic || okAlt));
+    };
+
+    // initial check
+    checkConnectivity();
+    // periodic checks
+    timer = setInterval(checkConnectivity, 5000);
+
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') checkConnectivity();
+    });
+
+    return () => {
+      mounted = false;
+      if (timer) clearInterval(timer);
+      try { sub.remove(); } catch (_) {}
+    };
+  }, []);
+
   const navTheme = {
     ...DefaultTheme,
     colors: {
@@ -463,6 +506,10 @@ const App: React.FC = () => {
             </View>
           </View>
         </View>
+      </Modal>
+      {/* Offline overlay */}
+      <Modal visible={!isConnected} transparent={false} animationType="fade" onRequestClose={() => {}}>
+        <OfflineScreen />
       </Modal>
       </NavigationContainer>
     </ThemeContext.Provider>
