@@ -16,7 +16,8 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import Video from 'react-native-video';
-import {Share} from 'react-native';
+import { Share } from 'react-native';
+
 import DocumentPicker from 'react-native-document-picker';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
@@ -31,135 +32,76 @@ import {colors, globalStyles} from '../styles/globalStyles';
 import LinkedText from '../components/LinkedText';
 import { ThemeContext } from '../context/ThemeContext';
 
-interface Post {
-  _id: string;
-  author: {
-    username: string;
-    name: string;
-    avatar: string;
-  };
-  content: string;
-  files: any[];
-  likes: string[];
-  comments: any[];
-  shares?: number;
-  likedBy?: string[];
-  savedBy?: string[];
-  saves?: number;
-  createdAt: string;
-}
-
-interface User {
-  username: string;
-  name: string;
-  avatar: string;
-  role?: string;
-}
-
 const DashboardScreen = () => {
-  const { theme, setTheme } = useContext(ThemeContext);
+  const [authorRoles, setAuthorRoles] = React.useState<Record<string, string>>({});
+
+  // Theme
+  const { theme } = useContext(ThemeContext);
   const navigation = useNavigation();
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [newPostContent, setNewPostContent] = useState('');
-  const [showComposer, setShowComposer] = useState(true);
-  const [expandedCaptions, setExpandedCaptions] = useState<Record<string, boolean>>({});
-  const [hasNewNotif, setHasNewNotif] = useState(false);
-  const [suggestedUsers, setSuggestedUsers] = useState<User[]>([]);
-  const [editModalVisible, setEditModalVisible] = useState(false);
-  const [editingPostId, setEditingPostId] = useState<string | null>(null);
-  const [editingPostContent, setEditingPostContent] = useState('');
-  const [composerFocused, setComposerFocused] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState('');
-  const [mentionResults, setMentionResults] = useState<User[]>([]);
-  const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
-  const [imagePreviewVisible, setImagePreviewVisible] = useState(false);
-  const [imagePreviewSource, setImagePreviewSource] = useState<string | null>(null);
-  const [mediaPreviewVisible, setMediaPreviewVisible] = useState(false);
-  const [previewPost, setPreviewPost] = useState<Post | null>(null);
-  const [previewIndex, setPreviewIndex] = useState(0);
-  const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
-  const [authorRoles, setAuthorRoles] = useState<Record<string, string>>({});
-// Use full card width minus horizontal margins (20) and card padding (24)
-const mediaWidth = Math.round(Dimensions.get('window').width - 44);
+
+  // Screen dimensions for media layout
   const screenWidth = Dimensions.get('window').width;
   const screenHeight = Dimensions.get('window').height;
-  const [showQuickMenu, setShowQuickMenu] = useState(false);
-  const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
-  const [commentTextByPost, setCommentTextByPost] = useState<Record<string, string>>({});
-  const [submittingCommentByPost, setSubmittingCommentByPost] = useState<Record<string, boolean>>({});
-  const [newPostFiles, setNewPostFiles] = useState<{ url: string; type?: string; name?: string; thumbnailUrl?: string }[]>([]);
-  const [uploadingMedia, setUploadingMedia] = useState(false);
-  const handleAddFriend = async (username: string) => {
+  const mediaWidth = Math.round(screenWidth * 0.8);
+
+  // Feed and user state
+  const [posts, setPosts] = React.useState<Post[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [currentUser, setCurrentUser] = React.useState<any>(null);
+  const [suggestedUsers, setSuggestedUsers] = React.useState<any[]>([]);
+
+  // UI state
+  const [showQuickMenu, setShowQuickMenu] = React.useState(false);
+  const [imagePreviewSource, setImagePreviewSource] = React.useState<string | null>(null);
+  const [imagePreviewVisible, setImagePreviewVisible] = React.useState(false);
+  const [mediaPreviewVisible, setMediaPreviewVisible] = React.useState(false);
+  const [previewPost, setPreviewPost] = React.useState<Post | null>(null);
+  const [previewIndex, setPreviewIndex] = React.useState(0);
+
+  // Composer state
+  const [newPostContent, setNewPostContent] = React.useState('');
+  const [newPostFiles, setNewPostFiles] = React.useState<Array<{ url: string; type?: string; name?: string; thumbnailUrl?: string }>>([]);
+  const [mentionResults, setMentionResults] = React.useState<any[]>([]);
+  const [showMentionSuggestions, setShowMentionSuggestions] = React.useState(false);
+  const [mentionQuery, setMentionQuery] = React.useState('');
+  const [composerFocused, setComposerFocused] = React.useState(false);
+  const [uploadingMedia, setUploadingMedia] = React.useState(false);
+
+  // Post UI state
+  const [expandedCaptions, setExpandedCaptions] = React.useState<Record<string, boolean>>({});
+  const [expandedComments, setExpandedComments] = React.useState<Record<string, boolean>>({});
+  const [commentTextByPost, setCommentTextByPost] = React.useState<Record<string, string>>({});
+  const [submittingCommentByPost, setSubmittingCommentByPost] = React.useState<Record<string, boolean>>({});
+
+  // Reshare state
+  const [resharingPost, setResharingPost] = React.useState<Post | null>(null);
+  const [reshareCaption, setReshareCaption] = React.useState('');
+  const [reshareModalVisible, setReshareModalVisible] = React.useState(false);
+
+  // Saves and notifications
+  const [savedPostIds, setSavedPostIds] = React.useState<Set<string>>(new Set());
+  const [hasNewNotif, setHasNewNotif] = React.useState(false);
+
+  // Edit post state
+  const [editModalVisible, setEditModalVisible] = React.useState(false);
+  const [editingPostId, setEditingPostId] = React.useState<string | null>(null);
+  const [editingPostContent, setEditingPostContent] = React.useState('');
+
+  const handleAddFriend = async (u: string) => {
     try {
-      await apiService.sendFriendRequest(username);
-      Alert.alert(
-        'Friend Request Sent',
-        'Your request has been sent.',
-        [
-          {
-            text: 'Cancel Request',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                await apiService.cancelFriendRequest(username);
-                Alert.alert('Canceled', 'Friend request canceled');
-              } catch (err) {
-                Alert.alert('Error', 'Could not cancel the request');
-              }
-            },
-          },
-          { text: 'OK', style: 'default' },
-        ]
-      );
-    } catch (e) {
-      Alert.alert('Error', 'Could not send friend request');
+      await apiService.addFriend(u);
+    } catch (error) {
+      console.error('Error adding friend:', error);
     }
   };
 
-  useEffect(() => {
-    loadCurrentUser();
-    loadPosts();
-    setupSocketListeners();
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      // Reload posts and current user on focus so location/flag changes reflect immediately
-      loadPosts();
-      loadCurrentUser();
-    }, [])
-  );
-
-  useEffect(() => {
-    if (currentUser) {
-      loadSuggestions();
-      // Load saved posts for current user
-      (async () => {
-        try {
-          const saved = await apiService.getSavedPosts(currentUser.username);
-          setSavedPostIds(new Set(saved.map(p => p._id)));
-        } catch (err) {
-          console.error('Error loading saved posts:', err);
-        }
-      })();
-    }
-  }, [currentUser]);
-
-  // Enrich posts with author role information to show admin/superadmin crown
-  useEffect(() => {
+  React.useEffect(() => {
     const loadRoles = async () => {
       try {
-        const list = posts || [];
         const usernames = Array.from(
-          new Set(
-            list
-              .map(p => p?.author?.username)
-              .filter((u): u is string => typeof u === 'string' && !!u)
-          )
-        ).filter(u => !authorRoles[u]);
+          new Set((posts || []).map(p => p?.author?.username).filter(Boolean))
+        ) as string[];
         if (usernames.length === 0) return;
         const fetched = await Promise.all(
           usernames.map(async (u) => {
@@ -172,11 +114,13 @@ const mediaWidth = Math.round(Dimensions.get('window').width - 44);
             }
           })
         );
-        const next: Record<string, string> = { ...authorRoles };
-        for (const { u, role } of fetched) {
-          if (u) next[u] = role;
-        }
-        setAuthorRoles(next);
+        setAuthorRoles(prev => {
+          const next: Record<string, string> = { ...prev };
+          for (const { u, role } of fetched) {
+            if (u) next[u] = role;
+          }
+          return next;
+        });
       } catch (_err) {
         // ignore role enrichment failures
       }
@@ -318,6 +262,20 @@ const mediaWidth = Math.round(Dimensions.get('window').width - 44);
       });
     }
   };
+
+  // Initialize current user, posts, and sockets on mount
+  useEffect(() => {
+    loadCurrentUser();
+    loadPosts();
+    setupSocketListeners();
+  }, []);
+
+  // Load suggestions when current user is available
+  useEffect(() => {
+    if (currentUser?.username) {
+      loadSuggestions();
+    }
+  }, [currentUser?.username]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -539,17 +497,77 @@ const mediaWidth = Math.round(Dimensions.get('window').width - 44);
     }
   };
 
-  const handleSharePost = async (post: Post) => {
+  const [reshareMode, setReshareMode] = React.useState<'choose' | 'repost' | 'share'>('choose');
+
+  const handleSharePost = (post: Post) => {
+    setResharingPost(post);
+    setReshareCaption('');
+    setReshareMode('choose');
+    setReshareModalVisible(true);
+  };
+
+  const submitRepost = async () => {
+    const original = resharingPost;
+    if (!original?._id) {
+      setReshareModalVisible(false);
+      return;
+    }
     try {
-      const reshared = await apiService.resharePost(post._id);
+      const caption = (reshareCaption || '').trim();
+      await apiService.resharePost(original._id, caption ? caption : undefined);
       // Increment original share count locally if present
-      setPosts(prev => prev.map(p => p._id === post._id ? { ...p, shares: (typeof p.shares === 'number' ? p.shares + 1 : 1) } : p));
-      // Optionally refresh feed to include reshared post
+      setPosts(prev => prev.map(p => p._id === original._id ? { ...p, shares: (typeof p.shares === 'number' ? p.shares + 1 : 1) } : p));
+      // Refresh feed to include the repost
       await loadPosts();
-      Alert.alert('Shared', 'Post reshared to your feed');
+      // Close modal and reset
+      setReshareModalVisible(false);
+      setResharingPost(null);
+      setReshareCaption('');
+      setReshareMode('choose');
+      Alert.alert('Reposted', 'Post reposted to your timeline');
     } catch (error) {
-      console.error('Error sharing post:', error);
-      Alert.alert('Error', 'Failed to share post');
+      console.error('Error reposting:', error);
+      Alert.alert('Error', 'Failed to repost');
+    }
+  };
+
+  const confirmReshare = async (shareAction: 'share' | 'copy' = 'share') => {
+    const original = resharingPost;
+    if (!original?._id) {
+      setReshareModalVisible(false);
+      return;
+    }
+    try {
+      // Build public link to original post details
+      const root = (apiService as any).rootUrl || '';
+      const link = `${root}/post.html?id=${original._id}`;
+
+      if (shareAction === 'copy') {
+        try {
+          const Clipboard = require('@react-native-clipboard/clipboard').default;
+          if (Clipboard && typeof Clipboard.setString === 'function') {
+            Clipboard.setString(link);
+            Alert.alert('Link copied', 'Post link copied to clipboard');
+          } else {
+            Alert.alert('Clipboard unavailable', `Please copy this link manually:\n${link}`);
+          }
+        } catch (clipErr) {
+          Alert.alert('Clipboard unavailable', `Please copy this link manually:\n${link}`);
+        }
+      } else {
+        try {
+          await Share.share({ title: 'View post details', message: link, url: link });
+        } catch (_shareErr) {
+          // Non-fatal
+        }
+      }
+      setReshareModalVisible(false);
+      setResharingPost(null);
+      setReshareCaption('');
+      setReshareMode('choose');
+    } catch (error) {
+      console.error('Error sharing post details:', error);
+      Alert.alert('Error', 'Failed to share post details');
     }
   };
 
@@ -1177,6 +1195,64 @@ const mediaWidth = Math.round(Dimensions.get('window').width - 44);
         </View>
       </Modal>
 
+      {/* Reshare Modal */}
+      <Modal
+        visible={reshareModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setReshareModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Reshare Post</Text>
+
+            {reshareMode === 'repost' && (
+              <TextInput
+                style={styles.modalInput}
+                value={reshareCaption}
+                onChangeText={setReshareCaption}
+                placeholder="Add a caption (optional)"
+                multiline
+              />
+            )}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={globalStyles.secondaryButton} onPress={() => { setReshareModalVisible(false); setReshareMode('choose'); }}>
+                <Text style={globalStyles.secondaryButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              {reshareMode === 'choose' && (
+                <>
+                  <TouchableOpacity style={globalStyles.button} onPress={() => setReshareMode('repost')}>
+                    <Text style={globalStyles.buttonText}>Repost to your Timeline</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={globalStyles.button} onPress={() => setReshareMode('share')}>
+                    <Text style={globalStyles.buttonText}>Share Post Details</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {reshareMode === 'repost' && (
+                <TouchableOpacity style={globalStyles.button} onPress={submitRepost}>
+                  <Text style={globalStyles.buttonText}>Repost</Text>
+                </TouchableOpacity>
+              )}
+
+              {reshareMode === 'share' && (
+                <>
+                  <TouchableOpacity style={globalStyles.button} onPress={() => confirmReshare('share')}>
+                    <Text style={globalStyles.buttonText}>Share</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={globalStyles.button} onPress={() => confirmReshare('copy')}>
+                    <Text style={globalStyles.buttonText}>Copy Link</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Image Preview Modal (theme-based background) */}
       <Modal
         visible={imagePreviewVisible}
@@ -1366,6 +1442,167 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
+  // Global quick options menu
+  quickMenu: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    marginHorizontal: 10,
+    marginTop: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  quickMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: colors.secondary,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  quickMenuText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  // Post card styles
+  postCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    padding: 15,
+    marginHorizontal: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  postHeader: {
+    ...globalStyles.flexRowBetween,
+    marginBottom: 10,
+  },
+  avatarRing: {
+    borderWidth: 2,
+    borderColor: colors.primary,
+    borderRadius: 20,
+  },
+  postHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  adminCrownRight: {
+    marginRight: 8,
+    marginLeft: 4,
+  },
+  postButton: {
+    paddingHorizontal: 16,
+    alignSelf: 'flex-end',
+    marginLeft: 8,
+  },
+  composerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  // People You May Know card container
+  greetingCard: {
+    backgroundColor: colors.surface,
+    marginHorizontal: 10,
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  // People section heading
+  peopleHeading: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  // Horizontal list styling
+  suggestionsRow: {
+    marginTop: 8,
+  },
+  suggestionsContainer: {
+    paddingHorizontal: 10,
+  },
+  // Individual suggestion card
+  suggestionItem: {
+    width: 120,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  // Avatar + flag container
+  avatarContainer: {
+    position: 'relative',
+  },
+  suggestionAvatarContainer: {},
+  suggestionAvatar: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+  },
+  flagBadgeSmall: {
+    position: 'absolute',
+    bottom: -2,
+    left: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  flagBadgeText: {
+    fontSize: 11,
+  },
+  // Name + add friend button
+  suggestionName: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  addFriendButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginTop: 8,
+  },
+  addFriendText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   composerCard: {
     backgroundColor: colors.surface,
     marginHorizontal: 10,
@@ -1381,255 +1618,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   composerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  composerInputContainer: {
-    flex: 1,
-    marginLeft: 10,
-    backgroundColor: colors.inputBg,
-    borderRadius: 24,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  greetingCard: {
-    backgroundColor: colors.surface,
-    margin: 10,
-    padding: 15,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  greetingTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  greetingSubtitle: {
-    color: colors.textMuted,
-    marginBottom: 12,
-  },
-  quickActions: {
-    ...globalStyles.flexRowWrap,
-    gap: 10,
-  },
-  quickMenu: {
-    alignSelf: 'flex-end',
-    marginRight: 10,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    minWidth: 180,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-  quickMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
-  quickMenuText: {
-    marginLeft: 8,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  quickAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.secondary,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-  },
-  quickActionText: {
-    marginLeft: 8,
-    color: colors.text,
-  },
-  suggestionsRow: {
-    marginTop: 12,
-  },
-  suggestionsContainer: {
-    paddingVertical: 4,
-  },
-  suggestionItem: {
-    alignItems: 'center',
-    backgroundColor: colors.secondary,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    marginRight: 10,
-    minWidth: 90,
-  },
-  suggestionAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    marginBottom: 6,
-  },
-  suggestionName: {
-    color: colors.primary,
-    fontSize: 12,
-    maxWidth: 80,
-    textAlign: 'center',
-  },
-  addFriendButton: {
-    marginTop: 6,
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-  },
-  addFriendText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  peopleHeading: {
-    color: colors.primary,
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40,
-  },
-  loadingText: {
-    marginTop: 10,
-    color: colors.textMuted,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginTop: 10,
-  },
-  emptyText: {
-    color: colors.textMuted,
-    marginVertical: 10,
-    textAlign: 'center',
-    paddingHorizontal: 20,
-  },
-  composerInput: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 16,
-    minHeight: 40,
-    textAlignVertical: 'top',
-  },
-  mentionDropdownContainer: {
-    marginTop: 10,
-  },
-  mentionChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.secondary,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    marginRight: 8,
-  },
-  mentionAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    marginRight: 8,
-  },
-  mentionText: {
-    color: colors.text,
-    fontSize: 14,
-  },
-  avatarRing: {
-    borderWidth: 3,
-    borderColor: colors.primary,
-    shadowColor: colors.primary,
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 0 },
-    padding: 2,
-  },
-  avatarContainer: {
-    position: 'relative',
-  },
-  crownBadge: {
-    position: 'absolute',
-    top: -6,
-    left: -6,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-  },
-  postHeaderRight: {
-    alignItems: 'flex-end',
-  },
-  adminCrownRight: {
-    marginBottom: 2,
-  },
-  flagBadgeSmall: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-  },
-  flagBadgeText: {
-    fontSize: 11,
-  },
-  composerAvatarContainer: {
-    display: 'flex',
-  },
-  suggestionAvatarContainer: {
-    alignSelf: 'center',
-  },
-  composerActions: {
-    ...globalStyles.flexRowBetween,
-    marginTop: 15,
-  },
-  postButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-  },
-  postCard: {
-    backgroundColor: colors.surface,
-    marginHorizontal: 10,
-    marginBottom: 15,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-  postHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

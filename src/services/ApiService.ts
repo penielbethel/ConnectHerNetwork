@@ -174,6 +174,49 @@ export class ApiService {
       },
     };
 
+    // Special handling: sanitize call log payloads to avoid backend 400s
+    try {
+      const method = String(config.method || 'GET').toUpperCase();
+      if (endpoint === '/calls' && method === 'POST') {
+        let bodyObj: any = null;
+        try {
+          bodyObj = typeof config.body === 'string' ? JSON.parse(config.body as string) : (config.body as any);
+        } catch (_e) {}
+
+        if (!bodyObj || typeof bodyObj !== 'object') {
+          bodyObj = {};
+        }
+
+        // Ensure caller is present; fill from storage if missing
+        let caller = String(bodyObj.caller || '').trim();
+        if (!caller) {
+          try {
+            const stored = await AsyncStorage.getItem('currentUser');
+            const current = stored ? JSON.parse(stored) : null;
+            caller = String(current?.username || '').trim();
+            if (caller) bodyObj.caller = caller;
+          } catch (_e) {}
+        }
+
+        // Validate receiver
+        const receiver = String(bodyObj.receiver || '').trim();
+        if (!caller || !receiver) {
+          if (__DEV__) {
+            console.debug('makeRequest /calls suppressed: missing caller/receiver', { caller, receiver });
+          }
+          // Soft-fail to avoid noisy 400 logs and backend errors
+          return { success: false } as any;
+        }
+
+        // Normalize defaults
+        if (!bodyObj.status) bodyObj.status = 'started';
+        if (!bodyObj.type) bodyObj.type = 'audio';
+        if (typeof bodyObj.duration !== 'number') bodyObj.duration = 0;
+
+        config.body = JSON.stringify(bodyObj);
+      }
+    } catch (_e) {}
+
     const doFetch = async (base: string) => {
       const response = await fetch(`${base}${endpoint}`, config);
 
@@ -237,7 +280,8 @@ export class ApiService {
         }
         // Do not warn for server errors; caller handles fallback UX
       } else if (status !== 404) {
-        console.warn('API request warning:', error);
+        const msg = String(error?.message || '');
+        console.warn('API request warning:', status, endpoint, msg);
       }
       throw error;
     }
@@ -345,10 +389,41 @@ export class ApiService {
   // Auth methods
   async login(usernameOrEmail: string, password: string) {
     // Backend expects an 'identifier' which can be username or email
-    return this.makeRequest('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ identifier: usernameOrEmail, password }),
-    });
+    try {
+      const res = await this.makeRequest('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ identifier: usernameOrEmail, password }),
+      });
+
+      // Persist auth token if provided
+      const token = (res as any)?.token || (res as any)?.accessToken || (res as any)?.jwt;
+      if (token) {
+        try { await AsyncStorage.setItem('authToken', String(token)); } catch (_e) {}
+      }
+
+      // Persist minimal current user profile if provided
+      const user = (res as any)?.user || (res as any)?.profile || null;
+      if (user && user.username) {
+        const normalized = {
+          username: user.username,
+          name: user.name || `${user.firstName || ''} ${user.surname || ''}`.trim() || user.username,
+          firstName: user.firstName,
+          surname: user.surname,
+          avatar: this.normalizeAvatar(user.avatar),
+          location: user.location,
+          role: user.role,
+        } as any;
+        try {
+          await AsyncStorage.setItem('username', user.username);
+          await AsyncStorage.setItem('currentUser', JSON.stringify(normalized));
+        } catch (_e) {}
+      }
+
+      return res;
+    } catch (err) {
+      console.error('login error:', err);
+      throw err;
+    }
   }
 
   async register(userData: {
@@ -818,7 +893,10 @@ export class ApiService {
 
       // Legacy root endpoint returns array of usernames who sent requests
       const list = await this.makeRootRequest(`/friend-requests/${encodeURIComponent(u)}`);
-      const usernames: string[] = Array.isArray(list) ? list : [];
+      // Filter out invalid or blank identifiers to avoid downstream lookups like /api/users/
+      const usernames: string[] = Array.isArray(list)
+        ? list.filter((v: any) => typeof v === 'string' && v.trim().length > 0)
+        : [];
 
       // Enrich with minimal profile for avatar/name display
       const profiles = await Promise.all(
@@ -1082,9 +1160,146 @@ export class ApiService {
   }
 
   // Call methods
-  async logCall(caller: string, receiver: string, status: 'started' | 'accepted' | 'declined' | 'missed' | 'ended', type: 'audio' | 'video', duration: number = 0) {
+  // Helpers to prepare and validate participants for call flows
+  async getCurrentUserSafe(): Promise<{ username?: string; name?: string; avatar?: string } | null> {
     try {
-      const body = { caller, receiver, status, type, duration } as any;
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      if (current?.username) {
+        const avatar = this.normalizeAvatar(current?.avatar);
+        const name = current?.name || `${current?.firstName || ''} ${current?.surname || ''}`.trim() || current?.username;
+        return { username: current.username, name, avatar };
+      }
+
+      const uname = await AsyncStorage.getItem('username');
+      const username = uname ? JSON.parse(JSON.stringify(uname)) : null;
+      if (username) {
+        try {
+          const p: any = await this.getUserByUsername(String(username));
+          return { username: p?.username || String(username), name: p?.name, avatar: this.normalizeAvatar(p?.avatar) };
+        } catch (_e) {
+          return { username: String(username) };
+        }
+      }
+      return null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  async ensureUserProfile(identifier: string): Promise<{ username?: string; name?: string; avatar?: string } | null> {
+    const id = String(identifier || '').trim();
+    if (!id) return null;
+    try {
+      const p: any = await this.getUserByUsername(id);
+      const name = p?.name || `${p?.firstName || ''} ${p?.surname || ''}`.trim() || p?.username;
+      return { username: p?.username || id, name, avatar: this.normalizeAvatar(p?.avatar) };
+    } catch (_e) {
+      return { username: id };
+    }
+  }
+
+  async prepareCallParticipants(callee: string): Promise<{ caller?: string; receiver?: string; receiverProfile?: { username?: string; name?: string; avatar?: string } }> {
+    const me = await this.getCurrentUserSafe();
+    const caller = me?.username ? String(me.username).trim() : '';
+    const receiver = String(callee || '').trim();
+    const receiverProfile = receiver ? await this.ensureUserProfile(receiver) : null;
+    return { caller, receiver, receiverProfile: receiverProfile || undefined };
+  }
+
+  // Lightweight signaling via message channel to inform peer about call status changes
+  async sendCallSignal(to: string, event: 'started' | 'ended' | 'declined', type: 'audio' | 'video' = 'audio', durationMs: number = 0) {
+    const msg = `CALL_EVENT:${event}:${type}:${Math.max(0, Math.floor(durationMs / 1000))}`;
+    try {
+      await this.sendMessage({ to, message: msg });
+    } catch (_e) {
+      // non-blocking; UI will end locally regardless
+    }
+  }
+
+  async startCall(callee: string, type: 'audio' | 'video' = 'audio') {
+    const { caller, receiver, receiverProfile } = await this.prepareCallParticipants(callee);
+    if (!caller || !receiver) {
+      if (__DEV__) console.debug('startCall blocked: missing caller/receiver', { caller, receiver });
+      return { success: false, reason: 'missing_participants' } as any;
+    }
+    try {
+      await this.logCall(caller, receiver, 'started', type, 0);
+      // Notify peer via message channel
+      this.sendCallSignal(receiver, 'started', type, 0);
+      return { success: true, caller, receiver, peer: receiverProfile } as any;
+    } catch (error) {
+      console.warn('startCall log failed:', error);
+      return { success: true, caller, receiver, peer: receiverProfile } as any;
+    }
+  }
+
+  async endCall(callee: string, type: 'audio' | 'video' = 'audio', durationMs: number = 0) {
+    const { caller, receiver } = await this.prepareCallParticipants(callee);
+    if (!caller || !receiver) {
+      if (__DEV__) console.debug('endCall blocked: missing caller/receiver', { caller, receiver });
+      return { success: false } as any;
+    }
+    const duration = Math.max(0, Math.floor(durationMs / 1000));
+    try {
+      await this.logCall(caller, receiver, 'ended', type, duration);
+      // Notify peer to end call UI
+      this.sendCallSignal(receiver, 'ended', type, durationMs);
+      return { success: true } as any;
+    } catch (error) {
+      console.warn('endCall log failed:', error);
+      this.sendCallSignal(receiver, 'ended', type, durationMs);
+      return { success: true } as any;
+    }
+  }
+
+  async declineCall(callee: string, type: 'audio' | 'video' = 'audio') {
+    const { caller, receiver } = await this.prepareCallParticipants(callee);
+    if (!caller || !receiver) {
+      if (__DEV__) console.debug('declineCall blocked: missing caller/receiver', { caller, receiver });
+      return { success: false } as any;
+    }
+    try {
+      await this.logCall(caller, receiver, 'declined', type, 0);
+      // Notify peer to end call UI on decline
+      this.sendCallSignal(receiver, 'declined', type, 0);
+      return { success: true } as any;
+    } catch (error) {
+      console.warn('declineCall log failed:', error);
+      this.sendCallSignal(receiver, 'declined', type, 0);
+      return { success: true } as any;
+    }
+  }
+  async logCall(
+    caller: string,
+    receiver: string,
+    status: 'started' | 'accepted' | 'declined' | 'missed' | 'ended',
+    type: 'audio' | 'video',
+    duration: number = 0
+  ) {
+    try {
+      // Defensive: avoid 400s by ensuring required fields are present
+      let from = String(caller || '').trim();
+      const to = String(receiver || '').trim();
+      const st = (status as any) || 'started';
+      const ty = (type as any) || 'audio';
+
+      if (!from) {
+        try {
+          const stored = await AsyncStorage.getItem('currentUser');
+          const current = stored ? JSON.parse(stored) : null;
+          from = String(current?.username || '').trim();
+        } catch (_e) {}
+      }
+
+      if (!from || !to) {
+        if (__DEV__) {
+          console.debug('logCall suppressed: missing caller or receiver', { caller: from, receiver: to, status: st, type: ty });
+        }
+        return { success: false } as any;
+      }
+
+      const body = { caller: from, receiver: to, status: st, type: ty, duration } as any;
       return await this.makeRequest('/calls', {
         method: 'POST',
         body: JSON.stringify(body),
@@ -1110,20 +1325,43 @@ export class ApiService {
   }
 
   // Fetch user summary by username (name, avatar, username)
-  async getUserByUsername(username: string) {
+  async getUserByUsername(identifier: string) {
     try {
-      // Server exposes GET /users/:username returning { user }
-      const resp = await this.makeRequest(`/users/${encodeURIComponent(username)}`, {
-        method: 'GET',
-      });
-      // Normalize to a simple object when server returns { user }
-      return (resp as any)?.user || resp;
-    } catch (error) {
-      console.error('getUserByUsername error:', error);
-      // Swallow 404 by returning minimal object rather than throwing to avoid noisy logs
-      if ((error as any)?.message?.includes('404')) {
-        return { username } as any;
+      const raw = String(identifier || '').trim();
+      if (!raw) {
+        if (__DEV__) {
+          console.debug('getUserByUsername: empty identifier');
+          try { console.trace('getUserByUsername empty identifier trace'); } catch (_e) {}
+        }
+        return { username: '' } as any;
       }
+
+      // Primary: GET /users/:username
+      const slug = encodeURIComponent(raw);
+      const resp = await this.makeRequest(`/users/${slug}`, { method: 'GET' });
+      return (resp as any)?.user || resp;
+    } catch (error: any) {
+      const message = String(error?.message || '').toLowerCase();
+      const status = (error as any)?.status;
+
+      // Fallbacks for not found: try to resolve and refetch by resolved username
+      if (status === 404 || message.includes('not found')) {
+        try {
+          const resolved = await this.makeRequest(`/users/resolve/${encodeURIComponent(String(identifier || '').trim())}`);
+          const u = (resolved as any)?.user || resolved;
+          if (u?.username) {
+            try {
+              const refetch = await this.makeRequest(`/users/${encodeURIComponent(u.username)}`, { method: 'GET' });
+              return (refetch as any)?.user || refetch;
+            } catch (_) {}
+          }
+        } catch (_) {}
+
+        // Gracefully return minimal object to avoid UI breakage
+        return { username: String(identifier || '').trim() } as any;
+      }
+
+      console.error('getUserByUsername error:', error);
       throw error;
     }
   }
@@ -1532,19 +1770,19 @@ export class ApiService {
     }
   }
 
-  async resharePost(originalPostId: string) {
+  async resharePost(originalPostId: string, caption?: string) {
     try {
       const userStr = await AsyncStorage.getItem('currentUser');
       const username = userStr ? JSON.parse(userStr).username : undefined;
       return this.makeRequest('/posts/reshare', {
         method: 'POST',
-        body: JSON.stringify({ originalPostId, username }),
+        body: JSON.stringify({ originalPostId, username, caption }),
       });
     } catch (error) {
       console.error('Error preparing resharePost request:', error);
       return this.makeRequest('/posts/reshare', {
         method: 'POST',
-        body: JSON.stringify({ originalPostId }),
+        body: JSON.stringify({ originalPostId, caption }),
       });
     }
   }

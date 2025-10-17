@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Post | ConnectHer</title>
+  <link rel="stylesheet" href="/theme.css" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg, #f7f7f7); color: var(--text, #222); margin: 0; }
+    .container { max-width: 720px; margin: 0 auto; padding: 16px; }
+    .card { background: var(--surface, #fff); border: 1px solid var(--border, #e5e5e5); border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .brand { font-weight: 800; color: var(--primary, #0091ea); font-size: 20px; }
+    .post-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .avatar { width: 40px; height: 40px; border-radius: 20px; border: 1px solid var(--border, #e5e5e5); object-fit: cover; }
+    .author { font-weight: 700; color: var(--primary, #0091ea); }
+    .timestamp { color: var(--textMuted, #666); font-size: 12px; }
+    .content { font-size: 16px; line-height: 1.5; color: var(--text, #222); white-space: pre-wrap; }
+    .media { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; }
+    .media img, .media video { width: 100%; border-radius: 10px; }
+    .error { color: #c62828; padding: 12px; text-align: center; }
+    .footer { margin-top: 16px; display: flex; gap: 12px; color: var(--textMuted, #666); font-size: 14px; }
+    a { color: var(--primary, #0091ea); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">ConnectHer</div>
+      <a href="/" aria-label="Go Home">Home</a>
+    </div>
+    <div id="card" class="card">
+      <div id="status" class="error" style="display:none"></div>
+      <div id="post" style="display:none">
+        <div class="post-header">
+          <img id="avatar" class="avatar" alt="Author avatar" />
+          <div>
+            <div class="author" id="authorName"></div>
+            <div class="timestamp" id="timestamp"></div>
+          </div>
+        </div>
+        <div class="content" id="content"></div>
+        <div class="media" id="media"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function qs(name) {
+      const params = new URLSearchParams(window.location.search);
+      return params.get(name);
+    }
+    function linkify(text) {
+      if (!text) return '';
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
+    }
+    function resolveUrl(url) {
+      if (!url) return '';
+      if (/^https?:\/\//i.test(url)) return url;
+      if (url.startsWith('/')) return url; // relative to root
+      return '/' + url.replace(/^\/*/, '');
+    }
+    function fmtDate(iso) {
+      try { return new Date(iso).toLocaleString(); } catch { return iso || ''; }
+    }
+
+    async function loadPost(id) {
+      const statusEl = document.getElementById('status');
+      const postEl = document.getElementById('post');
+      try {
+        const res = await fetch(`/api/posts/${encodeURIComponent(id)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const post = data && (data.post || data);
+        if (!post || !post._id) {
+          throw new Error('Post not found');
+        }
+        // Fill header
+        document.getElementById('authorName').textContent = (post.author && (post.author.name || post.author.username)) || 'Unknown';
+        document.getElementById('timestamp').textContent = fmtDate(post.createdAt);
+        const avatar = post.author && post.author.avatar ? resolveUrl(post.author.avatar) : '/logo.png';
+        document.getElementById('avatar').src = avatar;
+        // Content
+        document.getElementById('content').innerHTML = linkify(post.content || '');
+        // Media
+        const mediaWrap = document.getElementById('media');
+        mediaWrap.innerHTML = '';
+        const files = Array.isArray(post.files) ? post.files : [];
+        files.forEach(f => {
+          const type = String(f.type || '').toLowerCase();
+          const url = resolveUrl(f.url || '');
+          if (type.includes('image')) {
+            const img = document.createElement('img');
+            img.src = url;
+            img.alt = f.name || 'image';
+            mediaWrap.appendChild(img);
+          } else if (type.includes('video')) {
+            const video = document.createElement('video');
+            video.src = url;
+            video.controls = true;
+            video.playsInline = true;
+            mediaWrap.appendChild(video);
+          }
+        });
+        statusEl.style.display = 'none';
+        postEl.style.display = '';
+      } catch (err) {
+        statusEl.textContent = (err && err.message) ? err.message : 'Failed to load post.';
+        statusEl.style.display = '';
+        postEl.style.display = 'none';
+      }
+    }
+
+    const id = qs('id');
+    if (!id) {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = 'No post id found in query string.';
+      statusEl.style.display = '';
+    } else {
+      loadPost(id);
+    }
+  </script>
+</body>
+</html>

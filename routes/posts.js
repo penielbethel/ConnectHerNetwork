@@ -100,7 +100,7 @@ router.delete('/:id', async (req, res) => {
 // ✅ Reshare route (media remains same, no changes to Cloudinary)
 router.post('/reshare', async (req, res) => {
   try {
-    const { originalPostId, username } = req.body;
+    const { originalPostId, username, caption } = req.body;
 
     if (!originalPostId || !username) {
       return res.status(400).json({ message: 'Missing post ID or username.' });
@@ -143,7 +143,12 @@ const resharedPost = new Post({
   name: user.name || `${user.firstName} ${user.surname}`,
   username: user.username,
   avatar: user.avatar,
-  caption: `Shared a post from ${original.name}${original.caption ? ': ' + original.caption : ''}`,
+  // Use provided caption when available, otherwise default to original attribution
+  caption: (caption && String(caption).trim())
+    ? String(caption).trim()
+    : `Shared a post from ${original.name}${original.caption ? ': ' + original.caption : ''}`,
+  // Track original post reference for future linking
+  originalPostId: String(original._id),
   media: original.media,
   contentType: original.contentType || "",
   content: original.content || "",

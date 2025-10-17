@@ -19,7 +19,7 @@ import { colors, globalStyles } from '../styles/globalStyles';
 
 interface SearchResult {
   id: string;
-  type: 'user' | 'community' | 'post';
+  type: 'user' | 'community' | 'post' | 'sponsor';
   title: string;
   subtitle?: string;
   image?: string;
@@ -122,7 +122,7 @@ const SearchScreen: React.FC = () => {
       if (Array.isArray(results.users) && (type === 'all' || type === 'users')) {
         results.users.forEach(user => {
           formattedResults.push({
-            id: user._id || user.username,
+            id: user.username,
             type: 'user',
             title: user.name || user.username,
             subtitle: user.bio || user.username,
@@ -220,13 +220,16 @@ const SearchScreen: React.FC = () => {
   const handleResultPress = (result: SearchResult) => {
     switch (result.type) {
       case 'user':
-        navigation.navigate('Profile' as never, { userId: result.id } as never);
+        navigation.navigate('Profile' as never, { username: result.id } as never);
         break;
       case 'community':
         navigation.navigate('Community' as never, { communityId: result.id } as never);
         break;
       case 'post':
-        navigation.navigate('Chat' as never, { postId: result.id } as never);
+        navigation.navigate('PostDetail' as never, { postId: result.id } as never);
+        break;
+      case 'sponsor':
+        navigation.navigate('SponsorDetail' as never, { sponsorId: result.id, name: result.title } as never);
         break;
     }
   };
@@ -244,7 +247,8 @@ const SearchScreen: React.FC = () => {
             <Icon 
               name={
                 item.type === 'user' ? 'person' : 
-                item.type === 'community' ? 'group' : 'article'
+                item.type === 'community' ? 'group' : 
+                item.type === 'sponsor' ? 'work' : 'article'
               } 
               size={24} 
               color={colors.dark.text + '80'} 

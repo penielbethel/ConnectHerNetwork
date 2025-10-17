@@ -36,6 +36,9 @@ const PostSchema = new mongoose.Schema({
   avatar: String,
   caption: String,
 
+  // Reference to original post when reshared
+  originalPostId: { type: String },
+
   // Author location for flag rendering and feed filtering
   location: String,
 

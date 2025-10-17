@@ -1109,7 +1109,10 @@ const handleSendMessage = async () => {
         <TouchableOpacity 
           style={styles.headerInfo}
           onPress={() => navigation.navigate('Profile' as never, {username: recipientUsername} as never)}>
-          <Image source={{uri: (recipientAvatar && recipientAvatar.trim()) ? recipientAvatar : 'https://cdn-icons-png.flaticon.com/512/1077/1077114.png'}} style={styles.headerAvatar} />
+          <View style={styles.headerAvatarContainer}>
+            <Image source={{uri: (recipientAvatar && recipientAvatar.trim()) ? recipientAvatar : 'https://cdn-icons-png.flaticon.com/512/1077/1077114.png'}} style={styles.headerAvatar} />
+            <View style={[styles.headerOnlineIndicator, !isOnline && { backgroundColor: colors.textMuted }]} />
+          </View>
           <View>
             <Text style={[styles.headerName, { color: '#000' }]}>{recipientName}</Text>
             <Text style={[styles.headerStatus, { color: '#000' }]}>
@@ -1441,11 +1444,25 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 15,
   },
+  headerAvatarContainer: {
+    position: 'relative',
+    marginRight: 10,
+  },
   headerAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    marginRight: 10,
+  },
+  headerOnlineIndicator: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.success,
+    borderWidth: 2,
+    borderColor: '#ff1493',
   },
   headerName: {
     fontSize: 16,

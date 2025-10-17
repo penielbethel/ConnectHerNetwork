@@ -387,6 +387,19 @@ const ChatScreen = () => {
         );
       });
 
+      // Handle online users list from server
+      socket.on('update-online-users', (usernames: string[]) => {
+        setChats(prevChats =>
+          prevChats.map(chat => ({
+            ...chat,
+            participants: chat.participants.map(p => ({
+              ...p,
+              isOnline: usernames.includes(p.username),
+            })),
+          }))
+        );
+      });
+
       // Refresh chats/friends list when a friendship is accepted
       socket.on('friendship-accepted', () => {
         loadChats();
@@ -470,7 +483,7 @@ const ChatScreen = () => {
         onPress={() => handleChatPress(item)}>
         <View style={styles.avatarContainer}>
           <Image source={{uri: getAvatarUri(otherParticipant?.avatar)}} style={styles.avatarSm} />
-          {otherParticipant.isOnline && <View style={styles.onlineIndicator} />}
+          <View style={[styles.onlineIndicator, !otherParticipant.isOnline && { backgroundColor: colors.textMuted }]} />
         </View>
 
         <View style={styles.chatInfo}>

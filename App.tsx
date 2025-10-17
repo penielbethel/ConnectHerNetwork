@@ -404,6 +404,16 @@ const App: React.FC = () => {
     },
   };
 
+  // Deep linking configuration: supports custom scheme and HTTPS links
+  const linking = {
+    prefixes: ['connecther://', 'https://connecther.network', 'http://connecther.network'],
+    config: {
+      screens: {
+        PostDetail: 'post.html',
+      },
+    },
+  };
+
   if (isLoading) {
     return (
       <View style={globalStyles.container}>
@@ -423,7 +433,7 @@ const App: React.FC = () => {
         },
       }}
     >
-      <NavigationContainer theme={navTheme} ref={navigationRef}>
+      <NavigationContainer theme={navTheme} ref={navigationRef} linking={linking}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <Stack.Navigator
         initialRouteName={
@@ -514,6 +524,6 @@ const App: React.FC = () => {
       </NavigationContainer>
     </ThemeContext.Provider>
   );
-};
+}
 
 export default App;

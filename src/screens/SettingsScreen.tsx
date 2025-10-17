@@ -483,22 +483,22 @@ const SettingsScreen: React.FC = () => {
     return (
       <TouchableOpacity
         key={item.id}
-        style={styles.settingsItem}
-        onPress={item.onPress}
-        disabled={item.type === 'toggle'}
+        style={[styles.settingsItem, item.id === 'deleteAccount' && styles.disabledItem]}
+        onPress={item.id === 'deleteAccount' ? undefined : item.onPress}
+        disabled={item.type === 'toggle' || item.id === 'deleteAccount'}
       >
         <View style={styles.itemLeft}>
           <View style={styles.iconContainer}>
             <Icon 
               name={item.icon} 
               size={24} 
-              color={item.id === 'deleteAccount' ? colors.error : colors.primary} 
+              color={item.id === 'deleteAccount' ? colors.textMuted : colors.primary} 
             />
           </View>
           <View style={styles.itemText}>
             <Text style={[
               styles.itemTitle,
-              item.id === 'deleteAccount' && { color: colors.error }
+              item.id === 'deleteAccount' && { color: colors.textMuted }
             ]}>
               {item.title}
             </Text>
@@ -736,6 +736,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: 12,
     marginBottom: 8,
+  },
+  disabledItem: {
+    opacity: 0.6,
   },
   itemLeft: {
     flexDirection: 'row',

@@ -25,6 +25,8 @@ import DocumentPicker from 'react-native-document-picker';
 import audioRecorderService from '../services/AudioRecorder';
 import { PermissionsManager } from '../utils/permissions';
 import RecordingWaveform from '../components/RecordingWaveform';
+import RNFS from 'react-native-fs'
+import { WebView } from 'react-native-webview'
 
 type RouteParams = {
   params: {
@@ -64,6 +66,10 @@ const CommunityChatScreen: React.FC = () => {
   const [avatarPreviewVisible, setAvatarPreviewVisible] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const atBottomRef = useRef(true);
+  // Media preview & download state
+  const [previewMedia, setPreviewMedia] = useState<{ url: string; type: 'image' | 'video' | 'file'; filename: string } | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
   // Derived privileges & lock state
   const meUsername = currentUser?.username;
   const meIsAdminOrCreator = !!members.find(m => m.username === meUsername && (m.isAdmin || m.isCreator));
@@ -75,6 +81,106 @@ const CommunityChatScreen: React.FC = () => {
   const emojis: string[] = ['😀','😂','😍','👍','🙏','🎉','😎','❤️','🔥','🥳','😢','🤔','👏','💯'];
   const handleEmojiSelect = (emoji: string) => {
     setInputText(prev => prev + emoji);
+  };
+
+  // Helpers: media preview & download
+  const getFilenameFromUrl = (url: string) => {
+    try {
+      const u = new URL(url);
+      const pathname = u.pathname || '';
+      const name = pathname.split('/').pop() || `file_${Date.now()}`;
+      return decodeURIComponent(name);
+    } catch (_) {
+      const parts = url.split('?')[0].split('/');
+      return parts[parts.length - 1] || `file_${Date.now()}`;
+    }
+  };
+
+  const guessMediaType = (m: { url: string; type?: string }): 'image' | 'video' | 'file' => {
+    const t = (m.type || '').toLowerCase();
+    if (t.startsWith('image')) return 'image';
+    if (t.startsWith('video')) return 'video';
+    const ext = m.url.toLowerCase().match(/\.(jpg|jpeg|png|webp|gif|mp4|mov|webm|mkv)$/)?.[1];
+    if (ext && ['jpg','jpeg','png','webp','gif'].includes(ext)) return 'image';
+    if (ext && ['mp4','mov','webm','mkv'].includes(ext)) return 'video';
+    return 'file';
+  };
+
+  const openMediaPreview = (media: { url: string; type?: string }) => {
+    const type = guessMediaType(media);
+    const filename = getFilenameFromUrl(media.url);
+    setPreviewMedia({ url: media.url, type, filename });
+  };
+
+  const ensureStoragePermission = async () => {
+    try {
+      const res = await PermissionsManager.requestStoragePermission();
+      return !!res?.granted;
+    } catch (_) {
+      return true; // best-effort
+    }
+  };
+
+  const mimeFromExt = (ext: string) => {
+    const map: Record<string, string> = {
+      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
+      mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska',
+      pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', txt: 'text/plain'
+    };
+    return map[ext] || 'application/octet-stream';
+  };
+
+  const downloadMedia = async (media: { url: string; type?: string }) => {
+    const allowed = Platform.OS === 'android' ? await ensureStoragePermission() : true;
+    if (!allowed) {
+      Alert.alert('Permission required', 'Storage permission is needed to save media.');
+      return;
+    }
+    const type = guessMediaType(media);
+    const filename = getFilenameFromUrl(media.url);
+    const extMatch = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
+    const ext = extMatch ? extMatch[1] : (type === 'image' ? 'jpg' : type === 'video' ? 'mp4' : 'bin');
+    const mime = mimeFromExt(ext);
+
+    let baseDir = RNFS.DownloadDirectoryPath;
+    if (Platform.OS === 'android') {
+      if (type === 'image' && RNFS.PicturesDirectoryPath) baseDir = RNFS.PicturesDirectoryPath;
+      else if (type === 'video' && RNFS.MoviesDirectoryPath) baseDir = RNFS.MoviesDirectoryPath;
+    } else {
+      baseDir = RNFS.DocumentDirectoryPath;
+    }
+
+    const destPath = `${baseDir}/${filename}`;
+    setIsDownloading(true);
+    setDownloadProgress(0);
+    try {
+      const task = RNFS.downloadFile({
+        fromUrl: media.url,
+        toFile: destPath,
+        progress: (p) => {
+          const pct = Math.floor((p.bytesWritten / p.contentLength) * 100);
+          setDownloadProgress(Math.max(0, Math.min(100, pct)));
+        },
+        progressDivider: 5,
+      });
+      const result = await task.promise;
+      if (result.statusCode >= 200 && result.statusCode < 300) {
+        try {
+          // Make visible in gallery/file managers
+          // @ts-ignore
+          if (RNFS.scanFile) await RNFS.scanFile([{ path: destPath, mime }]);
+        } catch (_) {}
+        Alert.alert('Saved', `Saved to ${destPath}`);
+      } else {
+        Alert.alert('Download failed', `Status code ${result.statusCode}`);
+      }
+    } catch (e: any) {
+      Alert.alert('Download error', e?.message || 'Could not save file.');
+    } finally {
+      setIsDownloading(false);
+      setDownloadProgress(0);
+    }
   };
 
   useEffect(() => {
@@ -613,7 +719,7 @@ const CommunityChatScreen: React.FC = () => {
             horizontal
             keyExtractor={(m, idx) => `${item._id}-m-${idx}`}
             renderItem={({ item: media }) => (
-              <TouchableOpacity onPress={() => Linking.openURL(media.url)}>
+              <TouchableOpacity onPress={() => openMediaPreview(media)} onLongPress={() => downloadMedia(media)}>
                 <Image source={{ uri: media.thumbnailUrl || media.url }} style={styles.mediaThumb} />
               </TouchableOpacity>
             )}
@@ -850,6 +956,35 @@ const CommunityChatScreen: React.FC = () => {
         </View>
       </Modal>
 
+      {/* Media full preview */}
+      <Modal visible={!!previewMedia} transparent animationType="fade" onRequestClose={() => setPreviewMedia(null)}>
+        <View style={styles.avatarBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{previewMedia?.filename || 'Preview'}</Text>
+              <TouchableOpacity onPress={() => setPreviewMedia(null)}>
+                <Icon name="close" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={{ flex: 1, padding: 10 }}>
+              {previewMedia?.type === 'image' && previewMedia?.url ? (
+                <Image source={{ uri: previewMedia.url }} style={{ width: '100%', height: '80%', borderRadius: 8 }} resizeMode="contain" />
+              ) : previewMedia?.type === 'video' && previewMedia?.url ? (
+                <WebView source={{ html: `<html><body style=\"margin:0;background:#000\"><video src=\"${previewMedia.url}\" controls autoplay style=\"width:100%;height:100%\"></video></body></html>` }} style={{ flex: 1 }} />
+              ) : (
+                <Text style={styles.modalTitle}>No preview available</Text>
+              )}
+            </View>
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.shareInviteBtn} onPress={() => { if (previewMedia) downloadMedia({ url: previewMedia.url, type: previewMedia.type }); }}>
+                <Icon name="download" size={18} color={'#fff'} />
+                <Text style={styles.shareInviteText}>{isDownloading ? `Downloading ${downloadProgress}%` : 'Download'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Message actions modal */}
       <Modal visible={actionsVisible} transparent animationType="fade" onRequestClose={() => setActionsVisible(false)}>
         <View style={styles.menuBackdrop}>
@@ -875,6 +1010,22 @@ const CommunityChatScreen: React.FC = () => {
               <Icon name="edit" size={18} color={colors.text} />
               <Text style={styles.menuItemText}>Edit</Text>
             </TouchableOpacity>
+            {Array.isArray(actionTarget?.media) && actionTarget?.media?.length ? (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={async () => {
+                  setActionsVisible(false);
+                  try {
+                    for (const m of actionTarget!.media!) {
+                      await downloadMedia(m);
+                    }
+                  } catch (_) {}
+                }}
+              >
+                <Icon name="download" size={18} color={colors.text} />
+                <Text style={styles.menuItemText}>Download attachment{(actionTarget?.media?.length || 0) > 1 ? 's' : ''}</Text>
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity
               style={styles.menuItem}
               onPress={async () => {

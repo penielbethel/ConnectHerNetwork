@@ -37,12 +37,16 @@ interface Post {
 const PostDetailScreen: React.FC = () => {
   const route = useRoute<RouteProp<RootStackParamList, 'PostDetail'>>();
   const navigation = useNavigation();
-  const { postId } = route.params as { postId: string };
-
+  // Derive postId from either `postId` or `id` for deep links
+  const rawParams = (route?.params as any) || {};
+  const postId: string | undefined = rawParams.postId || rawParams.id;
+  
   const [post, setPost] = useState<Post | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
+  
+  // Add missing states for refresh and comments/replies
   const [refreshing, setRefreshing] = useState(false);
-  const [currentUser, setCurrentUser] = useState<{ username: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ username: string; name?: string; avatar?: string } | null>(null);
   const [commentText, setCommentText] = useState('');
   const [replyingToIndex, setReplyingToIndex] = useState<number | null>(null);
   const [replyText, setReplyText] = useState('');
@@ -50,6 +54,30 @@ const PostDetailScreen: React.FC = () => {
   const [editingCommentText, setEditingCommentText] = useState('');
   const [editingReplyKey, setEditingReplyKey] = useState<{ commentIndex: number; replyIndex: number } | null>(null);
   const [editingReplyText, setEditingReplyText] = useState('');
+  const loadPost = useCallback(async () => {
+    if (!postId) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const data = await apiService.getPost(postId);
+      setPost((data as any)?.post || data);
+    } catch (err) {
+      console.warn('Failed to load post', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [postId]);
+  
+  useEffect(() => {
+    loadPost();
+  }, [loadPost]);
+  
+  useFocusEffect(
+    useCallback(() => {
+      loadPost();
+    }, [loadPost])
+  );
 
   const screenWidth = Dimensions.get('window').width;
 
@@ -67,27 +95,7 @@ const PostDetailScreen: React.FC = () => {
     })();
   }, []);
 
-  useEffect(() => {
-    loadPost();
-  }, [postId]);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadPost();
-    }, [postId])
-  );
-
-  const loadPost = async () => {
-    try {
-      setLoading(true);
-      const data = await apiService.getPost(postId);
-      setPost(data.post || data);
-    } catch (err) {
-      console.error('Error loading post:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const onRefresh = async () => {
     setRefreshing(true);
