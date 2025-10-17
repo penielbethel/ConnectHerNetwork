@@ -112,6 +112,17 @@ const ProfileScreen = () => {
     loadCurrentUser();
   }, []);
 
+  // Set header title to owner's display name (must be before any conditional return)
+  useEffect(() => {
+    try {
+      const title = profile?.name || (route.params?.username ? String(route.params?.username) : 'Profile');
+      // @ts-ignore
+      navigation.setOptions({ title });
+    } catch (e) {
+      // swallow
+    }
+  }, [profile?.name, route.params?.username]);
+
   // Initialize presence listeners and fetch last-seen for target user
   useEffect(() => {
     const username = route.params?.username || currentUser?.username;
@@ -763,17 +774,7 @@ const ProfileScreen = () => {
     );
   }
 
-  // Set header title to owner's display name
-  useEffect(() => {
-    try {
-      if (profile?.name) {
-        // @ts-ignore
-        navigation.setOptions({ title: profile.name });
-      }
-    } catch (e) {
-      // swallow
-    }
-  }, [profile?.name]);
+  // Header title effect moved above early return to maintain consistent hook order
 
   const flagEmoji = profile.location ? getFlagEmojiForLocation(profile.location) : '';
 
