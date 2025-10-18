@@ -29,10 +29,21 @@ class AdminService {
   }
 
   async deleteUser(username: string) {
-    // Backend delete route mounted at /api/delete/:username
-    return apiService['makeRequest'](`/delete/${encodeURIComponent(username)}`, {
-      method: 'DELETE',
-    });
+    // Prefer protected superadmin endpoint; fallback to legacy if missing (404)
+    try {
+      return await apiService['makeRequest'](`/admin/delete/${encodeURIComponent(username)}`, {
+        method: 'DELETE',
+      });
+    } catch (err: any) {
+      const status = (err as any)?.status;
+      if (status === 404) {
+        // Legacy route on older servers
+        return await apiService['makeRequest'](`/delete/${encodeURIComponent(username)}`, {
+          method: 'DELETE',
+        });
+      }
+      throw err;
+    }
   }
 }
 // Lazy proxy to avoid import-time construction

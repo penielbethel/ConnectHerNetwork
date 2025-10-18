@@ -4,6 +4,17 @@ const router = express.Router();
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const verifyTokenAndRole = require("../middleware/verifyTokenAndRole");
+const Post = require("../models/Post");
+const Message = require("../models/Message");
+const Notification = require("../models/Notification");
+const Friendship = require("../models/Friendship");
+const FriendRequest = require("../models/FriendRequest");
+const CommunityMessage = require("../models/CommunityMessage");
+const Community = require("../models/Community");
+const CommunityInvite = require("../models/CommunityInvite");
+const CallLog = require("../models/CallLog");
+const Token = require("../models/Token");
+const { deleteFromCloudinary } = require("../cloudinary");
 // Optional PDF export support (install: npm install pdfkit)
 let PDFDocument;
 try {
@@ -692,3 +703,139 @@ router.get('/analytics.pdf', verifyTokenAndRole(['superadmin']), async (req, res
 
 
 module.exports = router;
+
+// 🗑️ Permanently delete a user and all associated data (SuperAdmin only)
+router.delete('/delete/:username', verifyTokenAndRole(['superadmin']), async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    // 1) Delete user's posts and Cloudinary media
+    try {
+      const posts = await Post.find({ username });
+      for (const post of posts) {
+        for (const m of (post.media || [])) {
+          if (m.public_id) {
+            try { await deleteFromCloudinary(m.public_id); } catch (err) {
+              console.warn('⚠️ Failed to delete post media from Cloudinary:', m.public_id, err?.message || err);
+            }
+          }
+        }
+      }
+      await Post.deleteMany({ username });
+    } catch (err) {
+      console.warn('⚠️ Post deletion phase encountered an error:', err?.message || err);
+    }
+
+    // 2) Remove comments and replies authored by user from all posts
+    try {
+      await Post.updateMany({}, { $pull: { comments: { 'user.username': username } } });
+      await Post.updateMany({}, { $pull: { 'comments.$[].replies': { 'user.username': username } } });
+    } catch (err) {
+      console.warn('⚠️ Failed to purge comments/replies:', err?.message || err);
+    }
+
+    // 3) Remove likes and fix like counts
+    try {
+      const likedPosts = await Post.find({ likedBy: username }).select('_id likedBy');
+      for (const lp of likedPosts) {
+        await Post.updateOne({ _id: lp._id }, { $pull: { likedBy: username } });
+        const updated = await Post.findById(lp._id).select('likedBy');
+        const newLikes = (updated?.likedBy?.length || 0);
+        await Post.updateOne({ _id: lp._id }, { $set: { likes: newLikes } });
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to purge likes:', err?.message || err);
+    }
+
+    // 4) Delete direct messages and associated media
+    try {
+      const messages = await Message.find({ $or: [ { sender: username }, { recipient: username } ] });
+      for (const msg of messages) {
+        for (const m of (msg.media || [])) {
+          if (m.public_id) {
+            try { await deleteFromCloudinary(m.public_id); } catch (err) {
+              console.warn('⚠️ Failed to delete message media from Cloudinary:', m.public_id, err?.message || err);
+            }
+          }
+        }
+      }
+      await Message.deleteMany({ $or: [ { sender: username }, { recipient: username } ] });
+    } catch (err) {
+      console.warn('⚠️ Message deletion phase encountered an error:', err?.message || err);
+    }
+
+    // 5) Delete community messages authored by the user (and media)
+    try {
+      const cmsgs = await CommunityMessage.find({ 'sender.username': username });
+      for (const cm of cmsgs) {
+        for (const m of (cm.media || [])) {
+          if (m.public_id) {
+            try { await deleteFromCloudinary(m.public_id); } catch (err) {
+              console.warn('⚠️ Failed to delete community message media from Cloudinary:', m.public_id, err?.message || err);
+            }
+          }
+        }
+      }
+      await CommunityMessage.deleteMany({ 'sender.username': username });
+    } catch (err) {
+      console.warn('⚠️ Community message deletion phase encountered an error:', err?.message || err);
+    }
+
+    // 6) Remove the user from all communities (members/admins)
+    try {
+      await Community.updateMany({}, { $pull: { members: username, admins: username } });
+    } catch (err) {
+      console.warn('⚠️ Failed to remove user from communities:', err?.message || err);
+    }
+
+    // 7) Delete community invites
+    try {
+      await CommunityInvite.deleteMany({ $or: [ { sender: username }, { recipient: username } ] });
+    } catch (err) {
+      console.warn('⚠️ Failed to delete community invites:', err?.message || err);
+    }
+
+    // 8) Delete friendships and friend requests
+    try {
+      await FriendRequest.deleteMany({ $or: [ { from: username }, { to: username } ] });
+      await Friendship.deleteMany({ users: { $in: [username] } });
+    } catch (err) {
+      console.warn('⚠️ Failed to delete friendships/requests:', err?.message || err);
+    }
+
+    // 9) Delete notifications addressed to or from this user
+    try {
+      await Notification.deleteMany({ $or: [ { to: username }, { from: username } ] });
+    } catch (err) {
+      console.warn('⚠️ Failed to delete notifications:', err?.message || err);
+    }
+
+    // 10) Delete call logs involving the user
+    try {
+      await CallLog.deleteMany({ $or: [ { caller: username }, { receiver: username }, { participants: username } ] });
+    } catch (err) {
+      console.warn('⚠️ Failed to delete call logs:', err?.message || err);
+    }
+
+    // 11) Delete auth tokens
+    try {
+      await Token.deleteOne({ username });
+    } catch (err) {
+      console.warn('⚠️ Failed to delete auth token:', err?.message || err);
+    }
+
+    // 12) Finally delete the user account
+    await User.findOneAndDelete({ username });
+
+    return res.json({ success: true, message: `All data for ${username} has been permanently deleted.` });
+
+  } catch (err) {
+    console.error('❌ SuperAdmin cascade delete failed:', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete user and related data.' });
+  }
+});

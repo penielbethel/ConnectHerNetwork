@@ -3,9 +3,10 @@ const router = express.Router();
 const User = require('../models/User');
 const Post = require('../models/Post');
 const { deleteFromCloudinary } = require('../cloudinary'); // root-level import
+const verifyTokenAndRole = require("../middleware/verifyTokenAndRole");
 
 // Delete a user and all their posts and media
-router.delete('/:username', async (req, res) => {
+router.delete('/:username', verifyTokenAndRole(['superadmin']), async (req, res) => {
   try {
     const { username } = req.params;
 

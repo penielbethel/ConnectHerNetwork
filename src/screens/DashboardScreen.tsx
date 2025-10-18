@@ -1771,7 +1771,7 @@ const styles = StyleSheet.create({
   // Individual suggestion card
   suggestionItem: {
     width: 120,
-    backgroundColor: colors.surface,
+    backgroundColor: '#ffe6f2',
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 10,
@@ -1809,7 +1809,7 @@ const styles = StyleSheet.create({
   },
   // Name + add friend button
   suggestionName: {
-    color: colors.text,
+    color: '#FF1493',
     fontSize: 13,
     fontWeight: '600',
     marginTop: 6,
@@ -1851,8 +1851,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   composerInput: {
-    minHeight: 80,
-    maxHeight: 140,
+    minHeight: 60,
+    maxHeight: 120,
     color: colors.text,
     fontSize: 16,
     borderWidth: 1,
