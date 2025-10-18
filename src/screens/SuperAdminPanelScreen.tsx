@@ -96,6 +96,27 @@ const SuperAdminPanelScreen: React.FC = () => {
     }
   };
 
+  const handleDeleteUser = async (username: string) => {
+    try {
+      await adminService.deleteUser(username);
+      Alert.alert('Deleted', `User ${username} has been removed`);
+      await loadData();
+    } catch (e: any) {
+      Alert.alert('Delete Failed', e?.message || `Failed to delete ${username}`);
+    }
+  };
+
+  const confirmDeleteUser = (username: string) => {
+    Alert.alert(
+      'Delete User?',
+      `This will permanently remove ${username}, their posts, and media.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => handleDeleteUser(username) },
+      ]
+    );
+  };
+
   const shareAnalyticsReport = async () => {
     try {
       if (!analytics) {
@@ -295,6 +316,12 @@ const SuperAdminPanelScreen: React.FC = () => {
                   onPress={() => handleDemote(u?.username)}
                 >
                   <Text style={globalStyles.secondaryButtonText}>Demote</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[globalStyles.secondaryButton, styles.smallButton, { backgroundColor: '#ff6b6b', borderColor: '#ff6b6b' }]}
+                  onPress={() => confirmDeleteUser(u?.username)}
+                >
+                  <Text style={[globalStyles.secondaryButtonText, { color: '#fff' }]}>Delete</Text>
                 </TouchableOpacity>
               </View>
             </View>

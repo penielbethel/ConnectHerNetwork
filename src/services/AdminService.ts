@@ -27,6 +27,13 @@ class AdminService {
   async getAnalytics() {
     return apiService['makeRequest']('/admin/analytics');
   }
+
+  async deleteUser(username: string) {
+    // Backend delete route mounted at /api/delete/:username
+    return apiService['makeRequest'](`/delete/${encodeURIComponent(username)}`, {
+      method: 'DELETE',
+    });
+  }
 }
 // Lazy proxy to avoid import-time construction
 const adminService = {
@@ -35,5 +42,6 @@ const adminService = {
   demoteUser: (username: string) => new AdminService().demoteUser(username),
   listUsers: () => new AdminService().listUsers(),
   getAnalytics: () => new AdminService().getAnalytics(),
+  deleteUser: (username: string) => new AdminService().deleteUser(username),
 };
 export default adminService;

@@ -22,6 +22,7 @@ import PushNotificationService from '../services/pushNotifications';
 import socketService from '../services/SocketService';
 import {colors, globalStyles} from '../styles/globalStyles';
 import {getFlagEmojiForLocation} from '../utils/flags';
+import LinkedText from '../components/LinkedText';
 
 interface UserProfile {
   username: string;
@@ -51,6 +52,7 @@ interface Post {
   likes: string[];
   comments: any[];
   createdAt: string;
+  originalPostId?: string;
 }
 
 interface User {
@@ -70,6 +72,7 @@ const ProfileScreen = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [savedPosts, setSavedPosts] = useState<Post[]>([]);
+  const [originalPostsById, setOriginalPostsById] = useState<Record<string, Post>>({});
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -274,7 +277,22 @@ const ProfileScreen = () => {
 
       const response = await apiService.getUserPosts(username);
       if (response.success) {
-        setPosts(response.posts);
+        const userPosts = response.posts;
+        setPosts(userPosts);
+
+        const ids = Array.from(new Set(userPosts.map((p: any) => p?.originalPostId).filter(Boolean)));
+        if (ids.length > 0) {
+          const originals = await Promise.all(ids.map(id => apiService.getPost(String(id)).catch(() => null)));
+          const map: Record<string, Post> = {};
+          originals.forEach((res, idx) => {
+            const id = ids[idx];
+            const normalized = (res as any)?.post || res;
+            if (normalized && typeof normalized === 'object') {
+              map[String(id)] = normalized as Post;
+            }
+          });
+          setOriginalPostsById(prev => ({ ...prev, ...map }));
+        }
       }
     } catch (error) {
       console.error('Error loading user posts:', error);
@@ -288,6 +306,20 @@ const ProfileScreen = () => {
 
       const list = await apiService.getSavedPosts(username);
       setSavedPosts(list);
+
+      const ids = Array.from(new Set(list.map((p: any) => p?.originalPostId).filter(Boolean)));
+      if (ids.length > 0) {
+        const originals = await Promise.all(ids.map(id => apiService.getPost(String(id)).catch(() => null)));
+        const map: Record<string, Post> = {};
+        originals.forEach((res, idx) => {
+          const id = ids[idx];
+          const normalized = (res as any)?.post || res;
+          if (normalized && typeof normalized === 'object') {
+            map[String(id)] = normalized as Post;
+          }
+        });
+        setOriginalPostsById(prev => ({ ...prev, ...map }));
+      }
     } catch (error) {
       console.error('Error loading saved posts:', error);
     }
@@ -573,7 +605,31 @@ const ProfileScreen = () => {
         <Text style={globalStyles.textMuted}>{formatTime(post.createdAt)}</Text>
       </View>
 
-      <Text style={styles.postContent}>{post.content}</Text>
+      {!!post.content && (
+        <LinkedText
+          text={post.content}
+          style={styles.postContent}
+          onUserPress={(username: string) => navigation.navigate('Profile' as never, { username } as never)}
+        />
+      )}
+
+      {post?.originalPostId && originalPostsById[String(post.originalPostId)] && (
+        <View style={{
+          backgroundColor: colors.bg,
+          borderLeftColor: colors.border,
+          borderLeftWidth: 3,
+          paddingLeft: 10,
+          paddingVertical: 6,
+          marginBottom: 8,
+        }}>
+          <Text style={globalStyles.textMuted}>Original post</Text>
+          <LinkedText
+            text={originalPostsById[String(post.originalPostId)].content}
+            style={styles.postContent}
+            onUserPress={(username: string) => navigation.navigate('Profile' as never, { username } as never)}
+          />
+        </View>
+      )}
 
       {post.files && post.files.length > 0 && (
         <ScrollView horizontal style={styles.mediaContainer}>
@@ -653,7 +709,7 @@ const ProfileScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.modalContent}>
+        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false}>
           <Text style={styles.sectionHeader}>Basic Info</Text>
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Name</Text>
@@ -787,7 +843,9 @@ const ProfileScreen = () => {
       </Modal>
       <ScrollView
         style={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        showsVerticalScrollIndicator={false}
+      >
         
         {/* Profile Info */}
         <View style={styles.profileSection}>

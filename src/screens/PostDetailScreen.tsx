@@ -32,6 +32,7 @@ interface Post {
   likes: string[];
   comments: any[];
   createdAt: string;
+  originalPostId?: string;
 }
 
 const PostDetailScreen: React.FC = () => {
@@ -43,8 +44,7 @@ const PostDetailScreen: React.FC = () => {
   
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  
-  // Add missing states for refresh and comments/replies
+  const [originalPost, setOriginalPost] = useState<Post | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ username: string; name?: string; avatar?: string } | null>(null);
   const [commentText, setCommentText] = useState('');
@@ -61,7 +61,22 @@ const PostDetailScreen: React.FC = () => {
     }
     try {
       const data = await apiService.getPost(postId);
-      setPost((data as any)?.post || data);
+      const normalized = (data as any)?.post || data;
+      setPost(normalized);
+      const origId = (normalized as any)?.originalPostId;
+      if (origId) {
+        try {
+          const origData = await apiService.getPost(String(origId));
+          const origNormalized = (origData as any)?.post || origData;
+          if (origNormalized && typeof origNormalized === 'object') {
+            setOriginalPost(origNormalized as Post);
+          }
+        } catch (e) {
+          console.warn('Failed to load original post', e);
+        }
+      } else {
+        setOriginalPost(null);
+      }
     } catch (err) {
       console.warn('Failed to load post', err);
     } finally {
@@ -286,6 +301,23 @@ const PostDetailScreen: React.FC = () => {
               style={styles.postContent}
               onUserPress={(username: string) => navigation.navigate('Profile' as never, { username } as never)}
             />
+          )}
+          {post?.originalPostId && originalPost && (
+            <View style={{
+              backgroundColor: colors.bg,
+              borderLeftColor: colors.border,
+              borderLeftWidth: 3,
+              paddingLeft: 10,
+              paddingVertical: 6,
+              marginBottom: 8,
+            }}>
+              <Text style={globalStyles.textMuted}>Original post</Text>
+              <LinkedText
+                text={originalPost.content}
+                style={styles.postContent}
+                onUserPress={(username: string) => navigation.navigate('Profile' as never, { username } as never)}
+              />
+            </View>
           )}
 
           {post.files && post.files.length > 0 && (

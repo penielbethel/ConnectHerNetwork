@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext } from 'react';
+﻿import React, { useEffect, useState, useContext } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
 import apiService from '../services/ApiService';
 import { globalStyles, colors } from '../styles/globalStyles';
 import { ThemeContext } from '../context/ThemeContext';
+import adminService from '../services/AdminService';
 import DocumentPicker from 'react-native-document-picker';
 
 type Sponsor = {
@@ -52,6 +53,12 @@ const AdminPanelScreen: React.FC = () => {
   const [postMediaFile, setPostMediaFile] = useState<any | null>(null);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
 
+  // User list (Admin view) state
+  const [users, setUsers] = useState<any[]>([]);
+  const [usersLoading, setUsersLoading] = useState<boolean>(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
   const loadData = async () => {
     setLoading(true);
     setError(null);
@@ -70,9 +77,57 @@ const AdminPanelScreen: React.FC = () => {
     }
   };
 
+  // Kick off overview data load on mount
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    const init = async () => {
+      setUsersLoading(true);
+      setUsersError(null);
+      try {
+        const res = await adminService.listUsers();
+        const rawUsers = Array.isArray((res as any)?.users)
+          ? (res as any).users
+          : Array.isArray(res)
+            ? res
+            : [];
+        setUsers(rawUsers);
+      } catch (e: any) {
+        setUsersError('Insufficient permissions to list all users. Use search below.');
+      } finally {
+        setUsersLoading(false);
+      }
+    };
+    init();
+  }, []);
+
+  const searchUsers = async (e?: any) => {
+    try {
+      setUsersLoading(true);
+      setUsersError(null);
+      const q = String(searchQuery || '').trim();
+      if (!q) {
+        setUsers([]);
+        setUsersLoading(false);
+        return;
+      }
+
+      const raw = await apiService.searchUsers(q);
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray((raw as any)?.users)
+          ? (raw as any).users
+          : [];
+      setUsers(list);
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to search users';
+      setUsersError(msg);
+    } finally {
+      setUsersLoading(false);
+    }
+  };
 
   const handleRegisterSponsor = async () => {
     try {
@@ -142,6 +197,7 @@ const AdminPanelScreen: React.FC = () => {
     setPostMediaFile(null);
   };
 
+  
   const submitPost = async () => {
     try {
       if (!activeSponsorForPost) {
@@ -215,9 +271,58 @@ const AdminPanelScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
+      {/* User Directory (no delete) */}
+      <Text style={styles.sectionTitle}>User Directory</Text>
+      <View style={[styles.card, theme === 'dark' ? null : { backgroundColor: colors.light.card, borderColor: colors.border }]}
+      >
+        <View style={{ marginBottom: 10 }}>
+          <TextInput
+            style={styles.input}
+            placeholder="Search users by name, @username, or email"
+            placeholderTextColor={colors.text + '80'}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={searchUsers}
+          />
+          <View style={{ flexDirection: 'row' }}>
+            <TouchableOpacity style={[globalStyles.button, styles.smallButton]} onPress={searchUsers}>
+              <Text style={globalStyles.buttonText}>Search</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[globalStyles.secondaryButton, styles.smallButton]} onPress={() => { setSearchQuery(''); setUsersError(null); }}>
+              <Text style={globalStyles.secondaryButtonText}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        {usersLoading ? (
+          <View style={[globalStyles.centered, { paddingVertical: 12 }]}> 
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={[globalStyles.textMuted, { marginTop: 8 }]}>Loading users…</Text>
+          </View>
+        ) : usersError ? (
+          <Text style={[globalStyles.textMuted, { color: '#ff6b6b' }]}>{usersError}</Text>
+        ) : users.length > 0 ? (
+          users.map((u) => (
+            <View key={u?.username || Math.random()} style={[styles.row, { alignItems: 'center' }]}> 
+              <View style={{ flex: 1 }}>
+                <Text style={globalStyles.text}>{u?.name || u?.username || 'Unknown'}</Text>
+                <Text style={globalStyles.textMuted}>@{u?.username}</Text>
+                {u?.email ? <Text style={globalStyles.textMuted}>{u.email}</Text> : null}
+                {u?.role ? <Text style={globalStyles.textMuted}>Role: {u.role}</Text> : null}
+              </View>
+              <TouchableOpacity style={[globalStyles.secondaryButton, styles.smallButton]}
+                onPress={() => Alert.alert('View Profile', `Open profile of @${u?.username}`)}>
+                <Text style={globalStyles.secondaryButtonText}>View</Text>
+              </TouchableOpacity>
+            </View>
+          ))
+        ) : (
+          <Text style={globalStyles.textMuted}>No users to display.</Text>
+        )}
+      </View>
+
       <Text style={styles.sectionTitle}>Register Sponsor</Text>
-      <View style={[styles.card, theme === 'dark' ? null : { backgroundColor: colors.light.card, borderColor: colors.border }]}>
-        <TextInput
+      <View style={[styles.card, theme === 'dark' ? null : { backgroundColor: colors.light.card, borderColor: colors.border }]}> 
+          <TextInput
           style={styles.input}
           placeholder="Company Name"
           placeholderTextColor={colors.text + '80'}
