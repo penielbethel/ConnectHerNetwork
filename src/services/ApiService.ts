@@ -127,6 +127,7 @@ export class ApiService {
         location: p?.location ?? p?.author?.location ?? p?.user?.location,
       },
       content: p?.caption ?? p?.content ?? '',
+      originalPostId: p?.originalPostId,
       files: this.normalizeMedia(p?.media),
       // Preserve numeric likes if backend uses a counter; UI is defensive
       likes: typeof p?.likes === 'number' ? p.likes : likedBy,
@@ -506,6 +507,7 @@ export class ApiService {
             location: user.location,
             role: user.role,
           }));
+          await AsyncStorage.setItem(`firstTimeUser:${user.username}`, 'true');
         } catch (_e) {}
       }
 
@@ -872,6 +874,18 @@ export class ApiService {
       return Array.isArray(res) ? res : [];
     } catch (error) {
       console.error('getUserSuggestions error:', error);
+      return [];
+    }
+  }
+
+  // Ranked top creators for onboarding and discovery
+  async getTopCreators(limit: number = 10, forUsername?: string) {
+    try {
+      const query = `limit=${encodeURIComponent(String(limit))}${forUsername ? `&for=${encodeURIComponent(forUsername)}` : ''}`;
+      const res = await this.makeRootRequest(`/api/users/top-creators?${query}`);
+      return Array.isArray(res) ? res : [];
+    } catch (error) {
+      console.error('getTopCreators error:', error);
       return [];
     }
   }

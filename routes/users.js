@@ -4,10 +4,16 @@ const User = require("../models/User"); // use model
 const Friendship = require("../models/Friendship");
 const FriendRequest = require("../models/FriendRequest");
 const Message = require("../models/Message");
+const Post = require("../models/Post");
 
-// ✅ Get user by username
-router.get('/:username', async (req, res) => {
+// ✅ Get user by username (avoid matching special endpoints)
+router.get('/:username', async (req, res, next) => {
   try {
+    // Skip dynamic match when path refers to a specific endpoint
+    if (req.params.username === 'top-creators') {
+      return next();
+    }
+
     const user = await User.findOne({ username: req.params.username });
     if (!user) return res.status(404).json({ message: 'User not found' });
 
@@ -140,7 +146,114 @@ router.get('/last-seen/:username', async (req, res) => {
   }
 });
 
+router.get("/top-creators", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const forUser = (req.query.for || "").trim();
 
+    const [friendCountsAgg, engagementAgg] = await Promise.all([
+      // Count friendships per username
+      Friendship.aggregate([
+        { $unwind: "$users" },
+        { $group: { _id: "$users", count: { $sum: 1 } } },
+      ]),
+      // Aggregate engagement per author username
+      Post.aggregate([
+        {
+          $project: {
+            username: 1,
+            likes: { $ifNull: ["$likes", 0] },
+            shares: { $ifNull: ["$shares", 0] },
+            commentsCount: { $size: { $ifNull: ["$comments", []] } },
+          },
+        },
+        {
+          $group: {
+            _id: "$username",
+            likes: { $sum: "$likes" },
+            shares: { $sum: "$shares" },
+            comments: { $sum: "$commentsCount" },
+          },
+        },
+      ]),
+    ]);
+
+    const friendCountsMap = new Map();
+    for (const f of friendCountsAgg) friendCountsMap.set(f._id, f.count || 0);
+
+    const engagementMap = new Map();
+    for (const e of engagementAgg) {
+      engagementMap.set(e._id, {
+        likes: e.likes || 0,
+        shares: e.shares || 0,
+        comments: e.comments || 0,
+      });
+    }
+
+    // Exclusions for the requesting user
+    const excludeUsernames = new Set();
+    if (forUser) {
+      excludeUsernames.add(forUser);
+      const [directFriendships, sentReqs, recvReqs] = await Promise.all([
+        Friendship.find({ users: forUser }),
+        FriendRequest.find({ from: forUser }),
+        FriendRequest.find({ to: forUser }),
+      ]);
+      for (const fr of directFriendships) {
+        for (const u of fr.users) {
+          if (u !== forUser) excludeUsernames.add(u);
+        }
+      }
+      for (const r of sentReqs) excludeUsernames.add(r.to);
+      for (const r of recvReqs) excludeUsernames.add(r.from);
+    }
+
+    // Union of usernames appearing in either map
+    const allUsernames = new Set([
+      ...Array.from(friendCountsMap.keys()),
+      ...Array.from(engagementMap.keys()),
+    ]);
+
+    const scored = [];
+    for (const username of allUsernames) {
+      if (excludeUsernames.has(username)) continue;
+      const fc = friendCountsMap.get(username) || 0;
+      const eng = engagementMap.get(username) || { likes: 0, shares: 0, comments: 0 };
+      // Weighted score (tweakable): friendships(1.5x), comments(1.5x), shares(2x), likes(1x)
+      const score = fc * 1.5 + eng.likes * 1 + eng.comments * 1.5 + eng.shares * 2;
+      scored.push({ username, score });
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    const topUsernames = scored.slice(0, limit).map((s) => s.username);
+
+    if (topUsernames.length === 0) return res.json([]);
+
+    const users = await User.find({ username: { $in: topUsernames } })
+      .select("username avatar firstName surname name category website bio")
+      .lean();
+
+    // Preserve ranking order
+    const orderMap = new Map(topUsernames.map((u, i) => [u, i]));
+    users.sort((a, b) => (orderMap.get(a.username) || 0) - (orderMap.get(b.username) || 0));
+
+    return res.json(
+      users.map((u) => ({
+        username: u.username,
+        avatar: u.avatar,
+        firstName: u.firstName,
+        surname: u.surname,
+        name: u.name,
+        category: u.category,
+        website: u.website,
+        bio: u.bio,
+      }))
+    );
+  } catch (err) {
+    console.error("/top-creators error", err);
+    return res.status(500).json([]);
+  }
+});
 
 module.exports = router;
 // 🔎 Resolve a user by username or full name (case-insensitive)

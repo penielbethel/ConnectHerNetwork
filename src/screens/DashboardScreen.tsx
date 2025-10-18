@@ -50,6 +50,8 @@ const DashboardScreen = () => {
   const [refreshing, setRefreshing] = React.useState(false);
   const [currentUser, setCurrentUser] = React.useState<any>(null);
   const [suggestedUsers, setSuggestedUsers] = React.useState<any[]>([]);
+  const [isFirstTimeUser, setIsFirstTimeUser] = React.useState(false);
+  const [showWelcomeBanner, setShowWelcomeBanner] = React.useState(false);
 
   // UI state
   const [showQuickMenu, setShowQuickMenu] = React.useState(false);
@@ -58,6 +60,9 @@ const DashboardScreen = () => {
   const [mediaPreviewVisible, setMediaPreviewVisible] = React.useState(false);
   const [previewPost, setPreviewPost] = React.useState<Post | null>(null);
   const [previewIndex, setPreviewIndex] = React.useState(0);
+  const [originalPostsById, setOriginalPostsById] = React.useState<Record<string, Post>>({});
+  const [isPosting, setIsPosting] = React.useState(false);
+  const [isResharing, setIsResharing] = React.useState(false);
 
   // Composer state
   const [newPostContent, setNewPostContent] = React.useState('');
@@ -67,6 +72,7 @@ const DashboardScreen = () => {
   const [mentionQuery, setMentionQuery] = React.useState('');
   const [composerFocused, setComposerFocused] = React.useState(false);
   const [uploadingMedia, setUploadingMedia] = React.useState(false);
+  const [uploadProgress, setUploadProgress] = React.useState(0);
 
   // Post UI state
   const [expandedCaptions, setExpandedCaptions] = React.useState<Record<string, boolean>>({});
@@ -229,6 +235,32 @@ const DashboardScreen = () => {
       // Support both array and { posts: [...] } shapes
       const list = Array.isArray(data) ? data : (data as any)?.posts || [];
       setPosts(list);
+
+      // Prefetch originals for reshares
+      const originalIds = Array.from(
+        new Set(list.map(p => (p as any)?.originalPostId).filter(Boolean))
+      );
+      if (originalIds.length) {
+        try {
+          const results = await Promise.all(
+            originalIds.map(id =>
+              apiService.getPost(String(id)).catch(() => null)
+            )
+          );
+          setOriginalPostsById(prev => {
+            const next: Record<string, Post> = { ...prev };
+            results.forEach(res => {
+              const postObj = res && (res as any).post ? (res as any).post : res;
+              if (postObj && (postObj as any)._id) {
+                next[String((postObj as any)._id)] = postObj as Post;
+              }
+            });
+            return next;
+          });
+        } catch (e) {
+          // ignore prefetch errors
+        }
+      }
     } catch (error) {
       console.error('Error loading posts:', error);
     } finally {
@@ -270,11 +302,26 @@ const DashboardScreen = () => {
     setupSocketListeners();
   }, []);
 
-  // Load suggestions when current user is available
+  // Load suggestions or popular list for first-time users
   useEffect(() => {
-    if (currentUser?.username) {
-      loadSuggestions();
-    }
+    const checkAndLoad = async () => {
+      if (!currentUser?.username) return;
+      try {
+        const key = `firstTimeUser:${currentUser.username}`;
+        const flag = await AsyncStorage.getItem(key);
+        const isFirst = flag === 'true';
+        setIsFirstTimeUser(isFirst);
+        setShowWelcomeBanner(isFirst);
+        if (isFirst) {
+          await loadPopularSuggestions();
+        } else {
+          await loadSuggestions();
+        }
+      } catch (_e) {
+        await loadSuggestions();
+      }
+    };
+    checkAndLoad();
   }, [currentUser?.username]);
 
   const onRefresh = async () => {
@@ -289,6 +336,7 @@ const DashboardScreen = () => {
       return;
     }
 
+    setIsPosting(true);
     try {
       const response = await apiService.createPost({
         content: newPostContent,
@@ -299,13 +347,16 @@ const DashboardScreen = () => {
         setNewPostContent('');
         setNewPostFiles([]);
         setShowComposer(false);
-        loadPosts(); // Refresh posts
+        await loadPosts(); // Refresh posts
+        Alert.alert('Success', 'Your post has been published');
       } else {
         Alert.alert('Error', 'Failed to create post');
       }
     } catch (error) {
       console.error('Error creating post:', error);
       Alert.alert('Error', 'Network error. Please try again.');
+    } finally {
+      setIsPosting(false);
     }
   };
 
@@ -360,7 +411,8 @@ const DashboardScreen = () => {
         name: file.fileName || file.name || 'upload',
       };
 
-      const res = await apiService.uploadFile(payload, kind);
+      setUploadProgress(0);
+      const res = await apiService.uploadFile(payload, kind, (p: number) => setUploadProgress(Math.round(p)));
 
       let uploaded: { url: string; type?: string; name?: string; thumbnailUrl?: string }[] = [];
       if (Array.isArray((res as any)?.files)) {
@@ -385,6 +437,7 @@ const DashboardScreen = () => {
       Alert.alert('Error', 'Failed to upload media');
     } finally {
       setUploadingMedia(false);
+      setUploadProgress(0);
     }
   };
 
@@ -512,6 +565,7 @@ const DashboardScreen = () => {
       setReshareModalVisible(false);
       return;
     }
+    setIsResharing(true);
     try {
       const caption = (reshareCaption || '').trim();
       await apiService.resharePost(original._id, caption ? caption : undefined);
@@ -528,6 +582,8 @@ const DashboardScreen = () => {
     } catch (error) {
       console.error('Error reposting:', error);
       Alert.alert('Error', 'Failed to repost');
+    } finally {
+      setIsResharing(false);
     }
   };
 
@@ -638,6 +694,50 @@ const DashboardScreen = () => {
     }
   };
 
+  const loadPopularSuggestions = async () => {
+    try {
+      if (!currentUser?.username) {
+        await loadSuggestions();
+        return;
+      }
+      const list = await apiService.getTopCreators(10, currentUser.username);
+      const normalized = Array.isArray(list) ? list : [];
+      if (normalized.length > 0) {
+        const top = normalized.map((u: any) => ({
+          username: u.username,
+          name: u.name || `${(u.firstName || '').trim()} ${(u.surname || '').trim()}`.trim() || u.username,
+          avatar: u.avatar,
+          location: (u as any).location,
+        }));
+        setSuggestedUsers(top);
+      } else {
+        await loadSuggestions();
+      }
+    } catch (error) {
+      console.error('Error loading popular suggestions:', error);
+      await loadSuggestions();
+    }
+  };
+
+  const dismissWelcomeBanner = async () => {
+    try {
+      const uname = currentUser?.username;
+      if (!uname) {
+        setShowWelcomeBanner(false);
+        setIsFirstTimeUser(false);
+        return;
+      }
+      const key = `firstTimeUser:${uname}`;
+      await AsyncStorage.removeItem(key);
+      setShowWelcomeBanner(false);
+      setIsFirstTimeUser(false);
+      await loadSuggestions();
+    } catch (_e) {
+      setShowWelcomeBanner(false);
+      setIsFirstTimeUser(false);
+    }
+  };
+
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -697,12 +797,23 @@ const DashboardScreen = () => {
       </View>
 
       {!!post.content && (
-        <LinkedText
-          text={post.content}
-          style={styles.postContent}
-          numberOfLines={expandedCaptions[post._id] ? undefined : 6}
-          onUserPress={(username: string) => handleMentionPress(username)}
-        />
+        post?.originalPostId ? (
+          <TouchableOpacity onPress={() => navigation.navigate('PostDetail' as never, { postId: String(post.originalPostId) } as never)}>
+            <LinkedText
+              text={post.content}
+              style={styles.postContent}
+              numberOfLines={expandedCaptions[post._id] ? undefined : 6}
+              onUserPress={(username: string) => handleMentionPress(username)}
+            />
+          </TouchableOpacity>
+        ) : (
+          <LinkedText
+            text={post.content}
+            style={styles.postContent}
+            numberOfLines={expandedCaptions[post._id] ? undefined : 6}
+            onUserPress={(username: string) => handleMentionPress(username)}
+          />
+        )
       )}
       {!!post.content && post.content.split(/\s+/).length > 60 && (
         <TouchableOpacity onPress={() => setExpandedCaptions(prev => ({...prev, [post._id]: !prev[post._id]}))}>
@@ -710,6 +821,41 @@ const DashboardScreen = () => {
             {expandedCaptions[post._id] ? 'Read less' : 'Read more'}
           </Text>
         </TouchableOpacity>
+      )}
+
+      {post?.originalPostId && originalPostsById[String(post.originalPostId)] && (
+        <View style={{
+          backgroundColor: colors.bg,
+          borderLeftColor: colors.border,
+          borderLeftWidth: 3,
+          paddingLeft: 10,
+          paddingVertical: 6,
+          marginBottom: 8,
+        }}>
+          <TouchableOpacity onPress={() => navigation.navigate('PostDetail' as never, { postId: String(post.originalPostId) } as never)}>
+            <Text style={globalStyles.textMuted}>{(() => {
+              const original = originalPostsById[String(post.originalPostId)];
+              const author = (original as any)?.author || {};
+              const display = author?.name || (author?.username ? `@${author.username}` : 'Unknown User');
+              return `Original Post by ${display}`;
+            })()}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('PostDetail' as never, { postId: String(post.originalPostId) } as never)}>
+            <LinkedText
+              text={originalPostsById[String(post.originalPostId)].content}
+              style={styles.postContent}
+              numberOfLines={expandedCaptions[String(post.originalPostId)] ? undefined : 4}
+              onUserPress={(username: string) => handleMentionPress(username)}
+            />
+          </TouchableOpacity>
+          {!!originalPostsById[String(post.originalPostId)].content && originalPostsById[String(post.originalPostId)].content.split(/\s+/).length > 40 && (
+            <TouchableOpacity onPress={() => setExpandedCaptions(prev => ({...prev, [String(post.originalPostId)]: !prev[String(post.originalPostId)]}))}>
+              <Text style={styles.toggleCaption}>
+                {expandedCaptions[String(post.originalPostId)] ? 'Read less' : 'Read more'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
 
       {post.files && post.files.length > 0 && (
@@ -746,7 +892,7 @@ const DashboardScreen = () => {
             if (isVideo) {
               const poster = (file as any)?.thumbnailUrl || (apiService as any)['getCloudinaryVideoThumbnail']?.(String(file?.url || '')) || '';
               return (
-                <TouchableOpacity key={index} activeOpacity={0.85} onPress={() => openMediaPreview(post, index)}>
+                <TouchableOpacity key={index} activeOpacity={0.85} onPress={() => { if (post?.originalPostId) { navigation.navigate('PostDetail' as never, { postId: String(post.originalPostId) } as never); } else { openMediaPreview(post, index); } }}>
                   <View style={{ width: itemWidth, height: itemHeight, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' }}>
                     <Video
                       source={{ uri: String(file?.url || '') }}
@@ -764,7 +910,7 @@ const DashboardScreen = () => {
               );
             }
             return (
-              <TouchableOpacity key={index} activeOpacity={0.85} onPress={() => openMediaPreview(post, index)}>
+              <TouchableOpacity key={index} activeOpacity={0.85} onPress={() => { if (post?.originalPostId) { navigation.navigate('PostDetail' as never, { postId: String(post.originalPostId) } as never); } else { openMediaPreview(post, index); } }}>
                 <Image
                   source={{uri: file.url}}
                   style={[styles.mediaImage, { width: itemWidth, height: Math.min(Math.round(itemWidth / (aspect || (4/3))), maxHeight) }]}
@@ -968,8 +1114,11 @@ const DashboardScreen = () => {
         </ScrollView>
       )}
       {uploadingMedia && (
-        <View style={{ marginTop: 8 }}>
-          <ActivityIndicator size="small" color={colors.primary} />
+        <View style={styles.uploadProgressRow}>
+          <View style={styles.progressBarBackground}>
+            <View style={[styles.progressBarFill, { width: `${uploadProgress}%` }]} />
+          </View>
+          <Text style={styles.progressText}>{uploadProgress}%</Text>
         </View>
       )}
       {showMentionSuggestions && (
@@ -1010,6 +1159,16 @@ const DashboardScreen = () => {
 
   return (
     <View style={[globalStyles.container, { backgroundColor: theme === 'dark' ? colors.dark.bg : colors.light.bg }] }>
+      {(isPosting || isResharing) && (
+        <Modal transparent visible>
+          <View style={styles.inflightOverlay}>
+            <View style={styles.inflightCard}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.inflightText}>{isPosting ? 'Please stay on board while we post your content' : 'Please stay on Board while we reshare Post to your Timeline'}</Text>
+            </View>
+          </View>
+        </Modal>
+      )}
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
@@ -1053,35 +1212,55 @@ const DashboardScreen = () => {
           })()}
         </Text>
 
+        {showWelcomeBanner && (
+          <View style={styles.welcomeBanner}>
+            <Text style={styles.welcomeTitle}>
+              {(() => {
+                const displayName = getDisplayName(currentUser);
+                return displayName ? `Welcome, ${displayName}!` : 'Welcome!';
+              })()}
+            </Text>
+            <Text style={styles.welcomeText}>
+              We’ve curated popular creators to help you get started.
+            </Text>
+            <View style={styles.bannerActions}>
+              <TouchableOpacity style={styles.bannerDismiss} onPress={dismissWelcomeBanner}>
+                <Icon name="close" size={16} color="#fff" />
+                <Text style={styles.bannerDismissText}>Dismiss</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Quick options menu */}
         {showQuickMenu && (
-          <View style={styles.quickMenu}>
+          <ScrollView horizontal style={styles.quickMenu} showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center' }}>
             <TouchableOpacity
               style={styles.quickMenuItem}
               onPress={() => navigation.navigate('Search' as never)}
             >
-              <Icon name="search" size={20} color={colors.text} />
+              <Icon name="search" size={20} color="#FF1493" />
               <Text style={styles.quickMenuText}>Search</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.quickMenuItem}
               onPress={() => navigation.navigate('CreateCommunity' as never)}
             >
-              <Icon name="add-circle" size={20} color={colors.text} />
+              <Icon name="add-circle" size={20} color="#FF1493" />
               <Text style={styles.quickMenuText}>Create</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.quickMenuItem}
               onPress={() => navigation.navigate('Settings' as never)}
             >
-              <Icon name="settings" size={20} color={colors.text} />
+              <Icon name="settings" size={20} color="#FF1493" />
               <Text style={styles.quickMenuText}>Settings</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.quickMenuItem}
               onPress={() => navigation.navigate('HelpDesk' as never)}
             >
-              <Icon name="help-outline" size={20} color={colors.text} />
+              <Icon name="help-outline" size={20} color="#FF1493" />
               <Text style={styles.quickMenuText}>Help Desk</Text>
             </TouchableOpacity>
             {(currentUser?.role === 'admin' || currentUser?.role === 'superadmin') && (
@@ -1093,16 +1272,16 @@ const DashboardScreen = () => {
                   )
                 }
               >
-                <Icon name="admin-panel-settings" size={20} color={colors.text} />
+                <Icon name="admin-panel-settings" size={20} color="#FF1493" />
                 <Text style={styles.quickMenuText}>Admin</Text>
               </TouchableOpacity>
             )}
-          </View>
+          </ScrollView>
         )}
 
         {/* People You May Know */}
         <View style={styles.greetingCard}>
-          <Text style={styles.peopleHeading}>People You May Know</Text>
+          <Text style={styles.peopleHeading}>{isFirstTimeUser ? 'Popular Creators To Follow' : 'People You May Know'}</Text>
 
           {/* Suggestions */}
           {suggestedUsers.length > 0 && (
@@ -1403,6 +1582,52 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
   },
+  welcomeBanner: {
+    ...globalStyles.paddingHorizontal,
+    marginHorizontal: 10,
+    marginTop: 6,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  welcomeTitle: {
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  welcomeText: {
+    color: colors.text,
+    fontSize: 14,
+  },
+  bannerActions: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  bannerDismiss: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 18,
+  },
+  bannerDismissText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
   headerButton: {
     marginLeft: 15,
   },
@@ -1445,7 +1670,6 @@ const styles = StyleSheet.create({
   // Global quick options menu
   quickMenu: {
     flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: colors.surface,
     marginHorizontal: 10,
     marginTop: 4,
@@ -1472,7 +1696,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   quickMenuText: {
-    color: colors.text,
+    color: '#FF1493',
     fontSize: 13,
     fontWeight: '600',
     marginLeft: 6,
@@ -1623,6 +1847,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 10,
   },
+  composerInputContainer: {
+    flex: 1,
+  },
+  composerInput: {
+    minHeight: 80,
+    maxHeight: 140,
+    color: colors.text,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    textAlignVertical: 'top',
+  },
   authorInfo: {
     marginLeft: 10,
   },
@@ -1709,6 +1948,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginTop: 10,
+  },
+  uploadProgressRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  progressBarBackground: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.border,
+  },
+  progressBarFill: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
+  progressText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
   },
   commentInput: {
     flex: 1,
@@ -1816,6 +2077,33 @@ const styles = StyleSheet.create({
   modalActions: {
     ...globalStyles.flexRowBetween,
     marginTop: 12,
+  },
+  inflightOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 50,
+  },
+  inflightCard: {
+    backgroundColor: colors.surface,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    maxWidth: '85%',
+  },
+  inflightText: {
+    marginTop: 10,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   // --- Media preview styles ---
   previewContainer: {
