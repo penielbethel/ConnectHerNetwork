@@ -251,6 +251,15 @@ export class PushNotificationService {
         importance: 5,
         vibrate: true,
       },
+      {
+        channelId: 'sponsors_alerts',
+        channelName: 'Sponsors Alerts',
+        channelDescription: 'Notifications about sponsor posts and opportunities',
+        playSound: true,
+        soundName: 'default',
+        importance: 5, // Ensure heads-up visibility
+        vibrate: true,
+      },
     ];
 
     channels.forEach(channel => {
@@ -296,12 +305,16 @@ export class PushNotificationService {
       if (fcmToken) {
         console.log('FCM Token:', fcmToken);
         await this.saveFCMToken(fcmToken);
+        try { await this.subscribeToTopic('new_posts'); } catch (_) {}
+        try { await this.subscribeToTopic('sponsor_posts'); } catch (_) {}
       }
 
       // Listen for token refresh
       messaging().onTokenRefresh(async (token) => {
         console.log('FCM Token refreshed:', token);
         await this.saveFCMToken(token);
+        try { await this.subscribeToTopic('new_posts'); } catch (_) {}
+        try { await this.subscribeToTopic('sponsor_posts'); } catch (_) {}
       });
 
       // Handle foreground messages
@@ -425,7 +438,11 @@ export class PushNotificationService {
     const isCall = !!(data?.caller || dtype === 'call' || dtype === 'group_call' || String(notification.title || '').toLowerCase().includes('call'));
     const channelId = isCall
       ? 'connecther_calls'
-      : (dtype === 'friend' || dtype === 'friend_request' ? 'connecther_notifications' : 'connecther_messages');
+      : (dtype === 'sponsor' || dtype === 'sponsor_alert'
+          ? 'sponsors_alerts'
+          : ((dtype === 'post' || dtype === 'like' || dtype === 'comment' || dtype === 'reply' || dtype === 'share')
+              ? 'connecther_notifications'
+              : (dtype === 'friend' || dtype === 'friend_request' ? 'connecther_notifications' : 'connecther_messages')));
     const actions = isCall ? ['Accept', 'Decline'] : ['View'];
 
     PushNotification.localNotification({
@@ -479,8 +496,23 @@ export class PushNotificationService {
     if (data?.type) {
       switch (data.type) {
         case 'message':
-          // Navigate to messages screen
-          console.log('Navigate to messages');
+          // Navigate directly to Conversation screen for the sender
+          try {
+            const chatId = (data as any)?.roomId || (data as any)?.chatId;
+            const recipientUsername = (data as any)?.senderUsername || (data as any)?.from || (data as any)?.username;
+            const recipientName = (data as any)?.senderName || recipientUsername;
+            const recipientAvatar = (data as any)?.senderAvatar || '';
+            if (recipientUsername) {
+              navigate('Conversation', {
+                chatId,
+                recipientUsername,
+                recipientName,
+                recipientAvatar,
+              });
+            }
+          } catch (e) {
+            console.log('Navigate to Conversation (message) failed:', e);
+          }
           break;
         case 'incoming_call':
           // Local incoming call notification from CallNotifications
@@ -543,9 +575,28 @@ export class PushNotificationService {
           // Navigate to profile screen
           console.log('Navigate to profile');
           break;
+        case 'sponsor':
+          try {
+            const sponsorId = (data as any)?.sponsorId || (data as any)?.id;
+            if (sponsorId) {
+              navigate('Sponsors', { sponsorId });
+            }
+          } catch (e) {
+            console.log('Navigate to Sponsors failed:', e);
+          }
+          break;
+        case 'post':
+          try {
+            const postId = (data as any)?.postId;
+            if (postId) {
+              navigate('Profile', { postId });
+            }
+          } catch (e) {
+            console.log('Navigate to Post failed:', e);
+          }
+          break;
         default:
-          // Navigate to home screen
-          console.log('Navigate to home');
+          console.log('Unknown notification type:', data.type);
           break;
       }
     }

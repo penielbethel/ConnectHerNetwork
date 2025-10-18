@@ -48,6 +48,8 @@ const http = require("http");
 const server = http.createServer(app);
 const { Server } = require("socket.io");
 const io = new Server(server, {
+  pingInterval: 15000,
+  pingTimeout: 20000,
   cors: {
     origin: "*", // Or restrict to your frontend origin
     methods: ["GET", "POST"]
@@ -55,30 +57,28 @@ const io = new Server(server, {
 });
 module.exports.io = io;
 const onlineUsers = new Set();
+const userHeartbeats = new Map();
 app.set("io", io);
 
-// 🗂️ MongoDB Models
-const FriendRequest = require("./models/FriendRequest");
-const Friendship = require("./models/Friendship");
-const Message = require("./models/Message");
-const callStartTimes = new Map();
-const activeCalls = new Map();
-
-
-
-// 📁 Ensure 'uploads' folder exists
-const uploadDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-  console.log("📁 'uploads/' folder created");
-}
-
-// 🖼️ Serve uploaded images
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ limit: '100mb', extended: true }));
-
-
+// Presence timeout sweeper: mark users offline when heartbeat is stale
+setInterval(async () => {
+  const now = Date.now();
+  for (const [username, last] of userHeartbeats.entries()) {
+    if (now - last > 45000) {
+      if (onlineUsers.has(username)) {
+        onlineUsers.delete(username);
+        io.emit("user-offline", username);
+        io.emit("update-online-users", Array.from(onlineUsers));
+        try {
+          await User.updateOne({ username }, { lastSeen: new Date(last) });
+        } catch (err) {
+          console.error("❌ Failed to persist lastSeen on timeout:", err);
+        }
+      }
+      userHeartbeats.delete(username);
+    }
+  }
+}, 15000);
 const communityRoutes = require('./routes/communities');
 app.use("/api/communities", communityRoutes);
 
@@ -647,7 +647,11 @@ socket.on("friend-request-status", (toUser) => {
 });
 socket.on("register", (username) => {
   socket.username = username;
-  onlineUsers.add(username);
+  if (!onlineUsers.has(username)) {
+    onlineUsers.add(username);
+    io.emit("user-online", username);
+  }
+  userHeartbeats.set(username, Date.now());
   io.emit("update-online-users", Array.from(onlineUsers));
 });
 socket.on("disconnect", async () => {
@@ -655,6 +659,7 @@ socket.on("disconnect", async () => {
 
   if (socket.username) {
     onlineUsers.delete(socket.username);
+    io.emit("user-offline", socket.username);
     io.emit("update-online-users", Array.from(onlineUsers));
     // ✅ Update lastSeen in DB
     try {
@@ -676,6 +681,12 @@ socket.on("register", (username) => {
   if (!username) return;
   socket.username = username;
   socket.join(username); // Private room for DM & call alerts
+  if (!onlineUsers.has(username)) {
+    onlineUsers.add(username);
+    io.emit("user-online", username);
+  }
+  userHeartbeats.set(username, Date.now());
+  io.emit("update-online-users", Array.from(onlineUsers));
   console.log(`✅ Registered user socket: ${username}`);
 });
 

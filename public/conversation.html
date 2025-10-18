@@ -664,18 +664,36 @@
   <button onclick="closeSearchModal()" style="margin-top:20px; padding:8px 20px; background:#ff4081; color:white; border:none; border-radius:6px;">Close</button>
 </div>
 
+  <style>
+    .typing-bars { display: flex; align-items: flex-end; gap: 3px; }
+    .typing-bars .bar { width: 4px; height: 10px; background: #ff80ab; border-radius: 2px; animation: typingBar 0.6s infinite ease-in-out; opacity: 0.95; }
+    .typing-bars .bar:nth-child(1) { animation-duration: 0.48s; }
+    .typing-bars .bar:nth-child(2) { animation-duration: 0.56s; }
+    .typing-bars .bar:nth-child(3) { animation-duration: 0.64s; }
+    .typing-bars .bar:nth-child(4) { animation-duration: 0.56s; }
+    .typing-bars .bar:nth-child(5) { animation-duration: 0.48s; }
+    @keyframes typingBar { 0% { transform: scaleY(0.4); } 50% { transform: scaleY(1); } 100% { transform: scaleY(0.4); } }
+  </style>
   <div id="typingIndicator" style="
   display: none;
   margin: 5px 15px;
   font-size: 13px;
-  padding: 5px 10px;
+  padding: 6px 10px;
   color: #fff;
   border-radius: 12px;
-  background: linear-gradient(90deg, #ff4081, #ff80ab);
+  background: #2a2a2a;
   width: fit-content;
-  animation: pulseTyping 1.2s infinite ease-in-out;
 ">
-  User is typing...
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <div class="typing-bars">
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+    </div>
+    <span class="typing-label" style="color:#ccc">typing…</span>
+  </div>
 </div>
 
 <div class="messages" id="messageContainer"></div>
@@ -833,8 +851,9 @@ let forwardMessageContent = "";
 
 // 🌐 Get current user and chat target
 const urlParams = new URLSearchParams(window.location.search);
-const username = urlParams.get("user"); // friend's username
-const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+const username = urlParams.get("user") || 'demo-friend'; // friend's username
+let currentUser = JSON.parse(localStorage.getItem("currentUser")) || null;
+if (!currentUser || !currentUser.username) { currentUser = { username: 'preview-user', name: 'Preview User', avatar: 'logo.png' }; }
 
 // 📡 Connect Socket.IO with current username in query
 const API = "https://connecther.network";
@@ -925,14 +944,19 @@ profileLink.appendChild(avatarEl);
     // ✅ Typing indicator listener — added after user is fetched
     socket.on("typing", ({ from }) => {
       if (from === username) {
-        document.getElementById("typingIndicator").textContent = `${user.name} is typing...`;
-        document.getElementById("typingIndicator").style.display = "block";
+        const el = document.getElementById("typingIndicator");
+        if (!el) return;
+        const label = el.querySelector(".typing-label");
+        if (label) label.textContent = `${user.name} is typing…`;
+        el.style.display = "block";
       }
     });
 
     socket.on("stopTyping", ({ from }) => {
       if (from === username) {
-        document.getElementById("typingIndicator").style.display = "none";
+        const el = document.getElementById("typingIndicator");
+        if (!el) return;
+        el.style.display = "none";
       }
     });
   });

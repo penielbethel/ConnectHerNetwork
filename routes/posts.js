@@ -32,6 +32,33 @@ router.post('/', async (req, res) => {
     });
 
     await newPost.save();
+    // Broadcast push notification to all users via FCM topic
+    try {
+      const message = {
+        topic: 'new_posts',
+        notification: {
+          title: 'New Post',
+          body: `${user.username} posted a new update`,
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channel_id: 'connecther_notifications',
+            sound: 'default',
+          },
+        },
+        data: {
+          type: 'post',
+          postId: String(newPost._id),
+        },
+      };
+      admin.messaging().send(message).catch((e) => {
+        console.log('FCM new_post push failed', e?.message || e);
+      });
+    } catch (e) {
+      console.log('FCM new_post push setup failed', e?.message || e);
+    }
+
     res.status(201).json(newPost);
   } catch (err) {
     console.error("❌ Error creating post:", err);

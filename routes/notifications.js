@@ -3,6 +3,7 @@ const router = express.Router();
 const Notification = require("../models/Notification");
 const User = require("../models/User");
 const admin = require("../firebase"); // Firebase Admin SDK
+const Sponsor = require("../models/Sponsor");
 
 router.use(express.json());
 
@@ -14,7 +15,56 @@ router.get("/sponsor-alerts", async (req, res) => {
     const alerts = await Notification.find({ forAll: true, type: "sponsor" })
       .sort({ createdAt: -1 })
       .limit(20);
-    res.json(alerts);
+
+    // Enrich each alert with sponsor name/logo and normalize fields for client
+    const enriched = await Promise.all(
+      alerts.map(async (n) => {
+        let sponsor = null;
+        let caption = undefined;
+        let jobLink = undefined;
+        try {
+          if (n.sponsorId) {
+            const s = await Sponsor.findById(n.sponsorId);
+            if (s) {
+              sponsor = { name: s.companyName, avatar: s.logo };
+              // Try to recover caption/jobLink from latest post if postId not present
+              if (!n.postId && Array.isArray(s.posts) && s.posts.length > 0) {
+                const last = s.posts[s.posts.length - 1];
+                caption = last?.caption;
+                jobLink = last?.jobLink;
+              }
+            }
+          }
+        } catch (_) {}
+        const sponsorName = sponsor?.name || "Sponsor";
+        const baseTitle = n.title || "New Sponsorship Alert";
+        const title = baseTitle.includes(sponsorName)
+          ? baseTitle
+          : `${baseTitle} from ${sponsorName}`;
+        const message = n.content || (caption ? String(caption) : "Tap to view sponsor details");
+        return {
+          _id: n._id,
+          type: "sponsor",
+          title,
+          message,
+          sender: {
+            username: "sponsor",
+            name: sponsorName,
+            avatar: sponsor?.avatar || "",
+          },
+          data: {
+            sponsorId: n.sponsorId ? String(n.sponsorId) : undefined,
+            postId: n.postId ? String(n.postId) : undefined,
+            caption: caption,
+            jobLink: jobLink,
+          },
+          isRead: !!n.read,
+          createdAt: n.createdAt,
+        };
+      })
+    );
+
+    res.json(enriched);
   } catch (err) {
     console.error("❌ Error fetching sponsor alerts:", err);
     res.status(500).json([]);

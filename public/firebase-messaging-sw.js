@@ -25,7 +25,8 @@ messaging.onBackgroundMessage(function (payload) {
     icon: '/logo.png',
     vibrate: [200, 100, 200],
     tag: 'push-alert',
-    renotify: true
+    renotify: true,
+    data: payload.data || {}
     // Note: No sound key here — browser doesn't auto-play
   };
 
@@ -36,12 +37,25 @@ messaging.onBackgroundMessage(function (payload) {
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
 
+  const data = event.notification && event.notification.data ? event.notification.data : {};
+  const type = (data && data.type) || '';
+  const postId = (data && (data.postId || data.id)) || '';
++  const sponsorId = (data && (data.sponsorId || data.id)) || '';
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
       for (const client of clientList) {
         if (client.url && 'focus' in client) return client.focus();
       }
-      return clients.openWindow('/');
+-      if (type === 'post' || type === 'like' || type === 'comment') {
+-        return clients.openWindow(postId ? `/post.html?id=${postId}` : '/');
+-      }
++      if (type === 'sponsor') {
++        return clients.openWindow(sponsorId ? `/sponsorsposts.html?id=${sponsorId}` : '/sponsors.html');
++      } else if (type === 'post' || type === 'like' || type === 'comment') {
++        return clients.openWindow(postId ? `/post.html?id=${postId}` : '/');
++      }
+       return clients.openWindow('/');
     })
   );
 });

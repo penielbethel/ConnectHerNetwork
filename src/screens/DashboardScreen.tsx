@@ -33,6 +33,7 @@ import LinkedText from '../components/LinkedText';
 import { ThemeContext } from '../context/ThemeContext';
 
 const DashboardScreen = () => {
+  const [showMediaPickerModal, setShowMediaPickerModal] = React.useState(false);
   const [authorRoles, setAuthorRoles] = React.useState<Record<string, string>>({});
 
   // Theme
@@ -442,16 +443,7 @@ const DashboardScreen = () => {
   };
 
   const handleMediaPicker = () => {
-    Alert.alert(
-      'Select Media',
-      'Choose an option',
-      [
-        { text: 'Camera', onPress: () => openCamera() },
-        { text: 'Gallery', onPress: () => openGallery() },
-        { text: 'Document', onPress: () => openDocumentPicker() },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
+    setShowMediaPickerModal(true);
   };
 
   const openCamera = async () => {
@@ -1136,6 +1128,28 @@ const DashboardScreen = () => {
               </TouchableOpacity>
             )}
           />
+        </View>
+      )}
+      {showMediaPickerModal && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Select Media</Text>
+            <TouchableOpacity style={styles.actionButton} onPress={() => { setShowMediaPickerModal(false); openCamera(); }}>
+              <Icon name="photo-camera" size={18} color={colors.text} />
+              <Text style={styles.actionText}>Camera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionButton} onPress={() => { setShowMediaPickerModal(false); openGallery(); }}>
+              <Icon name="photo-library" size={18} color={colors.text} />
+              <Text style={styles.actionText}>Gallery</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionButton} onPress={() => { setShowMediaPickerModal(false); openDocumentPicker(); }}>
+              <Icon name="insert-drive-file" size={18} color={colors.text} />
+              <Text style={styles.actionText}>Document</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionButton, { justifyContent: 'center' }]} onPress={() => setShowMediaPickerModal(false)}>
+              <Text style={styles.actionText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
       <View style={styles.composerActions}>

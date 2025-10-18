@@ -23,6 +23,7 @@ import Video from 'react-native-video';
 import {useRoute, useNavigation, useIsFocused, RouteProp} from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import FAIcon from 'react-native-vector-icons/FontAwesome5';
 import {launchImageLibrary, launchCamera} from 'react-native-image-picker';
 import DocumentPicker from 'react-native-document-picker';
 import apiService from '../services/ApiService';
@@ -33,6 +34,9 @@ import { PermissionsManager } from '../utils/permissions';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import IncomingCallModal from '../components/IncomingCallModal';
 import { initCallNotifications } from '../services/CallNotifications';
+import RecordingWaveform from '../components/RecordingWaveform';
+import RNFS from 'react-native-fs';
+import Clipboard from '@react-native-clipboard/clipboard';
 
 interface Message {
   _id: string;
@@ -135,6 +139,10 @@ const ConversationScreen = () => {
         socket.off('user-offline');
         socket.off('update-online-users');
       }
+      // Stop typing and clear timers
+      try { socketService.stopTyping(recipientUsername); } catch {}
+      if (typingInterval.current) { clearInterval(typingInterval.current as any); typingInterval.current = null; }
+      if (typingTimeout.current) { clearTimeout(typingTimeout.current); typingTimeout.current = null; }
       try { incomingSub.remove(); } catch {}
     };
   }, []);
@@ -432,6 +440,14 @@ const handleSendMessage = async () => {
   const text = messageText.trim();
   if (!text && pendingMedia.length === 0) return;
 
+  // Stop typing immediately when sending
+  if (isTyping) {
+    try { socketService.stopTyping(recipientUsername); } catch (_) {}
+    if (typingInterval.current) { clearInterval(typingInterval.current as any); typingInterval.current = null; }
+    if (typingTimeout.current) { clearTimeout(typingTimeout.current); typingTimeout.current = null; }
+    setIsTyping(false);
+  }
+
     // Editing existing text message
     if (editingId) {
       try {
@@ -603,37 +619,43 @@ const handleSendMessage = async () => {
   };
 
   const typingTimeout = useRef<NodeJS.Timeout | null>(null);
+  const typingInterval = useRef<NodeJS.Timeout | null>(null);
   const itemPositions = useRef<Record<string, number>>({});
 
   const handleTyping = (text: string) => {
     setMessageText(text);
-    
-    if (!isTyping && text.length > 0) {
-      setIsTyping(true);
-      socketService.startTyping(recipientUsername);
-    }
+    const hasText = text.trim().length > 0;
 
-    if (typingTimeout.current) {
-      clearTimeout(typingTimeout.current);
-    }
-
-    typingTimeout.current = setTimeout(() => {
+    if (hasText) {
+      if (!isTyping) {
+        setIsTyping(true);
+        socketService.startTyping(recipientUsername);
+        // Periodic typing pings while actively typing
+        if (typingInterval.current) clearInterval(typingInterval.current as any);
+        typingInterval.current = setInterval(() => {
+          try { socketService.startTyping(recipientUsername); } catch (_) {}
+        }, 1000);
+      }
+      // Reset stop timer on every keystroke
+      if (typingTimeout.current) {
+        clearTimeout(typingTimeout.current);
+      }
+      typingTimeout.current = setTimeout(() => {
+        setIsTyping(false);
+        if (typingInterval.current) { clearInterval(typingInterval.current as any); typingInterval.current = null; }
+        socketService.stopTyping(recipientUsername);
+      }, 1500);
+    } else {
+      // Empty input: stop immediately
       setIsTyping(false);
-      socketService.stopTyping(recipientUsername);
-    }, 1500);
+      if (typingInterval.current) { clearInterval(typingInterval.current as any); typingInterval.current = null; }
+      if (typingTimeout.current) { clearTimeout(typingTimeout.current); typingTimeout.current = null; }
+      try { socketService.stopTyping(recipientUsername); } catch (_) {}
+    }
   };
 
   const handleMediaPicker = () => {
-    Alert.alert(
-      'Select Media',
-      'Choose an option',
-      [
-        {text: 'Camera', onPress: openCamera},
-        {text: 'Gallery', onPress: openGallery},
-        {text: 'Document', onPress: openDocumentPicker},
-        {text: 'Cancel', style: 'cancel'},
-      ]
-    );
+    setShowMediaPickerModal(true);
   };
 
   const toggleStar = async (messageId: string) => {
@@ -677,6 +699,7 @@ const handleSendMessage = async () => {
   const [actionsMessage, setActionsMessage] = useState<Message | null>(null);
   const openMessageActions = (msg: Message) => setActionsMessage(msg);
   const closeMessageActions = () => setActionsMessage(null);
+  const [showMediaPickerModal, setShowMediaPickerModal] = useState(false);
 
   const beginForward = (message: Message) => {
     setForwardSource(message);
@@ -1073,12 +1096,72 @@ const handleSendMessage = async () => {
     }
   };
 
-  // Share media via system share sheet (shares link; file share requires extra lib)
-  const handleShare = async (file: { url: string; name?: string }) => {
+  // Share media via system share sheet without optional dependencies
+  const handleShare = async (file: { url: string; name?: string; type?: string }) => {
     try {
-      await Share.share({ message: file.url, title: file.name || 'Media' });
+      const name = (file.name && file.name.trim().length > 0) ? file.name : `media-${Date.now()}`;
+      // Download remote media to a local path first
+      const res = await apiService.downloadFile(file.url, name);
+      if (res?.success && res?.path) {
+        const localPath = Platform.OS === 'android' && !String(res.path).startsWith('file://') ? `file://${res.path}` : res.path;
+        if (Platform.OS === 'ios') {
+          // iOS supports local file sharing via the built-in Share API
+          await Share.share({ url: localPath, title: file.name || 'Media' });
+        } else {
+          // Android fallback: built-in Share does not attach files reliably, share link instead
+          await Share.share({ message: file.url, title: file.name || 'Media' });
+        }
+      } else {
+        // If download fails, share the link gracefully
+        await Share.share({ message: file.url, title: file.name || 'Media' });
+      }
     } catch (err) {
       console.error('handleShare error:', err);
+      Alert.alert('Error', 'Failed to share file');
+    }
+  };
+
+  // Share an entire message (text + optional file url)
+  const shareMessage = async (msg: Message) => {
+    try {
+      const parts: string[] = [];
+      if (msg.content && msg.content.trim().length > 0) {
+        parts.push(msg.content);
+      }
+      if (msg.file?.url) {
+        parts.push(msg.file.url);
+      }
+      const payload: any = { message: parts.join('\n') || 'Shared message' };
+      if (Platform.OS === 'ios' && msg.file?.url) {
+        payload.url = msg.file.url;
+        payload.title = msg.file?.name || 'Media';
+      } else {
+        payload.title = (msg.type === 'text') ? 'Message' : (msg.file?.name || 'Media');
+      }
+      await Share.share(payload);
+    } catch (err) {
+      console.error('shareMessage error:', err);
+    } finally {
+      closeMessageActions();
+    }
+  };
+
+  // Copy message text or fallback to file URL
+  const copyMessage = (msg: Message) => {
+    try {
+      const text = (msg.content && msg.content.trim().length > 0)
+        ? msg.content
+        : (msg.file?.url || '');
+      if (!text) {
+        Alert.alert('Nothing to copy');
+        return;
+      }
+      Clipboard.setString(text);
+      Alert.alert('Copied', 'Content copied to clipboard');
+    } catch (err) {
+      console.error('copyMessage error:', err);
+    } finally {
+      closeMessageActions();
     }
   };
 
@@ -1087,8 +1170,9 @@ const handleSendMessage = async () => {
     
     return (
       <View style={[styles.messageContainer, styles.otherMessage]}>
-        <View style={[styles.messageBubble, styles.otherBubble]}>
-          <Text style={styles.typingText}>typing...</Text>
+        <View style={[styles.messageBubble, styles.otherBubble, { flexDirection: 'row', alignItems: 'center' }]}>
+          <RecordingWaveform active={true} barCount={5} width={40} height={16} color={colors.textMuted} />
+          <Text style={[styles.typingText, { marginLeft: 8 }]}>typing…</Text>
         </View>
       </View>
     );
@@ -1099,11 +1183,30 @@ const handleSendMessage = async () => {
       style={globalStyles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 80}>
+      {/* Deep pink themed chat background with girly music icons */}
+      <View style={styles.chatBackgroundOverlay} pointerEvents="none">
+        <View style={styles.chatBackgroundTint} />
+        <View style={styles.chatIconGrid}>
+          <FAIcon name="music" size={56} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.08, transform: [{ rotate: '6deg' }] }]} />
+          <FAIcon name="headphones" size={52} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.07, transform: [{ rotate: '-8deg' }] }]} />
+          <FAIcon name="compact-disc" size={50} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.08, transform: [{ rotate: '12deg' }] }]} />
+          <FAIcon name="microphone" size={52} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.08, transform: [{ rotate: '-12deg' }] }]} />
+          <FAIcon name="heart" size={54} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.07, transform: [{ rotate: '10deg' }] }]} />
+          <FAIcon name="star" size={48} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '-6deg' }] }]} />
+          {/* repeat set for fuller background coverage */}
+          <FAIcon name="music" size={40} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '-4deg' }] }]} />
+          <FAIcon name="headphones" size={44} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '8deg' }] }]} />
+          <FAIcon name="compact-disc" size={42} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '-10deg' }] }]} />
+          <FAIcon name="microphone" size={44} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '12deg' }] }]} />
+          <FAIcon name="heart" size={40} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '-6deg' }] }]} />
+          <FAIcon name="star" size={38} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.05, transform: [{ rotate: '6deg' }] }]} />
+        </View>
+      </View>
       
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => { Keyboard.dismiss(); setShowEmojiPanel(false); navigation.goBack(); }}>
-          <Icon name="arrow-back" size={24} color="#000" />
+          <Icon name="arrow-back" size={24} color="#E9EDEF" />
         </TouchableOpacity>
         
         <TouchableOpacity 
@@ -1114,8 +1217,8 @@ const handleSendMessage = async () => {
             <View style={[styles.headerOnlineIndicator, !isOnline && { backgroundColor: colors.textMuted }]} />
           </View>
           <View>
-            <Text style={[styles.headerName, { color: '#000' }]}>{recipientName}</Text>
-            <Text style={[styles.headerStatus, { color: '#000' }]}>
+            <Text style={styles.headerName}>{recipientName}</Text>
+            <Text style={styles.headerStatus}>
               {isOnline ? 'Online now' : headerStatus}
             </Text>
           </View>
@@ -1126,16 +1229,16 @@ const handleSendMessage = async () => {
             style={{ marginRight: 12 }}
             onPress={() => navigation.navigate('Call' as never, { to: recipientUsername, type: 'video' } as never)}
           >
-            <Icon name="videocam" size={24} color="#000" />
+            <Icon name="videocam" size={24} color="#E9EDEF" />
           </TouchableOpacity>
           <TouchableOpacity
             style={{ marginRight: 12 }}
             onPress={() => navigation.navigate('Call' as never, { to: recipientUsername, type: 'audio' } as never)}
           >
-            <Icon name="call" size={24} color="#000" />
+            <Icon name="call" size={24} color="#E9EDEF" />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setShowMenu(prev => !prev)}>
-            <Icon name="more-vert" size={24} color="#000" />
+            <Icon name="more-vert" size={24} color="#E9EDEF" />
           </TouchableOpacity>
           {showMenu && (
             <View style={styles.headerMenu}>
@@ -1291,6 +1394,14 @@ const handleSendMessage = async () => {
                 <Text style={styles.actionsText}>Edit</Text>
               </TouchableOpacity>
             )}
+            <TouchableOpacity style={styles.actionsItem} onPress={() => copyMessage(actionsMessage)}>
+              <Icon name="content-copy" size={18} color={colors.text} />
+              <Text style={styles.actionsText}>Copy</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionsItem} onPress={() => shareMessage(actionsMessage)}>
+              <Icon name="share" size={18} color={colors.text} />
+              <Text style={styles.actionsText}>Share</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.actionsItem} onPress={() => { beginForward(actionsMessage); closeMessageActions(); }}>
               <Icon name="send" size={18} color={colors.text} />
               <Text style={styles.actionsText}>Forward</Text>
@@ -1316,24 +1427,48 @@ const handleSendMessage = async () => {
         </View>
       )}
 
+      {/* Media Picker Modal */}
+      {showMediaPickerModal && (
+        <View style={styles.actionsOverlay}>
+          <View style={styles.actionsContainer}>
+            <Text style={styles.actionsTitle}>Select Media</Text>
+            <TouchableOpacity style={styles.actionsItem} onPress={() => { setShowMediaPickerModal(false); openCamera(); }}>
+              <Icon name="photo-camera" size={18} color={colors.text} />
+              <Text style={styles.actionsText}>Camera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionsItem} onPress={() => { setShowMediaPickerModal(false); openGallery(); }}>
+              <Icon name="photo-library" size={18} color={colors.text} />
+              <Text style={styles.actionsText}>Gallery</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionsItem} onPress={() => { setShowMediaPickerModal(false); openDocumentPicker(); }}>
+              <Icon name="insert-drive-file" size={18} color={colors.text} />
+              <Text style={styles.actionsText}>Document</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionsItem, { justifyContent: 'center' }]} onPress={() => setShowMediaPickerModal(false)}>
+              <Text style={[styles.actionsText, { color: colors.textMuted }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Input */}
       <View style={styles.inputContainer}>
         <TouchableOpacity 
           style={styles.attachButton}
           onPress={handleMediaPicker}>
-          <Icon name="attach-file" size={24} color={colors.textMuted} />
+          <Icon name="attach-file" size={24} color="#8696A0" />
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.attachButton}
           onPress={() => setShowEmojiPanel(prev => !prev)}>
-          <Icon name="emoji-emotions" size={24} color={colors.textMuted} />
+          <Icon name="emoji-emotions" size={24} color="#8696A0" />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.attachButton}
           onPress={isRecording ? stopRecording : startRecording}
         >
-          <Icon name={isRecording ? 'stop-circle' : 'mic'} size={24} color={colors.textMuted} />
+          <Icon name={isRecording ? 'stop-circle' : 'mic'} size={24} color="#8696A0" />
         </TouchableOpacity>
         
         <TextInput
@@ -1353,7 +1488,7 @@ const handleSendMessage = async () => {
           <Icon 
             name="send" 
             size={20} 
-            color={(messageText.trim() || pendingMedia.length > 0) ? colors.text : colors.textMuted} 
+            color={(messageText.trim() || pendingMedia.length > 0) ? '#E9EDEF' : '#8696A0'} 
           />
         </TouchableOpacity>
       </View>
@@ -1406,10 +1541,10 @@ const handleSendMessage = async () => {
           <Text style={styles.recordText}>Recording {formatRecordTime(recordTimeMs)}</Text>
           <View style={styles.recordActions}>
             <TouchableOpacity style={styles.recordSend} onPress={sendVoiceNote}>
-              <Icon name="send" size={20} color={colors.text} />
+              <Icon name="send" size={20} color="#E9EDEF" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.recordCancel} onPress={cancelRecording}>
-              <Icon name="close" size={20} color={colors.text} />
+              <Icon name="close" size={20} color="#E9EDEF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -1431,10 +1566,12 @@ const styles = StyleSheet.create({
   header: {
     ...globalStyles.flexRowBetween,
     ...globalStyles.paddingHorizontal,
-    paddingVertical: 15,
-    backgroundColor: '#ff1493',
+    paddingVertical: 10,
+    backgroundColor: '#0B141A',
     borderBottomWidth: 1,
-    borderBottomColor: '#ff1493',
+    borderBottomColor: '#0B141A',
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
     // Ensure header and its overlays (menu) sit above message bubbles
     zIndex: 10000,
     elevation: 16,
@@ -1462,20 +1599,21 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: colors.success,
     borderWidth: 2,
-    borderColor: '#ff1493',
+    borderColor: '#0B141A',
   },
   headerName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: colors.text,
+    color: '#E9EDEF',
   },
   headerStatus: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: '#8696A0',
   },
   messagesList: {
     flex: 1,
     paddingHorizontal: 10,
+    backgroundColor: 'transparent',
   },
   messageContainer: {
     marginVertical: 2,
@@ -1502,11 +1640,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 191, 255, 0.08)'
   },
   ownBubble: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#005C4B',
     borderBottomRightRadius: 4,
   },
   otherBubble: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#202C33',
     borderBottomLeftRadius: 4,
   },
   messageText: {
@@ -1514,21 +1652,21 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   ownMessageText: {
-    color: colors.text,
+    color: '#E9EDEF',
   },
   otherMessageText: {
-    color: colors.text,
+    color: '#E9EDEF',
   },
   messageTime: {
     fontSize: 11,
     marginTop: 4,
   },
   ownMessageTime: {
-    color: colors.textMuted,
+    color: '#8696A0',
     textAlign: 'right',
   },
   otherMessageTime: {
-    color: colors.textMuted,
+    color: '#8696A0',
   },
   messageImage: {
     width: 200,
@@ -1548,11 +1686,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 16,
-    backgroundColor: colors.secondary,
+    backgroundColor: '#2A3942',
   },
   mediaActionText: {
     marginLeft: 6,
-    color: colors.text,
+    color: '#E9EDEF',
     fontSize: 13,
   },
   videoContainer: {
@@ -1582,9 +1720,9 @@ const styles = StyleSheet.create({
     ...globalStyles.flexRow,
     ...globalStyles.paddingHorizontal,
     paddingVertical: 10,
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: '#26353B',
     alignItems: 'flex-end',
   },
   attachButton: {
@@ -1594,13 +1732,14 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#2A3942',
     borderRadius: 20,
     paddingHorizontal: 15,
     paddingVertical: 10,
-    color: colors.text,
+    color: '#E9EDEF',
     fontSize: 16,
     maxHeight: 100,
+    backgroundColor: '#2A3942',
   },
   sendButton: {
     padding: 8,
@@ -1608,16 +1747,16 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   sendButtonActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#00A884',
   },
   emojiPanel: {
     ...globalStyles.flexRow,
     flexWrap: 'wrap',
     paddingHorizontal: 16,
     paddingBottom: 8,
-    backgroundColor: colors.surface,
+    backgroundColor: '#202C33',
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: '#26353B',
   },
   // Pending media panel styles
   pendingPanel: {
@@ -1951,6 +2090,27 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     borderRadius: 20,
     backgroundColor: colors.secondary,
+  },
+  // Chat background styles
+  chatBackgroundOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  chatBackgroundTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.background,
+  },
+  chatIconGrid: {
+    ...StyleSheet.absoluteFillObject,
+    paddingHorizontal: 20,
+    paddingVertical: 30,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignContent: 'space-around',
+    justifyContent: 'space-around',
+  },
+  chatBgIcon: {
+    margin: 12,
   },
 });
 

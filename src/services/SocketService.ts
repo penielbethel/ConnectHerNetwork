@@ -6,12 +6,20 @@ class SocketService {
   private socket: Socket | null = null;
   private baseUrl = 'https://connecther.network';
   private currentUsername: string | null = null;
+  private heartbeatTimer: any = null;
+  // Cache online users globally for instant presence across screens
+  private onlineUsers: Set<string> = new Set();
 
   initialize() {
     if (!this.socket) {
       this.socket = io(this.baseUrl, {
         transports: ['websocket'],
         autoConnect: true,
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 8000,
+        timeout: 20000,
       });
 
       this.setupEventListeners();
@@ -25,14 +33,29 @@ class SocketService {
     this.socket.on('connect', () => {
       console.log('✅ Socket connected');
       this.registerUser();
+      this.startHeartbeat();
     });
 
     this.socket.on('disconnect', () => {
       console.log('❌ Socket disconnected');
+      this.stopHeartbeat();
     });
 
     this.socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
+    });
+
+    // Presence events: keep global cache very sensitive
+    this.socket.on('update-online-users', (usernames: string[]) => {
+      try {
+        this.onlineUsers = new Set(Array.isArray(usernames) ? usernames : []);
+      } catch (_) {}
+    });
+    this.socket.on('user-online', (username: string) => {
+      if (username) this.onlineUsers.add(username);
+    });
+    this.socket.on('user-offline', (username: string) => {
+      if (username) this.onlineUsers.delete(username);
     });
 
     // Debug: log incoming group call-related events to aid live error tracking
@@ -65,8 +88,44 @@ class SocketService {
     }
   }
 
+  private startHeartbeat() {
+    if (this.heartbeatTimer || !this.socket) return;
+    const emitBeat = async () => {
+      try {
+        let username = this.currentUsername;
+        if (!username) {
+          const userStr = await AsyncStorage.getItem('currentUser');
+          const user = userStr ? JSON.parse(userStr) : null;
+          username = user?.username || null;
+          this.currentUsername = username;
+        }
+        if (username) {
+          this.socket!.emit('heartbeat', { username, ts: Date.now() });
+        }
+      } catch (_) {}
+    };
+    // First immediate beat then interval (more sensitive)
+    emitBeat();
+    this.heartbeatTimer = setInterval(emitBeat, 5000);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
   getSocket(): Socket | null {
     return this.socket;
+  }
+
+  // Presence getters for screens to hydrate immediately
+  getOnlineUsers(): string[] {
+    return Array.from(this.onlineUsers);
+  }
+  isOnline(username: string): boolean {
+    return this.onlineUsers.has(username);
   }
 
   emit(event: string, data: any) {
@@ -91,6 +150,7 @@ class SocketService {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
+      this.stopHeartbeat();
     }
   }
 
@@ -250,6 +310,9 @@ const socketServiceProxy = {
   on: (event: string, callback: (data: any) => void) => socketServiceSingleton.on(event, callback),
   off: (event: string, callback?: (data: any) => void) => socketServiceSingleton.off(event, callback),
   disconnect: () => socketServiceSingleton.disconnect(),
+  // Presence helpers
+  getOnlineUsers: () => socketServiceSingleton.getOnlineUsers(),
+  isOnline: (username: string) => socketServiceSingleton.isOnline(username),
   // Message helpers
   sendMessage: (data: { from: string; to: string; message: string; files?: any[]; replyTo?: string }) => socketServiceSingleton.sendMessage(data),
   sendCommunityMessage: (data: { room: string; from: string; message: string; files?: any[]; replyTo?: string }) => socketServiceSingleton.sendCommunityMessage(data),

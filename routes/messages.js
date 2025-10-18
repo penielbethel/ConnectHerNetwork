@@ -9,6 +9,9 @@ const sharp = require('sharp');
 const ffmpeg = require('fluent-ffmpeg');
 const Message = require('../models/Message');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../cloudinary'); // root-level import
+// Added for FCM push notifications to recipients
+const admin = require('../firebase');
+const UserModelForPush = require('../models/User');
 
 // Use memory storage so we can work directly with buffers
 const storage = multer.memoryStorage();
@@ -188,6 +191,61 @@ const io = req.app.get("io");
 const roomId = [sender, recipient].sort().join("_");
 io.to(roomId).emit("newMessage", saved);        // for conversation.html
 io.to(recipient).emit("newMessage", saved);     // for dashboard.html
+
+// ✅ Send FCM push notification to recipient devices
+try {
+  const [senderUser, recipientUser] = await Promise.all([
+    UserModelForPush.findOne({ username: sender }),
+    UserModelForPush.findOne({ username: recipient })
+  ]);
+  const tokens = Array.isArray(recipientUser?.fcmTokens) ? recipientUser.fcmTokens : [];
+  if (tokens.length > 0) {
+    // Build concise body preview
+    let body = '';
+    if (saved.text && String(saved.text).trim()) {
+      body = String(saved.text).trim().slice(0, 120);
+    } else if (saved.audio && String(saved.audio).trim()) {
+      body = 'Audio message';
+    } else if (Array.isArray(saved.media) && saved.media.length > 0) {
+      const m = saved.media[0] || {};
+      const t = (m.type || '').toLowerCase();
+      if (t.includes('image')) body = 'Photo';
+      else if (t.includes('video')) body = 'Video';
+      else body = 'File';
+      if (m.caption && String(m.caption).trim()) body += `: ${String(m.caption).trim().slice(0, 100)}`;
+    } else if (saved.caption && String(saved.caption).trim()) {
+      body = String(saved.caption).trim().slice(0, 120);
+    } else {
+      body = 'New message';
+    }
+
+    const title = `New message from ${(
+      senderUser?.name || `${senderUser?.firstName || ''} ${senderUser?.surname || ''}`
+    ).trim() || sender}`;
+
+    const messages = tokens.map(token => ({
+      token,
+      notification: { title, body },
+      android: {
+        priority: 'high',
+        notification: { channel_id: 'connecther_messages', sound: 'default' },
+      },
+      data: {
+        type: 'message',
+        senderUsername: String(sender),
+        senderName: String(senderUser?.name || senderUser?.username || sender),
+        senderAvatar: String(senderUser?.avatar || ''),
+        recipientUsername: String(recipient),
+        roomId: String(roomId),
+        chatId: String(roomId), // allow client to use roomId as chatId
+      },
+    }));
+
+    await Promise.allSettled(messages.map(m => admin.messaging().send(m)));
+  }
+} catch (pushErr) {
+  console.log('FCM message push failed', pushErr?.message || pushErr);
+}
 
 res.json({ success: true, message: saved });
   } catch (err) {

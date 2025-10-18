@@ -775,7 +775,7 @@ const CommunityChatScreen: React.FC = () => {
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={() => setMenuVisible(true)} style={styles.actionBtn}>
-            <Icon name="more-vert" size={22} color={colors.primary} />
+            <Icon name="more-vert" size={22} color="#E9EDEF" />
           </TouchableOpacity>
         </View>
       </View>
@@ -825,7 +825,7 @@ const CommunityChatScreen: React.FC = () => {
           editable={!(isGroupLocked && !meIsAdminOrCreator)}
         />
         <TouchableOpacity style={styles.sendBtn} onPress={sendText} disabled={isGroupLocked && !meIsAdminOrCreator}>
-          <Icon name="send" size={20} color={'#fff'} />
+          <Icon name="send" size={20} color={'#E9EDEF'} />
         </TouchableOpacity>
       </View>
 

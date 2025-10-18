@@ -86,11 +86,31 @@ const ChatScreen = () => {
           chat.lastMessage?.content.toLowerCase().includes(searchQuery.toLowerCase())
         );
       });
-      setFilteredChats(filtered);
+      setFilteredChats(sortChatsByPresence(filtered));
     } else {
-      setFilteredChats(chats);
+      setFilteredChats(sortChatsByPresence(chats));
     }
-  }, [searchQuery, chats, currentUser]);
+  }, [searchQuery, chats, currentUser, lastSeenByUser]);
+
+  // Sort helper to arrange by online and last seen (very sensitive)
+  const sortChatsByPresence = (list: Chat[]) => {
+    const score = (c: Chat) => {
+      const other = c.participants.find(p => p.username !== currentUser?.username);
+      const onlineScore = other?.isOnline ? 1 : 0;
+      const lsTs = other?.username && lastSeenByUser[other.username]
+        ? new Date(lastSeenByUser[other.username]).getTime()
+        : 0;
+      const updatedTs = new Date(c.updatedAt).getTime();
+      return { onlineScore, lsTs, updatedTs };
+    };
+    return [...list].sort((a, b) => {
+      const sa = score(a);
+      const sb = score(b);
+      if (sa.onlineScore !== sb.onlineScore) return sb.onlineScore - sa.onlineScore; // online first
+      if (sa.lsTs !== sb.lsTs) return sb.lsTs - sa.lsTs; // recent last seen next
+      return sb.updatedTs - sa.updatedTs; // fallback to recent chat activity
+    });
+  };
 
   const loadCurrentUser = async () => {
     try {
@@ -385,6 +405,13 @@ const ChatScreen = () => {
             ),
           }))
         );
+        // Update last-seen immediately when a user goes offline
+        apiService.getLastSeen(username).then(res => {
+          const ts = (res as any)?.lastSeen;
+          if (ts) {
+            setLastSeenByUser(prev => ({ ...prev, [username]: ts }));
+          }
+        }).catch(() => {});
       });
 
       // Handle online users list from server
@@ -400,10 +427,21 @@ const ChatScreen = () => {
         );
       });
 
-      // Refresh chats/friends list when a friendship is accepted
-      socket.on('friendship-accepted', () => {
-        loadChats();
-      });
+      // Initialize presence from cached global list
+      try {
+        const onlineUsers = socketService.getOnlineUsers?.() || [];
+        if (Array.isArray(onlineUsers)) {
+          setChats(prevChats =>
+            prevChats.map(chat => ({
+              ...chat,
+              participants: chat.participants.map(p => ({
+                ...p,
+                isOnline: onlineUsers.includes(p.username),
+              })),
+            }))
+          );
+        }
+      } catch (_) {}
     }
   };
 

@@ -19,7 +19,7 @@ import {colors, globalStyles} from '../styles/globalStyles';
 
 interface Notification {
   _id: string;
-  type: 'like' | 'comment' | 'follow' | 'message' | 'community' | 'friend_request';
+  type: 'like' | 'comment' | 'follow' | 'message' | 'community' | 'friend_request' | 'sponsor';
   title: string;
   message: string;
   sender: {
@@ -50,11 +50,7 @@ const NotificationScreen = () => {
   const [selectedTab, setSelectedTab] = useState<NotificationTab>('activity');
 
   // Local helper used across other screens to safely render avatar URIs
-  const getAvatarUri = (uri?: string) => {
-    if (!uri) return undefined as unknown as string;
-    if (/^https?:\/\//i.test(uri)) return uri;
-    return `${(apiService as any).rootUrl || 'https://connecther.network'}/${String(uri).replace(/^\/+/, '')}`;
-  };
+  const getAvatarUri = (uri?: string) => apiService.normalizeAvatar(uri);
 
   useEffect(() => {
     loadCurrentUser();
@@ -73,34 +69,38 @@ const NotificationScreen = () => {
     // Foreground handler to surface sponsor alerts instantly
     push.onMessage((msg: any) => {
       const type = msg?.data?.type || msg?.type;
-      if (type === 'sponsor_alert') {
-        try {
-          push.showLocalNotification({
-            title: msg?.notification?.title || msg?.title || 'Sponsor Alert',
-            body: msg?.notification?.body || msg?.body || 'New opportunity from a sponsor',
-            data: msg?.data || { type: 'sponsor_alert' },
-            channelId: 'sponsors_alerts',
-          });
-        } catch (e) {
-          console.log('Local sponsor alert failed:', e);
-        }
-        // Prepend into sponsors tab
-        const n: Notification = {
-          _id: String(Date.now()),
-          type: 'community',
-          title: msg?.notification?.title || msg?.title || 'Sponsor Alert',
-          message: msg?.notification?.body || msg?.body || '',
-          sender: {
-            username: msg?.data?.sponsorUsername || 'sponsor',
-            name: msg?.data?.sponsorName || 'Sponsor',
-            avatar: msg?.data?.sponsorAvatar || '',
-          },
-          data: msg?.data || {},
-          isRead: false,
-          createdAt: new Date().toISOString(),
-        } as any;
-        setNotifications(prev => [n, ...prev]);
-      }
+      if (type === 'sponsor' || type === 'sponsor_alert') {
+         try {
+           const sponsorName = msg?.data?.sponsorName || msg?.data?.sponsorUsername || 'Sponsor';
+           const caption = msg?.data?.caption;
+           const bodyText = caption ? String(caption) : (msg?.notification?.body || msg?.body || `Tap to view ${sponsorName} details`);
+           const titleText = msg?.notification?.title || msg?.title || `New Sponsorship Alert from ${sponsorName}`;
+           push.showLocalNotification({
+             title: titleText,
+             body: bodyText,
+             data: msg?.data || { type: 'sponsor' },
+             channelId: 'sponsors_alerts',
+           });
+         } catch (e) {
+           console.log('Local sponsor alert failed:', e);
+         }
+         // Prepend into sponsors tab
+         const n: Notification = {
+           _id: String(Date.now()),
+           type: 'sponsor',
+           title: msg?.notification?.title || msg?.title || `New Sponsorship Alert from ${msg?.data?.sponsorName || 'Sponsor'}`,
+           message: msg?.notification?.body || msg?.body || (msg?.data?.caption ? String(msg?.data?.caption) : ''),
+           sender: {
+             username: msg?.data?.sponsorUsername || 'sponsor',
+             name: msg?.data?.sponsorName || 'Sponsor',
+             avatar: msg?.data?.sponsorLogo || msg?.data?.sponsorAvatar || '',
+           },
+           data: msg?.data || {},
+           isRead: false,
+           createdAt: new Date().toISOString(),
+         } as any;
+         setNotifications(prev => [n, ...prev]);
+       }
     });
 
     // Background notifications are handled by the service; ensure it is active
@@ -303,6 +303,18 @@ const NotificationScreen = () => {
         navigation.navigate('Community' as never);
         break;
       
+      case 'sponsor':
+        {
+          const sponsorId = notification?.data?.sponsorId || notification?.data?.sponsorID || notification?.data?.id;
+          const name = notification?.sender?.name || 'Sponsor';
+          if (sponsorId) {
+            navigation.navigate('SponsorDetail' as never, { sponsorId, name } as never);
+          } else {
+            navigation.navigate('Sponsors' as never);
+          }
+        }
+        break;
+      
       default:
         break;
     }
@@ -431,6 +443,8 @@ const NotificationScreen = () => {
         return 'group';
       case 'friend_request':
         return 'person-add-alt';
+      case 'sponsor':
+        return 'work';
       default:
         return 'notifications';
     }
@@ -454,6 +468,8 @@ const NotificationScreen = () => {
         return colors.warning;
       case 'friend_request':
         return colors.success;
+      case 'sponsor':
+        return colors.primary;
       default:
         return colors.textMuted;
     }

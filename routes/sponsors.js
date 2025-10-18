@@ -13,6 +13,7 @@ const Sponsor = require("../models/Sponsor");
 const User = require("../models/User");
 const Notification = require("../models/Notification");
 const verifyTokenAndRole = require("../middleware/verifyTokenAndRole");
+const admin = require("../firebase");
 
 // Multer setup
 const multerStorage = multer.memoryStorage();
@@ -125,6 +126,45 @@ router.put("/:id/post", verifyTokenAndRole(["admin","superadmin"]), upload.singl
       createdAt: new Date(),
       forAll: true
     });
+
+    // Broadcast push notification to all users via FCM topic
+    try {
+      const message = {
+        topic: 'sponsor_posts',
+        notification: {
+          title: `New Sponsorship: ${sponsor.companyName}`,
+          body: caption ? String(caption) : `Tap to view ${sponsor.companyName} details`,
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channel_id: 'sponsors_alerts',
+            sound: 'default',
+          },
+        },
+        apns: {
+          payload: {
+            aps: { sound: 'default' }
+          }
+        },
+        data: {
+          type: 'sponsor',
+          sponsorId: String(sponsor._id),
+          sponsorName: String(sponsor.companyName),
+          sponsorLogo: sponsor.logo ? String(sponsor.logo) : '',
+          postId: String(post._id),
+          title: `New Sponsorship: ${sponsor.companyName}`,
+          body: caption ? String(caption) : `Tap to view ${sponsor.companyName} details`,
+          caption: caption ? String(caption) : '',
+          jobLink: jobLink ? String(jobLink) : '',
+        },
+      };
+      admin.messaging().send(message).catch((e) => {
+        console.log('FCM sponsor_post push failed', e?.message || e);
+      });
+    } catch (e) {
+      console.log('FCM sponsor_post push setup failed', e?.message || e);
+    }
 
    // Emails
 try {
