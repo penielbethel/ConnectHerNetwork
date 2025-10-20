@@ -151,7 +151,11 @@ const NotificationScreen = () => {
         const username = currentUser?.username;
         if (username) {
           const requests = await (apiService as any).getFriendRequests(username);
-          const items: Notification[] = (Array.isArray(requests) ? requests : []).map((u: any) => ({
+          // Deduplicate by username to avoid VirtualizedList key warnings
+          const uniqueRequests: any[] = Array.isArray(requests)
+            ? Array.from(new Map((requests as any[]).map((u: any) => [u.username, u])).values())
+            : [];
+          const items: Notification[] = uniqueRequests.map((u: any) => ({
             _id: `friendreq-${u.username}`,
             type: 'friend_request',
             title: 'Friend Request',
@@ -165,7 +169,10 @@ const NotificationScreen = () => {
             isRead: false,
             createdAt: new Date().toISOString(),
           }));
-          setNotifications(items);
+          // Ensure no duplicate IDs
+          const seen = new Set<string>();
+          const dedup = items.filter(n => { const id = n._id || `${n.type}:${n.sender?.username}`; if (seen.has(id)) return false; seen.add(id); return true; });
+          setNotifications(dedup);
         } else {
           setNotifications([]);
         }
@@ -197,7 +204,13 @@ const NotificationScreen = () => {
         if (selectedTab === 'sponsors') {
           // Allow any sponsor-related server notifications; keep as-is
         }
-        setNotifications(items);
+        // Deduplicate by _id fallback
+        const seen = new Set<string>();
+        const dedup = items.filter(n => {
+          const id = n._id || `${n.type}:${n?.sender?.username || ''}:${n?.createdAt || ''}`;
+          if (seen.has(id)) return false; seen.add(id); return true;
+        });
+        setNotifications(dedup);
       }
     } catch (error) {
       console.error('Error loading notifications:', error);
@@ -213,9 +226,16 @@ const NotificationScreen = () => {
         // If a friend request arrives, surface the Friends tab immediately
         if (notification?.type === 'friend_request' && selectedTab !== 'friends') {
           setSelectedTab('friends');
-        } else {
-          setNotifications(prev => [notification, ...prev]);
         }
+        // Prepend and dedupe to avoid duplicate keys
+        setNotifications(prev => {
+          const next = [notification, ...prev];
+          const seen = new Set<string>();
+          return next.filter(n => {
+            const id = n._id || `${n.type}:${n?.sender?.username || ''}:${n?.createdAt || ''}`;
+            if (seen.has(id)) return false; seen.add(id); return true;
+          });
+        });
       });
 
       // Keep notifications in sync with friend request actions
@@ -324,7 +344,8 @@ const NotificationScreen = () => {
     try {
       const resp = await apiService.acceptFriendRequest(notification.sender.username);
       if (resp?.success !== false) {
-        setNotifications(prev => prev.filter(n => n._id !== notification._id));
+        // Remove any duplicates for this sender
+        setNotifications(prev => prev.filter(n => !(n.type === 'friend_request' && (n.sender?.username === notification.sender.username))));
         try {
           PushNotificationService.getInstance().showLocalNotification({
             title: 'Friend Request Accepted',
@@ -354,7 +375,8 @@ const NotificationScreen = () => {
     try {
       const resp = await apiService.declineFriendRequest(notification.sender.username);
       if (resp?.success !== false) {
-        setNotifications(prev => prev.filter(n => n._id !== notification._id));
+        // Remove any duplicates for this sender
+        setNotifications(prev => prev.filter(n => !(n.type === 'friend_request' && (n.sender?.username === notification.sender.username))));
       } else {
         Alert.alert('Error', 'Could not decline friend request');
       }
@@ -660,7 +682,7 @@ const NotificationScreen = () => {
       ) : (
         <FlatList
           data={notifications}
-          keyExtractor={item => item._id}
+          keyExtractor={item => item._id || `${item.type}:${item?.sender?.username || ''}:${item?.createdAt || ''}`}
           renderItem={renderNotification}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ListEmptyComponent={!loading ? renderEmptyState : null}

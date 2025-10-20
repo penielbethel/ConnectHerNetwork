@@ -1,14 +1,38 @@
-import React from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, Image, StyleSheet, TouchableOpacity, Animated, Easing } from 'react-native';
 import { colors, globalStyles } from '../styles/globalStyles';
 
 const OfflineScreen = () => {
+  // Rotate animation setup
+  const spinValue = useRef(new Animated.Value(0)).current;
+  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const spin = spinValue.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });On 
+  useEffect(() => {
+    // Start continuous rotation while offline screen is visible
+    loopRef.current = Animated.loop(
+      Animated.timing(spinValue, {
+        toValue: 1,
+        duration: 1600,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loopRef.current.start();
+
+    return () => {
+      try { loopRef.current?.stop(); } catch (_) {}
+      spinValue.stopAnimation(() => {
+        try { spinValue.setValue(0); } catch (_) {}
+      });
+    };
+  }, [spinValue]);
+
   return (
     <View style={[globalStyles.container, styles.container]}> 
       <View style={styles.card}>
-        <Image
+        <Animated.Image
           source={require('../../public/logo.png')}
-          style={styles.logo}
+          style={[styles.logo, { transform: [{ rotate: spin }] }]}
           resizeMode="contain"
         />
         <Text style={styles.title}>You are offline</Text>

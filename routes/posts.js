@@ -115,6 +115,10 @@ router.delete('/:id', async (req, res) => {
     }
 
     await Post.findByIdAndDelete(req.params.id);
+
+    // Broadcast deletion so all clients remove the post in real-time
+    io.emit('post-deleted', { postId: String(req.params.id) });
+
     // Return a consistent success shape so clients can reliably detect success
     res.status(200).json({ success: true, message: "Post and media deleted" });
   } catch (err) {

@@ -1,4 +1,5 @@
 import { AppRegistry } from 'react-native';
+import App from './App';
 import { name as appName } from './package.json';
 
 // Global error handler to surface early runtime issues (safe, non-invasive)
@@ -31,9 +32,7 @@ try {
       try { console.log('[ProbeStart]', './src/services/pushNotifications'); require('./src/services/pushNotifications'); console.log('[ProbeOK]', './src/services/pushNotifications'); } catch (e3) { console.error('[ProbeFAIL]', './src/services/pushNotifications', e3?.message || e3, e3?.stack); }
       try { console.log('[ProbeStart]', './src/services/AudioRecorder'); require('./src/services/AudioRecorder'); console.log('[ProbeOK]', './src/services/AudioRecorder'); } catch (e4) { console.error('[ProbeFAIL]', './src/services/AudioRecorder', e4?.message || e4, e4?.stack); }
 
-      console.log('[EntryImportStart]', './App');
-      const App = require('./App').default;
-      console.log('[EntryImportDone]', './App');
+      // Static App import avoids dynamic resolution issues
       return App;
     } catch (e) {
       console.error('[EntryImportError]', e?.message || e, e?.stack);

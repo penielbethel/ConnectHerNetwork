@@ -5,6 +5,10 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { mediaDevices, RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, RTCView } from 'react-native-webrtc';
 import socketService from '../services/SocketService';
 import { colors, globalStyles } from '../styles/globalStyles';
+import InCallManager from 'react-native-incall-manager';
+import apiService from '../services/ApiService';
+import { suppressIncomingFrom } from '../utils/callGuard';
+import PushNotification from 'react-native-push-notification';
 
 type CallParams = {
   to: string;
@@ -23,6 +27,10 @@ const CallScreen = () => {
   const [localStream, setLocalStream] = useState<any>(null);
   const [remoteStream, setRemoteStream] = useState<any>(null);
   const [username, setUsername] = useState<string>('');
+  const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [durationSec, setDurationSec] = useState<number>(0);
+  const timerRef = useRef<any>(null);
+  const startTimeRef = useRef<number>(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -55,6 +63,21 @@ const CallScreen = () => {
 
     const stream = await mediaDevices.getUserMedia(constraints);
     setLocalStream(stream);
+
+    // Start duration timer
+    startTimeRef.current = Date.now();
+    try { if (timerRef.current) clearInterval(timerRef.current); } catch (_) {}
+    timerRef.current = setInterval(() => {
+      const secs = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      setDurationSec(secs);
+    }, 1000);
+
+    // Ensure audio routed to speaker and call audio mode
+    try {
+      InCallManager.start({ media: type === 'video' ? 'video' : 'audio' });
+      InCallManager.setForceSpeakerphoneOn(true);
+      InCallManager.setKeepScreenOn(true);
+    } catch (_) {}
 
     const pc = new RTCPeerConnection({ iceServers });
     pcRef.current = pc;
@@ -119,18 +142,60 @@ const CallScreen = () => {
         console.error('addIceCandidate error', err);
       }
     });
-    socket?.on('private-end-call', ({ reason }: any) => {
+    socket?.on('private-end-call', ({ reason, from }: any) => {
+      // Suppress any stray incoming_call from this peer for a short window
+      try { suppressIncomingFrom(from || to, 5000); } catch (_) {}
       Alert.alert('Call Ended', reason || 'ended');
-      navigation.goBack();
+      const nav: any = navigation as any;
+      if (nav?.canGoBack?.()) {
+        nav.goBack();
+      } else {
+        nav.navigate?.('Dashboard');
+      }
     });
   };
 
-  const endCall = () => {
-    socketService.emit('private-end-call', { to });
-    navigation.goBack();
+  const toggleMute = () => {
+    try {
+      const next = !isMuted;
+      setIsMuted(next);
+      const s = localStream;
+      if (s) {
+        s.getAudioTracks()?.forEach((t: any) => {
+          t.enabled = !next;
+        });
+      }
+      try { InCallManager.setMicrophoneMute(next); } catch (_) {}
+    } catch (_) {}
+  };
+
+  const endCall = async () => {
+    try {
+      socketService.emit('private-end-call', { from: username, to });
+    } catch (_) {}
+
+    // Prevent re-opening incoming call: briefly suppress and clear notifications
+    try { suppressIncomingFrom(mode === 'caller' ? to : username, 5000); } catch (_) {}
+    try { PushNotification.cancelAllLocalNotifications(); } catch (_) {}
+
+    // Log call end with duration
+    try {
+      const duration = Math.max(durationSec, 0);
+      const caller = mode === 'caller' ? username : to;
+      const receiver = mode === 'caller' ? to : username;
+      await apiService.post('/calls', { caller, receiver, status: 'ended', type, duration });
+    } catch (_) {}
+
+    const nav: any = navigation as any;
+    if (nav?.canGoBack?.()) {
+      nav.goBack();
+    } else {
+      nav.navigate?.('Dashboard');
+    }
   };
 
   const cleanup = () => {
+    try { if (timerRef.current) clearInterval(timerRef.current); } catch (_) {}
     const pc = pcRef.current;
     if (pc) {
       pc.onicecandidate = null;
@@ -141,6 +206,15 @@ const CallScreen = () => {
     localStream?.getTracks()?.forEach((t: any) => t.stop());
     setLocalStream(null);
     setRemoteStream(null);
+    try { InCallManager.stop(); } catch (_) {}
+  };
+
+  const formatDuration = (secs: number) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    const hh = h > 0 ? String(h).padStart(2, '0') + ':' : '';
+    return `${hh}${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
   return (
@@ -156,9 +230,15 @@ const CallScreen = () => {
         )}
       </View>
       <View style={styles.controls}>
-        <TouchableOpacity style={styles.endButton} onPress={endCall}>
-          <Text style={styles.endText}>End Call</Text>
-        </TouchableOpacity>
+        <Text style={styles.durationText}>Duration: {formatDuration(durationSec)}</Text>
+        <View style={styles.controlsRow}>
+          <TouchableOpacity style={styles.muteButton} onPress={toggleMute}>
+            <Text style={styles.muteText}>{isMuted ? 'Unmute' : 'Mute'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.endButton} onPress={endCall}>
+            <Text style={styles.endText}>End Call</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -192,11 +272,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   controls: {
-    ...globalStyles.flexRowCenter,
     padding: 16,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.surface,
+  },
+  controlsRow: {
+    ...globalStyles.flexRowCenter,
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  durationText: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+  muteButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    backgroundColor: '#455a64',
+  },
+  muteText: {
+    color: colors.text,
+    fontWeight: 'bold',
   },
   endButton: {
     paddingHorizontal: 16,

@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar, View, ActivityIndicator, useColorScheme, LogBox, AppState, Modal, TouchableOpacity, Text } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import CommunityUnreadService from './src/services/CommunityUnreadService';
+import ChatUnreadService from './src/services/ChatUnreadService';
 
 // Components
 import TopNav from './src/components/TopNav';
@@ -60,6 +62,7 @@ const OfflineScreen = requireSafe(() => require('./src/screens/OfflineScreen'), 
 import SocketService from './src/services/SocketService';
 import PushNotificationService from './src/services/pushNotifications';
 import BiometricService from './src/services/BiometricService';
+import apiService from './src/services/ApiService';
 
 // Types
 import { RootStackParamList } from './src/types/navigation';
@@ -95,7 +98,7 @@ const ProfileHeader: React.FC<any> = ({ navigation, back, options }) => {
   );
 };
 
-const App: React.FC = () => {
+const AppDuplicate: React.FC = () => {
   const colorScheme = useColorScheme();
   const [appTheme, setAppTheme] = useState<'light' | 'dark'>(colorScheme === 'dark' ? 'dark' : 'light');
   const isDarkMode = appTheme === 'dark';
@@ -106,6 +109,13 @@ const App: React.FC = () => {
   const [biometricEnabled, setBiometricEnabled] = useState<boolean>(false);
   const [locked, setLocked] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState<boolean>(true);
+  const [devLogsEnabled, setDevLogsEnabled] = useState<boolean>(false);
+  const [communityUnreadTotal, setCommunityUnreadTotal] = useState<number>(0);
+  const [chatUnreadTotal, setChatUnreadTotal] = useState<number>(0);
+  const [notificationUnreadTotal, setNotificationUnreadTotal] = useState<number>(0);
+  const selfUsernameRef = useRef<string>('');
+  const processedCommunityMsgIdsRef = useRef<Set<string>>(new Set());
+  const processedPrivateMsgIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     LogBox.ignoreLogs([
@@ -158,6 +168,11 @@ const App: React.FC = () => {
         } catch (e) {
           console.error('[InitFAIL] AsyncStorage.getItem', e);
         }
+
+        try {
+          const me = userData ? JSON.parse(userData) : null;
+          selfUsernameRef.current = me?.username ? String(me.username) : '';
+        } catch (_) {}
 
         if (token && userData) {
           try {
@@ -246,34 +261,17 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated]);
 
-  // Ensure IncomingCall UI also appears when private-offer arrives
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const offerHandler = (payload: { from: string; type?: 'audio' | 'video' }) => {
-      try {
-        navigate('IncomingCall', { caller: payload.from, type: (payload.type || 'audio') as 'audio' | 'video' });
-      } catch (e) {
-        console.error('[NavFAIL] IncomingCall via private-offer navigate', e);
-      }
-    };
-    try {
-      SocketService.on('private-offer', offerHandler as any);
-    } catch (e) {
-      console.error('[SocketFAIL] private-offer listener', e);
-    }
-    return () => {
-      try {
-        SocketService.off('private-offer', offerHandler as any);
-      } catch (e) {}
-    };
-  }, [isAuthenticated]);
+  // Dedup: avoid navigating to IncomingCall on 'private-offer' to prevent duplication.
+  // Incoming call UI is driven by 'incomingCall' socket event and push notifications.
+  // The private-offer is handled inside CallScreen for callee flow.
+
 
   // Listen for incoming group calls and navigate to community incoming call screen
   useEffect(() => {
     if (!isAuthenticated) return;
     const groupHandler = (payload: { from: string; communityId: string; communityName: string; type?: 'audio' | 'video' }) => {
       try {
-        // Show local push notification as well
+        // Show a local notification so users get an alert + ringtone
         PushNotificationService.getInstance().showLocalNotification({
           title: 'Group Call',
           body: `${payload.from} is calling in ${payload.communityName}`,
@@ -305,6 +303,237 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated]);
 
+  // Unread service: init and subscribe to total
+  useEffect(() => {
+    let unsub: () => void = () => {};
+    (async () => {
+      try {
+        await CommunityUnreadService.init();
+      } catch (_) {}
+      try {
+        unsub = CommunityUnreadService.subscribe((_counts, total) => {
+          setCommunityUnreadTotal(total);
+        });
+      } catch (_) {}
+    })();
+    return () => {
+      try { unsub(); } catch (_) {}
+    };
+  }, []);
+
+  // Global community-message listener to increment unread
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const handler = (msg: any) => {
+      try {
+        const communityId = String(msg?.communityId || msg?.community || '');
+        if (!communityId) return;
+        const senderUsername = typeof msg?.sender === 'string' ? msg?.sender : (msg?.sender?.username || msg?.from || '');
+        const me = selfUsernameRef.current;
+        const isFromMe = !!(me && senderUsername && String(senderUsername) === String(me));
+
+        // Dedup incoming events across multiple emit/listener paths
+        const rawId = String(
+          msg?._id ??
+          `${communityId}|${senderUsername || ''}|${msg?.createdAt || msg?.time || ''}|${msg?.text || ''}`
+        );
+        if (rawId) {
+          if (processedCommunityMsgIdsRef.current.has(rawId)) {
+            return;
+          }
+          processedCommunityMsgIdsRef.current.add(rawId);
+          setTimeout(() => {
+            try { processedCommunityMsgIdsRef.current.delete(rawId); } catch (_) {}
+          }, 5000);
+        }
+
+        if (!isFromMe) {
+          CommunityUnreadService.increment(communityId);
+        }
+      } catch (_) {}
+    };
+    try { SocketService.on('community-message', handler); } catch (e) {
+      console.error('[SocketFAIL] community-message listener', e);
+    }
+    return () => {
+      try { SocketService.off('community-message', handler); } catch (_) {}
+    };
+  }, [isAuthenticated]);
+
+  // Global newMessage listener to increment private chat unread
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const handler = (msg: any) => {
+      try {
+        const sender = String(msg?.sender || '');
+        const recipient = String(msg?.recipient || msg?.to || '');
+        if (!sender || !recipient) return;
+        const me = selfUsernameRef.current;
+        const isFromMe = !!(me && sender && String(sender) === String(me));
+
+        const chatId = [sender, recipient].sort().join('_');
+        const rawId = String(msg?._id ?? `${chatId}|${sender}|${msg?.createdAt || msg?.timestamp || ''}|${msg?.text || ''}`);
+        if (rawId) {
+          if (processedPrivateMsgIdsRef.current.has(rawId)) return;
+          processedPrivateMsgIdsRef.current.add(rawId);
+          setTimeout(() => { try { processedPrivateMsgIdsRef.current.delete(rawId); } catch (_) {} }, 5000);
+        }
+        if (!isFromMe) {
+          ChatUnreadService.increment(chatId);
+          const text = String(msg?.text || '').trim();
+          const hasMedia = Array.isArray(msg?.media) && msg.media.length > 0;
+          const hasAudio = !!msg?.audio && String(msg.audio).trim().length > 0;
+          const content = text ? text : hasMedia ? '📷 Media' : hasAudio ? '🎙️ Voice Note' : 'Message';
+          try {
+            PushNotificationService.getInstance().showLocalNotification({
+              title: `New message from ${sender}`,
+              body: content,
+              channelId: 'connecther_messages',
+              priority: 'high',
+              vibrate: true,
+              sound: 'notify.mp3',
+              data: {
+                type: 'message',
+                chatId: String(chatId),
+                roomId: String(chatId),
+                senderUsername: String(sender),
+                senderName: String((msg?.senderName || sender)),
+                senderAvatar: String(msg?.senderAvatar || ''),
+              } as any,
+            });
+          } catch (_) {}
+        }
+      } catch (_) {}
+    };
+    try { SocketService.on('newMessage', handler); } catch (e) {
+      console.error('[SocketFAIL] newMessage listener', e);
+    }
+    return () => { try { SocketService.off('newMessage', handler); } catch (_) {} };
+  }, [isAuthenticated]);
+
+  // Cache current user's username for unread filter
+  useEffect(() => {
+    (async () => {
+      try {
+        const userData = await AsyncStorage.getItem('currentUser');
+        const me = userData ? JSON.parse(userData) : null;
+        selfUsernameRef.current = me?.username ? String(me.username) : '';
+      } catch (_) {}
+    })();
+  }, []);
+
+  // Compute and refresh unread notification total (likes/comments, sponsors, friend requests)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const recompute = async () => {
+      try {
+        const userStr = await AsyncStorage.getItem('currentUser');
+        const current = userStr ? JSON.parse(userStr) : null;
+        const username = current?.username;
+        let total = 0;
+        // Activity (likes/comments) for user
+        if (username) {
+          try {
+            const activity = await apiService.getNotifications(username);
+            const unreadActivity = (activity?.notifications || []).filter((n: any) => !n?.isRead && !n?.read).length;
+            total += unreadActivity;
+          } catch (_) {}
+
+          // Friend requests (pending are counted)
+          try {
+            const fr = await apiService.getFriendRequests(username);
+            const pendingFR = Array.isArray(fr) ? fr.length : 0;
+            total += pendingFR;
+          } catch (_) {}
+        }
+
+        // Sponsors (global alerts)
+        try {
+          const sponsor = await apiService.getNotifications();
+          const unreadSponsors = (sponsor?.notifications || []).filter((n: any) => !n?.isRead && !n?.read).length;
+          total += unreadSponsors;
+        } catch (_) {}
+
+        setNotificationUnreadTotal(total);
+      } catch (_) {}
+    };
+
+    // Initial compute on auth
+    recompute();
+
+    // Update on push notification socket events
+    const handler = (_data: any) => {
+      recompute();
+    };
+    try {
+      SocketService.on('new-notification', handler);
+      SocketService.on('notification', handler); // fallback if server uses a generic event
+    } catch (_) {}
+    // Also recalc when app returns to foreground
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') recompute();
+    });
+
+    return () => {
+      try { SocketService.off('new-notification', handler); } catch (_) {}
+      try { SocketService.off('notification', handler); } catch (_) {}
+      try { sub.remove(); } catch (_) {}
+    };
+  }, [isAuthenticated]);
+
+  // Unread service: init and subscribe to total
+  useEffect(() => {
+    let unsub: () => void = () => {};
+    (async () => {
+      try {
+        await ChatUnreadService.init();
+      } catch (_) {}
+      try {
+        unsub = ChatUnreadService.subscribe((_counts, total) => { setChatUnreadTotal(total); }); } catch (_) {}
+    })();
+    return () => { try { unsub(); } catch (_) {} };
+  }, []);
+
+  // Global community-message listener to increment unread
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const handler = (msg: any) => {
+      try {
+        const communityId = String(msg?.communityId || msg?.community || '');
+        if (!communityId) return;
+        const senderUsername = typeof msg?.sender === 'string' ? msg?.sender : (msg?.sender?.username || msg?.from || '');
+        const me = selfUsernameRef.current;
+        const isFromMe = !!(me && senderUsername && String(senderUsername) === String(me));
+
+        // Dedup incoming events across multiple emit/listener paths
+        const rawId = String(
+          msg?._id ??
+          `${communityId}|${senderUsername || ''}|${msg?.createdAt || msg?.time || ''}|${msg?.text || ''}`
+        );
+        if (rawId) {
+          if (processedCommunityMsgIdsRef.current.has(rawId)) {
+            return;
+          }
+          processedCommunityMsgIdsRef.current.add(rawId);
+          setTimeout(() => {
+            try { processedCommunityMsgIdsRef.current.delete(rawId); } catch (_) {}
+          }, 5000);
+        }
+
+        if (!isFromMe) {
+          CommunityUnreadService.increment(communityId);
+        }
+      } catch (_) {}
+    };
+    try { SocketService.on('community-message', handler); } catch (e) {
+      console.error('[SocketFAIL] community-message listener', e);
+    }
+    return () => {
+      try { SocketService.off('community-message', handler); } catch (_) {}
+    };
+  }, [isAuthenticated]);
+
   // Load per-user biometric setting and prompt if authenticated
   useEffect(() => {
     let cancelled = false;
@@ -317,7 +546,9 @@ const App: React.FC = () => {
         const settingsJson = await AsyncStorage.getItem(key);
         const uiSettings = settingsJson ? JSON.parse(settingsJson) : {};
         const biometricOn = !!uiSettings?.biometricAuth;
+        const debugLogsOn = !!uiSettings?.debugLogs;
         if (!cancelled) setBiometricEnabled(biometricOn);
+        if (!cancelled) setDevLogsEnabled(debugLogsOn);
         if (biometricOn && isAuthenticated) {
           const ok = await BiometricService.getInstance().promptUnlock('Unlock ConnectHer');
           if (!cancelled) setLocked(!ok);
@@ -339,7 +570,9 @@ const App: React.FC = () => {
           const settingsJson = await AsyncStorage.getItem(key);
           const uiSettings = settingsJson ? JSON.parse(settingsJson) : {};
           const biometricOn = !!uiSettings?.biometricAuth;
+          const debugLogsOn = !!uiSettings?.debugLogs;
           setBiometricEnabled(biometricOn);
+          setDevLogsEnabled(debugLogsOn);
           if (biometricOn) {
             const ok = await BiometricService.getInstance().promptUnlock('Unlock ConnectHer');
             setLocked(!ok);
@@ -444,7 +677,14 @@ const App: React.FC = () => {
             : 'Login'
         }
         screenOptions={{
-          header: (props) => <TopNav {...props} />,
+          header: (props) => (
+            <TopNav
+              {...props}
+              communityUnreadCount={communityUnreadTotal}
+              chatUnreadCount={chatUnreadTotal}
+              notificationUnreadCount={notificationUnreadTotal}
+            />
+          ),
           headerStyle: {
             backgroundColor: isDarkMode ? colors.card : '#ffffff',
           },
@@ -484,7 +724,7 @@ const App: React.FC = () => {
         <Stack.Screen name="HelpDesk" component={HelpDeskScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
-      {__DEV__ ? <DevLogOverlay /> : null}
+      {(__DEV__ || devLogsEnabled) ? <DevLogOverlay enabled={__DEV__ || devLogsEnabled} /> : null}
       {/* Biometric lock overlay */}
       <Modal visible={locked} transparent animationType="fade" onRequestClose={() => {}}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -526,4 +766,4 @@ const App: React.FC = () => {
   );
 }
 
-export default App;
+export default AppDuplicate;

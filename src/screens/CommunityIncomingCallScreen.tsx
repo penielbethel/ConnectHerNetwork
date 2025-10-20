@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image, Alert } from 'react-na
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import socketService from '../services/SocketService';
+import PushNotificationService from '../services/pushNotifications';
 import ApiService from '../services/ApiService';
 import { colors, globalStyles } from '../styles/globalStyles';
 
@@ -11,12 +12,13 @@ type IncomingParams = {
   communityName: string;
   caller: { username: string; name?: string; avatar?: string };
   type: 'audio' | 'video';
+  communityAvatar?: string;
 };
 
 const CommunityIncomingCallScreen: React.FC = () => {
   const route = useRoute<RouteProp<{ params: IncomingParams }, 'params'>>();
   const navigation = useNavigation();
-  const { communityId, communityName, caller, type } = route.params;
+  const { communityId, communityName, caller, type, communityAvatar } = route.params;
   const [me, setMe] = useState<{ username: string; name?: string; avatar?: string } | null>(null);
 
   useEffect(() => {
@@ -47,6 +49,9 @@ const CommunityIncomingCallScreen: React.FC = () => {
       });
       // Navigate to active call screen
       // @ts-ignore
+      PushNotificationService.getInstance().stopRinging(communityId);
+      // @ts-ignore
+      PushNotificationService.getInstance().stopAllRinging();
       navigation.navigate('CommunityCall', {
         communityId,
         communityName,
@@ -69,6 +74,9 @@ const CommunityIncomingCallScreen: React.FC = () => {
         // non-fatal
       }
       socketService.declineGroupCall({ communityId, username: me.username });
+      PushNotificationService.getInstance().stopRinging(communityId);
+      // @ts-ignore
+      PushNotificationService.getInstance().stopAllRinging();
       // @ts-ignore
       navigation.goBack();
     } catch (_) {
@@ -80,6 +88,9 @@ const CommunityIncomingCallScreen: React.FC = () => {
     <View style={styles.container}>
       <Text style={styles.title}>Incoming {type === 'video' ? 'Video' : 'Voice'} Group Call</Text>
       <Text style={styles.subtitle}>Community: {communityName}</Text>
+      {communityAvatar ? (
+        <Image source={{ uri: communityAvatar }} style={styles.communityAvatar} />
+      ) : null}
       <View style={styles.callerRow}>
         {caller?.avatar ? (
           <Image source={{ uri: caller.avatar }} style={styles.avatar} />
@@ -113,6 +124,7 @@ const styles = StyleSheet.create({
   accept: { backgroundColor: '#2e7d32' },
   decline: { backgroundColor: '#d32f2f' },
   btnText: { color: '#fff', fontWeight: '600' },
+  communityAvatar: { width: 70, height: 70, borderRadius: 35, marginBottom: 10 },
 });
 
 export default CommunityIncomingCallScreen;

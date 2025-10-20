@@ -92,23 +92,23 @@ const ChatScreen = () => {
     }
   }, [searchQuery, chats, currentUser, lastSeenByUser]);
 
-  // Sort helper to arrange by online and last seen (very sensitive)
+  // Sort helper to arrange strictly by last seen (most recent on top)
   const sortChatsByPresence = (list: Chat[]) => {
-    const score = (c: Chat) => {
+    const getLs = (c: Chat) => {
       const other = c.participants.find(p => p.username !== currentUser?.username);
-      const onlineScore = other?.isOnline ? 1 : 0;
-      const lsTs = other?.username && lastSeenByUser[other.username]
+      return other?.username && lastSeenByUser[other.username]
         ? new Date(lastSeenByUser[other.username]).getTime()
         : 0;
-      const updatedTs = new Date(c.updatedAt).getTime();
-      return { onlineScore, lsTs, updatedTs };
     };
     return [...list].sort((a, b) => {
-      const sa = score(a);
-      const sb = score(b);
-      if (sa.onlineScore !== sb.onlineScore) return sb.onlineScore - sa.onlineScore; // online first
-      if (sa.lsTs !== sb.lsTs) return sb.lsTs - sa.lsTs; // recent last seen next
-      return sb.updatedTs - sa.updatedTs; // fallback to recent chat activity
+      const aLs = getLs(a);
+      const bLs = getLs(b);
+      if (aLs !== bLs) return bLs - aLs; // latest last seen first
+      // tie-breakers: keep online users higher, then recent chat activity
+      const aOnline = a.participants.find(p => p.username !== currentUser?.username)?.isOnline ? 1 : 0;
+      const bOnline = b.participants.find(p => p.username !== currentUser?.username)?.isOnline ? 1 : 0;
+      if (aOnline !== bOnline) return bOnline - aOnline;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
   };
 
@@ -194,68 +194,53 @@ const ChatScreen = () => {
               ? '🎙️ Voice Note'
               : '';
             const type = text ? 'text' : hasMedia ? 'image' : hasAudio ? 'audio' : 'text';
-            if (content) {
-              lastMessage = {
-                content,
-                sender: msg.sender,
-                timestamp: msg.createdAt || msg.timestamp || new Date().toISOString(),
-                type,
-              } as any;
-            }
-            updatedAt = msg.createdAt || msg.timestamp || updatedAt;
+
+            lastMessage = {
+              content,
+              sender: msg.sender,
+              timestamp: msg.createdAt || msg.timestamp || new Date().toISOString(),
+              type,
+            } as any;
+            updatedAt = msg.createdAt || msg.timestamp || c.updatedAt;
           }
 
-          return { ...c, lastMessage, updatedAt } as Chat;
-        })
-        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+          return {
+            ...c,
+            lastMessage,
+            updatedAt,
+          } as Chat;
+        });
 
-      // Hydrate missing previews from cache to keep list stable
-      const withCache = await Promise.all(
-        enriched.map(async ch => {
-          if (ch.lastMessage) return ch;
-          try {
-            const cached = await AsyncStorage.getItem(`lastPreview:${ch._id}`);
-            if (cached) {
-              return { ...ch, lastMessage: JSON.parse(cached) } as Chat;
-            }
-          } catch (_) {}
-          return ch;
-        })
+      const sortedEnriched = enriched.sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       );
 
-      setChats(withCache);
-      // Persist last message previews for stability across reloads
       try {
-        for (const ch of withCache) {
+        for (const ch of sortedEnriched) {
           if (ch.lastMessage) {
-            await AsyncStorage.setItem(`lastPreview:${ch._id}`, JSON.stringify(ch.lastMessage));
+            AsyncStorage.setItem(`lastPreview:${ch._id}`, JSON.stringify(ch.lastMessage)).catch(() => {});
           }
         }
       } catch (_) {}
 
-      // 3) Fetch last-seen for friends to show effective online time
+      setChats(sortedEnriched);
+      setFilteredChats(sortChatsByPresence(sortedEnriched));
+
+      // Initialize presence from cached global list
       try {
-        const usernames = withCache
-          .map(ch => ch.participants.find(p => p.username !== me?.username)?.username)
-          .filter(Boolean) as string[];
-        const uniqueUsernames = Array.from(new Set(usernames));
-        const results = await Promise.all(
-          uniqueUsernames.map(async (u) => {
-            try {
-              const res = await apiService.getLastSeen(u);
-              const ts = (res && (res as any).lastSeen) || null;
-              return { u, ts } as { u: string; ts: string | null };
-            } catch {
-              return { u, ts: null } as { u: string; ts: string | null };
-            }
-          })
-        );
-        const map: Record<string, string> = {};
-        results.forEach(r => { if (r.ts) map[r.u] = r.ts; });
-        setLastSeenByUser(map);
-      } catch (_) {
-        // ignore last-seen failures
-      }
+        const onlineUsers = socketService.getOnlineUsers?.() || [];
+        if (Array.isArray(onlineUsers)) {
+          setChats(prevChats =>
+            prevChats.map(chat => ({
+              ...chat,
+              participants: chat.participants.map(p => ({
+                ...p,
+                isOnline: onlineUsers.includes(p.username),
+              })),
+            }))
+          );
+        }
+      } catch (_) {}
     } catch (error) {
       console.error('Error loading chats:', error);
       try {
@@ -345,19 +330,29 @@ const ChatScreen = () => {
             const type = text ? 'text' : hasMedia ? 'image' : hasAudio ? 'audio' : 'text';
 
             // Local notification for incoming messages
-            if (isIncoming) {
-              try {
-                notifier.showLocalNotification({
-                  title: `New message from ${msg.sender}`,
-                  body: content,
-                  channelId: 'connecther_messages',
-                  priority: 'high',
-                  vibrate: true,
-                });
-              } catch (e) {
-                // ignore notification errors
-              }
-            }
+            // Removed to avoid duplication; global handler in App.tsx manages notifications.
+            // if (isIncoming) {
+            //   try {
+            //     notifier.showLocalNotification({
+            //       title: `New message from ${msg.sender}`,
+            //       body: content,
+            //       channelId: 'connecther_messages',
+            //       priority: 'high',
+            //       vibrate: true,
+            //       sound: 'notify.mp3',
+            //       data: {
+            //         type: 'message',
+            //         chatId: String(chat._id),
+            //         roomId: String(chat._id),
+            //         senderUsername: String(msg.sender),
+            //         senderName: String((msg?.senderName || msg.sender)),
+            //         senderAvatar: String(msg?.senderAvatar || ''),
+            //       } as any,
+            //     });
+            //   } catch (e) {
+            //     // ignore notification errors
+            //   }
+            // }
 
             return {
               ...chat,
@@ -383,6 +378,14 @@ const ChatScreen = () => {
             (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
           );
         });
+        // Update last seen for sender to message timestamp for sensitive sorting
+        try {
+          const sender = String(msg?.sender || '');
+          const ts = msg?.createdAt || msg?.timestamp || new Date().toISOString();
+          if (sender) {
+            setLastSeenByUser(prev => ({ ...prev, [sender]: ts }));
+          }
+        } catch (_) {}
       });
 
       socket.on('user-online', (username: string) => {
@@ -394,6 +397,8 @@ const ChatScreen = () => {
             ),
           }))
         );
+        // Set last seen to now when a user comes online
+        setLastSeenByUser(prev => ({ ...prev, [username]: new Date().toISOString() }));
       });
 
       socket.on('user-offline', (username: string) => {
@@ -425,6 +430,13 @@ const ChatScreen = () => {
             })),
           }))
         );
+        // Touch last-seen for all currently online users to now
+        const now = new Date().toISOString();
+        setLastSeenByUser(prev => {
+          const updated = { ...prev } as Record<string, string>;
+          usernames.forEach(u => { updated[u] = now; });
+          return updated;
+        });
       });
 
       // Initialize presence from cached global list

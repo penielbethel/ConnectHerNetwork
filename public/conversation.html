@@ -2186,6 +2186,7 @@ function endCall(reason = "ended") {
     window.pendingOffer = null;
     window.currentCaller = null;
     window.currentCallType = null;
+    window.callActive = false;
 
     console.log(`✅ Call ended locally (${reason}).`);
   } catch (err) {
@@ -2212,6 +2213,7 @@ socket.on("private-answer", async ({ from, answer }) => {
     // Show the call modal and start the call timer
     showCallModal("Connected...");
     startCallTimer();
+    window.callActive = true;
 
   } catch (err) {
     console.error("❌ Error handling private-answer:", err);
@@ -2280,6 +2282,7 @@ socket.on("private-end-call", ({ from, reason = "ended" }) => {
     window.pendingOffer = null;
     window.currentCaller = null;
     window.currentCallType = null;
+    window.callActive = false;
 
     console.log("✅ Remote call ended, resources cleaned up.");
   } catch (err) {
@@ -2495,8 +2498,8 @@ socket.on("incomingCall", async ({ from, name, avatar, type = "audio" }) => {
 
       // Inform caller that the call was missed
       socket.emit("private-end-call", {
-        from,
-        to: currentUser.username,
+        from: currentUser.username,
+        to: from,
         reason: "missed"
       });
 
@@ -2688,9 +2691,10 @@ function setupConnectionMonitoring() {
     if (state === "disconnected" || state === "failed") {
       console.warn("⚠️ Connection lost. Attempting to reconnect...");
       showReconnectStatus("Reconnecting...");
-      attemptReconnect();
+      if (window.callActive) attemptReconnect();
     } else if (state === "connected" || state === "completed") {
       console.log("✅ Connection stable.");
+      window.callActive = true;
       reconnectAttempts = 0; // Reset attempts
       showReconnectStatus(""); // Clear any reconnect message
     }
@@ -2709,6 +2713,11 @@ function setupConnectionMonitoring() {
 
 // ✅ Attempt to reconnect the call
 async function attemptReconnect() {
+  // Only attempt reconnect during an active call
+  if (!window.callActive) {
+    console.warn("Reconnect suppressed: call not active.");
+    return;
+  }
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
     console.error("Max reconnect attempts reached. Ending call.");
     showReconnectStatus("Reconnection failed.");
@@ -2720,17 +2729,31 @@ async function attemptReconnect() {
   console.log(`Reconnect attempt ${reconnectAttempts}...`);
 
   try {
-    // Close the current peer connection
-    if (peerConnection) {
-      peerConnection.close();
-      peerConnection = null;
+    if (!peerConnection) {
+      console.warn("No peerConnection for ICE restart.");
+      return;
     }
 
-    // Rebuild the call with the same type
-    const type = window.currentCallType || "audio";
-    await startCall(type);
+    // Restart ICE on the existing connection
+    peerConnection.restartIce();
 
-    console.log("Reconnection attempt successful (new offer sent).");
+    // Create a new offer and send via private-offer without re-triggering incomingCall
+    const offer = await peerConnection.createOffer({ iceRestart: true });
+    await peerConnection.setLocalDescription(offer);
+    socket.emit("private-offer", {
+      from: currentUser.username,
+      to: username,
+      offer,
+      type: window.currentCallType || "audio"
+    });
+
+    // Retry after RECONNECT_INTERVAL if still not connected
+    setTimeout(() => {
+      const s = peerConnection?.iceConnectionState;
+      if (s !== "connected" && s !== "completed") {
+        attemptReconnect();
+      }
+    }, RECONNECT_INTERVAL);
   } catch (err) {
     console.error("Reconnection attempt failed:", err);
     setTimeout(attemptReconnect, RECONNECT_INTERVAL);

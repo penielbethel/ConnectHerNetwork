@@ -8,12 +8,7 @@ module.exports = {
         },
       },
     },
-    'react-native-audio-recorder-player': {
-      // Temporarily disable Android autolinking to avoid missing Nitro modules
-      platforms: {
-        android: null,
-      },
-    },
+
   },
   assets: ['./assets/fonts/'],
 };

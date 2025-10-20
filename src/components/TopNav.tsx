@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet, useColorScheme } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, useColorScheme, Text } from 'react-native';
 import { StackHeaderProps } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../styles/globalStyles';
@@ -20,11 +20,22 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 type TopNavProps = Partial<StackHeaderProps> & {
-  activeRouteName?: 'Dashboard' | 'Chat' | 'Community' | 'Notification' | 'Sponsors' | string;
-  onNavigate?: (route: NavItem['route']) => void;
+  activeRouteName?: string;
+  onNavigate?: (routeName: string) => void;
+  communityUnreadCount?: number;
+  chatUnreadCount?: number;
+  notificationUnreadCount?: number;
 };
 
-const TopNav: React.FC<TopNavProps> = ({ activeRouteName, onNavigate, navigation, route }) => {
+const TopNav: React.FC<TopNavProps> = ({
+  activeRouteName,
+  onNavigate,
+  navigation,
+  route,
+  communityUnreadCount = 0,
+  chatUnreadCount = 0,
+  notificationUnreadCount = 0,
+}) => {
   const isDark = useColorScheme() === 'dark';
 
   const bg = isDark ? colors.dark.card : colors.light.card;
@@ -59,6 +70,27 @@ const TopNav: React.FC<TopNavProps> = ({ activeRouteName, onNavigate, navigation
             }}
           >
             <Icon name={item.icon} size={22} color={active ? primary : text + 'AA'} />
+            {item.key === 'community' && communityUnreadCount > 0 ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText} numberOfLines={1}>
+                  {communityUnreadCount > 99 ? '99+' : String(communityUnreadCount)}
+                </Text>
+              </View>
+            ) : null}
+            {item.key === 'chat' && chatUnreadCount > 0 ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText} numberOfLines={1}>
+                  {chatUnreadCount > 99 ? '99+' : String(chatUnreadCount)}
+                </Text>
+              </View>
+            ) : null}
+            {item.key === 'notifications' && notificationUnreadCount > 0 ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText} numberOfLines={1}>
+                  {notificationUnreadCount > 99 ? '99+' : String(notificationUnreadCount)}
+                </Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         );
       })}
@@ -82,6 +114,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+  },
+  badge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#E53935',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#ffffff',
+  },
+  badgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
   },
 });
 

@@ -60,10 +60,13 @@ export class ApiService {
     const list = Array.isArray(media) ? media : [];
     return list
       .map((file: any) => {
-        const url =
+        const rawUrl =
           file?.secure_url ||
           file?.url ||
           (file?.path ? `${this.rootUrl}/${String(file.path).replace(/^\/+/, '')}` : undefined);
+        const url = rawUrl && !/^https?:\/\//i.test(rawUrl)
+          ? `${this.rootUrl}/${String(rawUrl).replace(/^\/+/, '')}`
+          : rawUrl;
         if (!url) return null;
         const type = file?.type || file?.resource_type || undefined;
         const isVideo = String(type || '').toLowerCase().includes('video') || /\/video\//.test(url);
@@ -364,7 +367,15 @@ export class ApiService {
           // ignore and rethrow original
         }
       }
-      console.error('API root request error:', error);
+      const status = (error as any)?.status;
+      if (typeof status === 'number' && status >= 500) {
+        if (__DEV__) {
+          console.debug('API root 5xx suppressed:', status, endpoint);
+        }
+      } else if (status !== 404) {
+        const msg = String(error?.message || '');
+        console.warn('API root request warning:', status, endpoint, msg);
+      }
       throw error;
     }
   }
@@ -911,10 +922,11 @@ export class ApiService {
       const usernames: string[] = Array.isArray(list)
         ? list.filter((v: any) => typeof v === 'string' && v.trim().length > 0)
         : [];
+      const uniqueUsernames = Array.from(new Set(usernames));
 
       // Enrich with minimal profile for avatar/name display
       const profiles = await Promise.all(
-        usernames.map(async (from) => {
+        uniqueUsernames.map(async (from) => {
           try {
             const p: any = await this.getUserByUsername(from);
             const name = p?.name || `${p?.firstName || ''} ${p?.surname || ''}`.trim() || from;
@@ -1882,7 +1894,9 @@ export class ApiService {
               }));
               return { success: true, communities } as any;
             } catch (_e) {
-              console.error('getCommunities error:', fallbackErr);
+              if (__DEV__) {
+                console.debug('getCommunities fallbacks exhausted');
+              }
               return { success: false, communities: [] } as any;
             }
           }
@@ -1999,6 +2013,13 @@ export class ApiService {
         method: 'POST',
         body: formData,
       });
+      const savedMsg = (res as any)?.message || res;
+      try {
+        const messageId = savedMsg?._id || savedMsg?.id;
+        await this.triggerCommunityMessageNotifications(communityId, text, messageId);
+      } catch (notifyErr) {
+        if (__DEV__) console.debug('triggerCommunityMessageNotifications failed:', notifyErr);
+      }
       return res;
     } catch (error) {
       console.error('sendCommunityTextMessage error:', error);
@@ -2076,15 +2097,15 @@ export class ApiService {
     const userPayload = { username, Username: username, userName: username };
     try {
       return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/lock`, {
-        method: 'POST',
-        body: JSON.stringify(userPayload),
+        method: 'PATCH',
+        body: JSON.stringify({ lock: true, ...userPayload }),
       });
     } catch (error: any) {
       // Try root-level lock route
       try {
         return await this.makeRootRequest(`/communities/${encodeURIComponent(communityId)}/lock`, {
-          method: 'POST',
-          body: JSON.stringify(userPayload),
+          method: 'PATCH',
+          body: JSON.stringify({ lock: true, ...userPayload }),
         });
       } catch (_rootLockErr) {}
       const payload = {
@@ -2195,15 +2216,15 @@ export class ApiService {
     const userPayload = { username, Username: username, userName: username };
     try {
       return await this.makeRequest(`/communities/${encodeURIComponent(communityId)}/unlock`, {
-        method: 'POST',
-        body: JSON.stringify(userPayload),
+        method: 'PATCH',
+        body: JSON.stringify({ lock: false, ...userPayload }),
       });
     } catch (error: any) {
       // Try root-level unlock route
       try {
         return await this.makeRootRequest(`/communities/${encodeURIComponent(communityId)}/unlock`, {
-          method: 'POST',
-          body: JSON.stringify(userPayload),
+          method: 'PATCH',
+          body: JSON.stringify({ lock: false, ...userPayload }),
         });
       } catch (_rootUnlockErr) {}
       const payload = {
@@ -2371,9 +2392,6 @@ export class ApiService {
       if (!u) {
         return { success: false, owned: [], joined: [] } as any;
       }
-      const data = await this.makeRequest(`/communities/user/${encodeURIComponent(u)}`);
-      const ownedRaw = (data as any)?.owned || [];
-      const joinedRaw = (data as any)?.joined || [];
 
       const normalize = (c: any) => ({
         ...c,
@@ -2382,12 +2400,88 @@ export class ApiService {
         isJoined: Array.isArray(c?.members) && c.members.includes(u!),
       });
 
-      const owned = ownedRaw.map(normalize);
-      const joined = joinedRaw.map(normalize);
-      return { success: true, owned, joined } as any;
+      const extractLists = (data: any) => {
+        const ownedRaw =
+          data?.owned ||
+          data?.owner ||
+          data?.my ||
+          data?.mine ||
+          data?.created ||
+          data?.createdCommunities ||
+          data?.data?.owned ||
+          [];
+        const joinedRaw =
+          data?.joined ||
+          data?.member ||
+          data?.memberships ||
+          data?.subscribed ||
+          data?.data?.joined ||
+          (Array.isArray(data) ? data : []) ||
+          [];
+        return {
+          owned: Array.isArray(ownedRaw) ? ownedRaw.map(normalize) : [],
+          joined: Array.isArray(joinedRaw) ? joinedRaw.map(normalize) : [],
+        };
+      };
+
+      try {
+        const data = await this.makeRequest(`/communities/user/${encodeURIComponent(u)}`);
+        const { owned, joined } = extractLists(data);
+        if (owned.length || joined.length) {
+          return { success: true, owned, joined } as any;
+        }
+      } catch (_e) {}
+
+      const altRoutes = [
+        `/users/${encodeURIComponent(u)}/communities`,
+        `/user/${encodeURIComponent(u)}/communities`,
+        `/communities/by-user/${encodeURIComponent(u)}`,
+        `/community/user/${encodeURIComponent(u)}`,
+      ];
+      for (const route of altRoutes) {
+        try {
+          const data = await this.makeRequest(route);
+          const { owned, joined } = extractLists(data);
+          if (owned.length || joined.length) {
+            return { success: true, owned, joined } as any;
+          }
+        } catch (_) {}
+      }
+
+      const altRootRoutes = [
+        `/communities/user/${encodeURIComponent(u)}`,
+        `/users/${encodeURIComponent(u)}/communities`,
+        `/user/${encodeURIComponent(u)}/communities`,
+        `/communities/by-user/${encodeURIComponent(u)}`,
+        `/community/user/${encodeURIComponent(u)}`,
+      ];
+      for (const route of altRootRoutes) {
+        try {
+          const data = await this.makeRootRequest(route);
+          const { owned, joined } = extractLists(data);
+          if (owned.length || joined.length) {
+            return { success: true, owned, joined } as any;
+          }
+        } catch (_) {}
+      }
+
+      try {
+        const all = await this.getCommunities();
+        const list = (all as any)?.communities || [];
+        const owned = list
+          .filter((c: any) => c?.createdBy === u || c?.owner === u)
+          .map(normalize);
+        const joined = list
+          .filter((c: any) => c?.isJoined || (Array.isArray(c?.members) && c.members.includes(u)))
+          .map(normalize);
+        return { success: true, owned, joined } as any;
+      } catch (fallbackErr) {
+        console.error('getUserCommunities fallback via getCommunities failed:', fallbackErr);
+        return { success: false, owned: [], joined: [] } as any;
+      }
     } catch (error) {
       console.error('getUserCommunities error:', error);
-      throw error;
+      return { success: false, owned: [], joined: [] } as any;
     }
   }
 
@@ -2410,6 +2504,27 @@ export class ApiService {
       });
     } catch (error) {
       console.error('createCommunity error:', error);
+      throw error;
+    }
+  }
+
+  async editCommunity(communityId: string, data: { name?: string; description?: string; avatar?: string }) {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const username = current?.username;
+
+      const payload: any = { username };
+      if (typeof data.name === 'string') payload.name = data.name;
+      if (typeof data.description === 'string') payload.description = data.description;
+      if (typeof data.avatar === 'string') payload.avatar = data.avatar;
+
+      return this.makeRequest(`/communities/${encodeURIComponent(communityId)}/edit`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      console.error('editCommunity error:', error);
       throw error;
     }
   }
@@ -2481,6 +2596,78 @@ export class ApiService {
     } catch (error) {
       console.error('getNotifications error:', error);
       throw error;
+    }
+  }
+
+  // Send a single push notification via backend
+  async sendPushNotification(
+    toUsername: string,
+    title: string,
+    body: string,
+    type: string = 'alert',
+    data: Record<string, any> = {}
+  ): Promise<any> {
+    try {
+      const resp = await this.makeRequest('/notifications/send', {
+        method: 'POST',
+        body: JSON.stringify({ toUsername, title, body, type, data }),
+      });
+      return resp;
+    } catch (error) {
+      console.error('sendPushNotification error:', error);
+      return { success: false } as any;
+    }
+  }
+
+  // Trigger push notifications for a new community message
+  async triggerCommunityMessageNotifications(
+    communityId: string,
+    text: string,
+    messageId?: string,
+    attachments?: Array<{ url: string; type?: string; name?: string }>
+  ): Promise<void> {
+    try {
+      const stored = await AsyncStorage.getItem('currentUser');
+      const current = stored ? JSON.parse(stored) : null;
+      const senderUsername = current?.username;
+      const senderName = current?.name || `${current?.firstName || ''} ${current?.surname || ''}`.trim() || senderUsername;
+
+      const comm = await this.getCommunity(communityId);
+      const communityName = (comm as any)?.name || (comm as any)?.community?.name || '';
+
+      const membersResp = await this.getCommunityMembers(communityId);
+      const members = (membersResp as any)?.members || [];
+      const targets: { username: string }[] = members
+        .filter((m: any) => (m?.username || m?.user) && (m?.username || m?.user) !== senderUsername)
+        .map((m: any) => ({ username: m?.username || m?.user }));
+
+      const title = `You have a message from ${senderName} on "${communityName}"`;
+      let body = text;
+      // If no text, describe attachments
+      if ((!body || body.trim().length === 0) && Array.isArray(attachments) && attachments.length > 0) {
+        const types = attachments.map(a => (a?.type || '')).filter(Boolean);
+        const counts: Record<string, number> = {};
+        types.forEach(t => { counts[t] = (counts[t] || 0) + 1; });
+        const parts = Object.entries(counts).map(([t, n]) => `${n} ${t}${n > 1 ? 's' : ''}`);
+        body = parts.length > 0 ? `Sent ${parts.join(', ')}` : 'Sent a new attachment';
+      }
+      const baseData: Record<string, string> = {
+        type: 'community_message',
+        communityId: String(communityId),
+        communityName: String(communityName || ''),
+        senderUsername: String(senderUsername || ''),
+        senderName: String(senderName || ''),
+        messageId: messageId ? String(messageId) : '',
+        mediaTypes: Array.isArray(attachments) ? attachments.map(a => a?.type || '').join(',') : '',
+      };
+
+      await Promise.all(
+        targets.map(t =>
+          this.sendPushNotification(t.username, title, body, 'community_message', baseData)
+        )
+      );
+    } catch (error) {
+      console.error('triggerCommunityMessageNotifications error:', error);
     }
   }
 
@@ -2622,15 +2809,30 @@ export class ApiService {
     onProgress?: (percent: number) => void
   ) {
     try {
-      // Prefer public Downloads directory on Android; fallback to app documents
-      const baseDir = Platform.OS === 'android'
-        ? (RNFS.DownloadDirectoryPath || RNFS.DocumentDirectoryPath)
-        : RNFS.DocumentDirectoryPath;
-      const destPath = `${baseDir}/${filename}`;
+      // Prefer app documents directory for safe sharing (scoped storage friendly)
+      const baseDir = RNFS.DocumentDirectoryPath;
+      const safeFilename = (filename || `download-${Date.now()}`).replace(/[^a-zA-Z0-9._-]/g, '_');
+      const destPath = `${baseDir}/${safeFilename}`;
+      try { await RNFS.mkdir(baseDir); } catch (_) {}
 
+      const token = await this.getAuthToken();
+      // Only send Authorization for same-host API endpoints
+      const needsAuth = (() => {
+        try {
+          const target = new URL(url);
+          const apiOrigin = new URL(this.baseUrl).origin;
+          const rootOrigin = new URL(this.rootUrl).origin;
+          const sameHost = (target.origin === apiOrigin || target.origin === rootOrigin);
+          return sameHost && target.pathname.startsWith('/api');
+        } catch {
+          return false;
+        }
+      })();
+      const headers = needsAuth && token ? { Authorization: `Bearer ${token}` } : undefined;
       const result = await RNFS.downloadFile({
         fromUrl: url,
         toFile: destPath,
+        headers,
         progressDivider: 2,
         begin: (_res) => {
           try { onProgress?.(0); } catch (_) {}

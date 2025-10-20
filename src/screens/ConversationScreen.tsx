@@ -18,6 +18,9 @@ import {
   BackHandler,
   DeviceEventEmitter,
   Modal,
+  RefreshControl,
+  Animated,
+  Easing,
 } from 'react-native';
 import Video from 'react-native-video';
 import {useRoute, useNavigation, useIsFocused, RouteProp} from '@react-navigation/native';
@@ -30,6 +33,7 @@ import apiService from '../services/ApiService';
 import socketService from '../services/SocketService';
 import {colors, globalStyles} from '../styles/globalStyles';
 import audioRecorderService from '../services/AudioRecorder';
+import ChatUnreadService from '../services/ChatUnreadService';
 import { PermissionsManager } from '../utils/permissions';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import IncomingCallModal from '../components/IncomingCallModal';
@@ -37,6 +41,7 @@ import { initCallNotifications } from '../services/CallNotifications';
 import RecordingWaveform from '../components/RecordingWaveform';
 import RNFS from 'react-native-fs';
 import Clipboard from '@react-native-clipboard/clipboard';
+import { saveMediaToDevice } from '../utils/mediaSaver';
 
 interface Message {
   _id: string;
@@ -102,6 +107,34 @@ const ConversationScreen = () => {
   const [showMenu, setShowMenu] = useState<boolean>(false);
   const [keyboardVisible, setKeyboardVisible] = useState<boolean>(false);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const logoSpin = useRef(new Animated.Value(0)).current;
+  const spinLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const spin = logoSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const logoSource = require('../../public/logo.png');
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      spinLoopRef.current = Animated.loop(
+        Animated.timing(logoSpin, { toValue: 1, duration: 900, easing: Easing.linear, useNativeDriver: true })
+      );
+      spinLoopRef.current.start();
+    } catch {}
+    try {
+      await loadMessages();
+    } catch (e) {
+    } finally {
+      try { spinLoopRef.current?.stop(); } catch {}
+      logoSpin.setValue(0);
+      setRefreshing(false);
+    }
+  };
+  // Audio playback state
+  const audioPlayerRef = useRef<AudioRecorderPlayer | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [playPosition, setPlayPosition] = useState<number>(0);
+  const [playDuration, setPlayDuration] = useState<number>(0);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
   // Incoming call state
   const [incomingVisible, setIncomingVisible] = useState(false);
   const [incomingCaller, setIncomingCaller] = useState('');
@@ -130,6 +163,8 @@ const ConversationScreen = () => {
       // Cleanup socket listeners
       const socket = socketService.getSocket();
       if (socket) {
+        socket.off('connect');
+        socket.off('disconnect');
         socket.off('newMessage');
         socket.off('messageEdited');
         socket.off('messageDeleted');
@@ -144,6 +179,26 @@ const ConversationScreen = () => {
       if (typingInterval.current) { clearInterval(typingInterval.current as any); typingInterval.current = null; }
       if (typingTimeout.current) { clearTimeout(typingTimeout.current); typingTimeout.current = null; }
       try { incomingSub.remove(); } catch {}
+    };
+  }, []);
+
+  // Setup audio player and playback listener
+  useEffect(() => {
+    const player = new AudioRecorderPlayer();
+    audioPlayerRef.current = player;
+    try { player.removePlayBackListener(); } catch {}
+    const sub = player.addPlayBackListener((e: any) => {
+      setPlayPosition(e?.currentPosition || 0);
+      setPlayDuration(e?.duration || 0);
+      if ((e?.currentPosition || 0) >= (e?.duration || 0) && playingId) {
+        setPlayingId(null);
+        setIsPaused(false);
+        try { player.stopPlayer(); } catch {}
+      }
+    });
+    return () => {
+      try { player.stopPlayer(); } catch {}
+      try { player.removePlayBackListener(); } catch {}
     };
   }, []);
 
@@ -170,6 +225,18 @@ const ConversationScreen = () => {
   useEffect(() => {
     if (isFocused) {
       loadMessages();
+    }
+  }, [isFocused, chatId]);
+
+  // Manage active chat and clear its unread count while focused
+  useEffect(() => {
+    if (isFocused && chatId) {
+      try {
+        ChatUnreadService.setActiveChat(chatId);
+        ChatUnreadService.clear(chatId);
+      } catch (_) {}
+    } else {
+      try { ChatUnreadService.setActiveChat(null); } catch (_) {}
     }
   }, [isFocused, chatId]);
 
@@ -232,12 +299,60 @@ const ConversationScreen = () => {
       const url: string = first?.secure_url || first?.url || first;
       const typeLower = String(first?.type || first?.resource_type || '').toLowerCase();
       const isVideo = typeLower.includes('video');
+      const isAudio = typeLower.includes('audio');
+      const isDocument = typeLower.includes('application') || typeLower.includes('pdf') || typeLower.includes('text');
+      if (isVideo) {
+        return {
+          _id: m?._id || String(created),
+          sender: m?.sender,
+          content: forwarded ? 'Video' : (text || 'Video'),
+          type: 'video',
+          file: url ? { url, name: (first?.name || first?.original_filename || 'media'), size: (first?.bytes || first?.size || 0), type: String(first?.type || typeLower).toLowerCase() } : undefined,
+          timestamp: created,
+          status: 'sent',
+          reply: replyText || undefined,
+          replyFrom,
+          replyToId,
+          isForwarded: forwarded || undefined,
+        };
+      }
+      if (isAudio) {
+        return {
+          _id: m?._id || String(created),
+          sender: m?.sender,
+          content: 'Voice note',
+          type: 'audio',
+          file: url ? { url, name: (first?.name || first?.original_filename || 'audio'), size: (first?.bytes || first?.size || 0), type: String(first?.type || typeLower).toLowerCase() } : undefined,
+          timestamp: created,
+          status: 'sent',
+          reply: replyText || undefined,
+          replyFrom,
+          replyToId,
+          isForwarded: forwarded || undefined,
+        };
+      }
+      if (isDocument) {
+        return {
+          _id: m?._id || String(created),
+          sender: m?.sender,
+          content: forwarded ? 'File' : (text || 'File'),
+          type: 'file',
+          file: url ? { url, name: (first?.name || first?.original_filename || 'file'), size: (first?.bytes || first?.size || 0), type: String(first?.type || typeLower).toLowerCase() } : undefined,
+          timestamp: created,
+          status: 'sent',
+          reply: replyText || undefined,
+          replyFrom,
+          replyToId,
+          isForwarded: forwarded || undefined,
+        };
+      }
+      // Default to image when type is unknown
       return {
         _id: m?._id || String(created),
         sender: m?.sender,
-        content: forwarded ? (isVideo ? 'Video' : 'Photo') : (text || (isVideo ? 'Video' : 'Photo')),
-        type: isVideo ? 'video' : 'image',
-        file: url ? { url, name: first?.original_filename || 'media', size: 0, type: typeLower } : undefined,
+        content: forwarded ? 'Photo' : (text || 'Photo'),
+        type: 'image',
+        file: url ? { url, name: (first?.name || first?.original_filename || 'image'), size: (first?.bytes || first?.size || 0), type: String(first?.type || typeLower).toLowerCase() } : undefined,
         timestamp: created,
         status: 'sent',
         reply: replyText || undefined,
@@ -279,13 +394,34 @@ const ConversationScreen = () => {
   const setupSocketListeners = () => {
     const socket = socketService.getSocket();
     if (socket) {
+      // Hyper-sensitive presence on socket connect/disconnect
+      socket.on('connect', () => {
+        const nowOnline = socketService.isOnline(recipientUsername);
+        setIsOnline(!!nowOnline);
+        if (!nowOnline) {
+          setHeaderStatus('Offline');
+          fetchLastSeen(recipientUsername);
+        } else {
+          setHeaderStatus('');
+        }
+      });
+
+      socket.on('disconnect', () => {
+        setIsOnline(false);
+        setRecipientTyping(false);
+        setHeaderStatus('Offline');
+      });
+
       // Track global online users for "last seen" updates
       socket.on('update-online-users', (onlineUsers: string[]) => {
         const isRecipientOnline = onlineUsers?.includes?.(recipientUsername);
         setIsOnline(!!isRecipientOnline);
         if (!isRecipientOnline) {
           // Fetch last seen when user goes offline
+          setHeaderStatus('Offline');
           fetchLastSeen(recipientUsername);
+        } else {
+          setHeaderStatus('');
         }
       });
 
@@ -345,16 +481,31 @@ const ConversationScreen = () => {
       socket.on('user-online', (username: string) => {
         if (username === recipientUsername) {
           setIsOnline(true);
+          setHeaderStatus('');
         }
       });
 
       socket.on('user-offline', (username: string) => {
         if (username === recipientUsername) {
           setIsOnline(false);
+          setHeaderStatus('Offline');
+          fetchLastSeen(recipientUsername);
         }
       });
     }
   };
+
+  // Hyper-sensitive presence: initial hydration on mount and when recipient changes
+  useEffect(() => {
+    const onlineInitial = socketService.isOnline(recipientUsername);
+    setIsOnline(!!onlineInitial);
+    if (!onlineInitial) {
+      setHeaderStatus('Offline');
+      fetchLastSeen(recipientUsername);
+    } else {
+      setHeaderStatus('');
+    }
+  }, [recipientUsername]);
 
   // Join room once current user is known
   useEffect(() => {
@@ -621,6 +772,75 @@ const handleSendMessage = async () => {
   const typingTimeout = useRef<NodeJS.Timeout | null>(null);
   const typingInterval = useRef<NodeJS.Timeout | null>(null);
   const itemPositions = useRef<Record<string, number>>({});
+// Emoji reaction state
+const [reactionTargetId, setReactionTargetId] = useState<string | null>(null);
+const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
+const reactionEmojis = ['😀','😂','😍','👍','🙏','🎉','😢','🤔','🔥','🎯','👏','🙌','🥳','😮','😡','👀','💯','🤝','🫶','💡','❓','✅','❌','🍀','🌟','🚀','📌','💬','🔁','🍕','☕','🌈','🐶','🐱'];
+const openReactionTray = (id: string) => setReactionTargetId(id);
+const closeReactionTray = () => setReactionTargetId(null);
+const removeReaction = (id: string, emoji: string) => {
+  setMessageReactions(prev => {
+    const list = prev[id] || [];
+    const next = list.filter(e => e !== emoji);
+    const { [id]: _drop, ...rest } = prev;
+    return next.length ? { ...rest, [id]: next } : rest;
+  });
+};
+const playReactionPop = async () => {
+  try {
+    const player = new AudioRecorderPlayer();
+    await player.startPlayer('https://connecther.network/notify.mp3');
+    setTimeout(() => { try { player.stopPlayer(); } catch {} }, 650);
+  } catch (_e) {}
+};
+const pickReaction = (id: string, emoji: string) => {
+  setMessageReactions(prev => {
+    const list = prev[id] || [];
+    const exists = list.includes(emoji);
+    const next = exists ? list.filter(e => e !== emoji) : [...list, emoji];
+    if (!exists) { try { playReactionPop(); } catch {} }
+    return { ...prev, [id]: next };
+  });
+  setReactionTargetId(null);
+
+  // Send push notification to message author (if not self)
+  try {
+    const targetMsg = messages.find(m => m._id === id);
+    const author = targetMsg?.sender;
+    const authorUsername = typeof author === 'string' ? author : String(author || '');
+    const me = currentUser;
+    if (authorUsername && me?.username && authorUsername !== me.username) {
+      // Build payload for deep-linking to this chat
+      const payload = {
+        toUsername: authorUsername,
+        title: me.name || me.username,
+        body: 'reacted to your message.',
+        type: 'reaction',
+        data: {
+          chatId: String(chatId || ''),
+          peerUsername: String(me.username),
+          peerName: String(me.name || me.username),
+          peerAvatar: String(me.avatar || ''),
+          reactorName: String(me.name || me.username),
+          senderName: String(me.name || me.username),
+        },
+      };
+      (async () => {
+        try {
+          const token = await (apiService as any)['getAuthToken']?.();
+          await fetch('https://connecther.network/api/notifications/send', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify(payload),
+          });
+        } catch (_e) {}
+      })();
+    }
+  } catch (_e) {}
+};
 
   const handleTyping = (text: string) => {
     setMessageText(text);
@@ -847,6 +1067,14 @@ const handleSendMessage = async () => {
     return `${mm}:${ss}`;
   };
 
+  const formatBytes = (n?: number) => {
+    if (!n || n <= 0) return '';
+    const units = ['B','KB','MB','GB','TB'];
+    const i = Math.floor(Math.log(n) / Math.log(1024));
+    const v = n / Math.pow(1024, i);
+    return `${v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(1) : v.toFixed(2)} ${units[i]}`;
+  };
+
   const startRecording = async () => {
     const perm = await PermissionsManager.requestAudioPermission();
     if (!perm.granted) {
@@ -945,7 +1173,49 @@ const handleSendMessage = async () => {
     return date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
   };
 
-  const renderMessage = ({item}: {item: Message}) => {
+  const isSameDay = (a: Date, b: Date) => (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+
+  const formatDayLabel = (d: Date) => {
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    if (isSameDay(d, today)) return 'Today';
+    if (isSameDay(d, yesterday)) return 'Yesterday';
+    return d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const toggleAudioPlayback = async (msg: Message) => {
+    const player = audioPlayerRef.current;
+    const url = msg.file?.url;
+    if (!player || !url) return;
+    try {
+      if (playingId === msg._id) {
+        if (isPaused) {
+          await player.resumePlayer();
+          setIsPaused(false);
+        } else {
+          await player.pausePlayer();
+          setIsPaused(true);
+        }
+      } else {
+        try { await player.stopPlayer(); } catch {}
+        setPlayingId(msg._id);
+        setIsPaused(false);
+        setPlayPosition(0);
+        setPlayDuration(0);
+        await player.startPlayer(url);
+      }
+    } catch (err) {
+      console.error('toggleAudioPlayback error', err);
+      Alert.alert('Playback failed', 'Unable to play voice note.');
+    }
+  };
+
+  const renderMessage = ({item, index}: {item: Message; index: number}) => {
     const isOwnMessage = item.sender === currentUser?.username;
 
     // Remove horizontal responder capture to keep vertical scroll smooth
@@ -955,18 +1225,32 @@ const handleSendMessage = async () => {
     };
 
     return (
-      <View style={[
-        styles.messageContainer,
-        isOwnMessage ? styles.ownMessage : styles.otherMessage
-      ]}
-        onLayout={(e) => { itemPositions.current[item._id] = e.nativeEvent.layout.y; }}
-      >
+      <> 
+        {(() => {
+          const itemDate = new Date(item.timestamp);
+          const prev = index > 0 ? messages[index - 1] : null;
+          const prevDate = prev ? new Date(prev.timestamp) : null;
+          const showDay = index === 0 || (prevDate && !isSameDay(itemDate, prevDate));
+          if (!showDay) return null;
+          return (
+            <View style={styles.dayDivider}>
+              <Text style={styles.dayDividerText}>{formatDayLabel(itemDate)}</Text>
+            </View>
+          );
+        })()}
+        <View style={[
+          styles.messageContainer,
+          isOwnMessage ? styles.ownMessage : styles.otherMessage
+        ]}
+          onLayout={(e) => { itemPositions.current[item._id] = e.nativeEvent.layout.y; }}
+        >
         <Pressable style={[
           styles.messageBubble,
           isOwnMessage ? styles.ownBubble : styles.otherBubble
           , highlightedId === item._id ? styles.highlightBubble : null
         ]}
-          onLongPress={showMessageActions}
+          onLongPress={() => openReactionTray(item._id)}
+          onPress={() => { reactionTargetId ? closeReactionTray() : showMessageActions(); }}
         >
           {item.isForwarded && (
             <Text style={styles.forwardedTag}>Forwarded</Text>
@@ -977,7 +1261,7 @@ const handleSendMessage = async () => {
               <View style={styles.mediaActionsRow}>
                 <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handleDownload(item.file!)}>
                   <Icon name="download" size={18} color={colors.text} />
-                  <Text style={styles.mediaActionText}>Download</Text>
+                  <Text style={styles.mediaActionText}>{typeof downloadingMap[item.file!.url] === 'number' ? `Downloading ${Math.round(Math.max(0, Math.min(100, downloadingMap[item.file!.url])))}%` : 'Download'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handleShare(item.file!)}>
                   <Icon name="share" size={18} color={colors.text} />
@@ -1001,11 +1285,11 @@ const handleSendMessage = async () => {
                   <Icon name="play-circle-filled" size={48} color="#fff" />
                 </View>
               </Pressable>
-              <Text style={styles.fileName}>{item.file.name}</Text>
+              <Text style={styles.fileName}>{item.file.name} {item.file.size ? `• ${formatBytes(item.file.size)}` : ''}</Text>
               <View style={styles.mediaActionsRow}>
                 <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handleDownload(item.file!)}>
                   <Icon name="download" size={18} color={colors.text} />
-                  <Text style={styles.mediaActionText}>Download</Text>
+                  <Text style={styles.mediaActionText}>{typeof downloadingMap[item.file!.url] === 'number' ? `Downloading ${Math.round(Math.max(0, Math.min(100, downloadingMap[item.file!.url])))}%` : 'Download'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handleShare(item.file!)}>
                   <Icon name="share" size={18} color={colors.text} />
@@ -1019,12 +1303,51 @@ const handleSendMessage = async () => {
             <>
               <View style={styles.fileContainer}>
                 <Icon name="insert-drive-file" size={24} color={colors.text} />
-                <Text style={styles.fileName}>{item.file.name}</Text>
+                <Text style={styles.fileName}>{item.file.name} {item.file.size ? `• ${formatBytes(item.file.size)}` : ''}</Text>
               </View>
               <View style={styles.mediaActionsRow}>
                 <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handleDownload(item.file!)}>
                   <Icon name="download" size={18} color={colors.text} />
-                  <Text style={styles.mediaActionText}>Download</Text>
+                  <Text style={styles.mediaActionText}>{typeof downloadingMap[item.file!.url] === 'number' ? `Downloading ${Math.round(Math.max(0, Math.min(100, downloadingMap[item.file!.url])))}%` : 'Download'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handleShare(item.file!)}>
+                  <Icon name="share" size={18} color={colors.text} />
+                  <Text style={styles.mediaActionText}>Share</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+          
+          {item.type === 'audio' && item.file && (
+            <>
+              <View style={styles.audioContainer}>
+                <TouchableOpacity style={styles.audioPlayBtn} onPress={() => toggleAudioPlayback(item)}>
+                  <Icon name={playingId === item._id && !isPaused ? 'pause' : 'play-arrow'} size={20} color="#E9EDEF" />
+                </TouchableOpacity>
+                <View style={{flex: 1}}>
+                  {typeof uploadProgress[item.file!.url] === 'number' && uploadProgress[item.file!.url] > 0 && uploadProgress[item.file!.url] < 100 && (
+                    <View style={styles.audioUploadBar}>
+                      <View style={[styles.audioUploadProgress, { width: `${Math.round(Math.max(0, Math.min(100, uploadProgress[item.file!.url])))}%` }]} />
+                    </View>
+                  )}
+                  <View style={styles.audioProgressBar}>
+                    <View style={[styles.audioProgress, { width: `${(playingId === item._id && playDuration ? Math.min(100, Math.max(0, (playPosition / playDuration) * 100)) : 0)}%` }]} />
+                  </View>
+                  <View style={styles.audioWave}>
+                    {Array.from({ length: 16 }).map((_, i) => (
+                      <View key={i} style={[styles.audioWaveBar, { height: 6 + (i % 4) * 4 }]} />
+                    ))}
+                  </View>
+                  <Text style={styles.audioTime}>
+                    {(playingId === item._id ? formatRecordTime(playPosition) : '00:00')} / {formatRecordTime(playDuration || 0)}
+                  </Text>
+                  {!!item.file?.name && <Text style={styles.fileName}>{item.file.name}</Text>}
+                </View>
+              </View>
+              <View style={styles.mediaActionsRow}>
+                <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handleDownload(item.file!)}>
+                  <Icon name="download" size={18} color={colors.text} />
+                  <Text style={styles.mediaActionText}>{typeof downloadingMap[item.file!.url] === 'number' ? `Downloading ${Math.round(Math.max(0, Math.min(100, downloadingMap[item.file!.url])))}%` : 'Download'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.mediaActionBtn} onPress={() => handleShare(item.file!)}>
                   <Icon name="share" size={18} color={colors.text} />
@@ -1040,6 +1363,29 @@ const handleSendMessage = async () => {
               <Icon name="star" size={14} color="#ffcc00" />
             </View>
           )}
+          {Array.isArray(messageReactions[item._id]) && messageReactions[item._id].length ? (
+            <View style={styles.reactionBadge}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {messageReactions[item._id].map(e => (
+                  <TouchableOpacity key={e} style={styles.reactionBadgeEmoji} onPress={() => removeReaction(item._id, e)}>
+                    <Text style={styles.reactionBadgeText}>{e}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          ) : null}
+          {reactionTargetId === item._id ? (
+            <View pointerEvents="box-none" style={[styles.reactionTray, isOwnMessage ? styles.reactionTrayRight : styles.reactionTrayLeft]}>
+              {reactionEmojis.map(e => (
+                <TouchableOpacity key={e} style={styles.reactionItem} onPress={() => pickReaction(item._id, e)}>
+                  <Text style={styles.reactionText}>{e}</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity style={styles.reactionMore} onPress={() => { closeReactionTray(); showMessageActions(); }}>
+                <Icon name="more-horiz" size={18} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {item.replyToId && (
             <TouchableOpacity style={styles.replyPreview} onPress={() => scrollToMessageId(item.replyToId!)}>
@@ -1072,20 +1418,68 @@ const handleSendMessage = async () => {
           </Text>
         </Pressable>
       </View>
+      </>
     );
   };
 
   // Download a media file with visible progress indicator
   const [downloadingMap, setDownloadingMap] = useState<Record<string, number>>({});
+  const getFilenameFromUrl = (url: string) => {
+    try {
+      const u = new URL(url);
+      const pathname = u.pathname || '';
+      const name = pathname.split('/').pop() || `file_${Date.now()}`;
+      return decodeURIComponent(name);
+    } catch (_) {
+      const parts = url.split('?')[0].split('/');
+      return parts[parts.length - 1] || `file_${Date.now()}`;
+    }
+  };
+  const guessMediaType = (m: { url: string; type?: string }): 'image' | 'video' | 'audio' | 'file' => {
+    const t = (m.type || '').toLowerCase();
+    if (t.startsWith('image')) return 'image';
+    if (t.startsWith('video')) return 'video';
+    if (t.startsWith('audio')) return 'audio';
+    const ext = m.url.toLowerCase().match(/\.(jpg|jpeg|png|webp|gif|mp4|mov|webm|mkv|mp3|m4a|aac|wav|ogg|pdf|doc|docx|ppt|pptx|xls|xlsx|txt)$/)?.[1];
+    if (ext && ['jpg','jpeg','png','webp','gif'].includes(ext)) return 'image';
+    if (ext && ['mp4','mov','webm','mkv'].includes(ext)) return 'video';
+    if (ext && ['mp3','m4a','aac','wav','ogg'].includes(ext)) return 'audio';
+    return 'file';
+  };
   const handleDownload = async (file: { url: string; name?: string; type?: string }) => {
-    const name = (file.name && file.name.trim().length > 0) ? file.name : `media-${Date.now()}`;
+    const preferredName = (file.name && file.name.trim().length > 0) ? file.name.trim() : getFilenameFromUrl(file.url);
+    const kind = guessMediaType({ url: file.url, type: file.type });
     try {
       setDownloadingMap(prev => ({ ...prev, [file.url]: 0 }));
-      const res = await apiService.downloadFile(file.url, name, (p) => setDownloadingMap(prev => ({ ...prev, [file.url]: p })));
-      if (res?.success && res?.path) {
-        Alert.alert('Saved', `Downloaded to: ${res.path}`);
+      const token = await (apiService as any)['getAuthToken']?.();
+      const needsAuth = (() => {
+        try {
+          const target = new URL(file.url);
+          const apiOrigin = new URL((apiService as any).baseUrl || 'https://connecther.network/api').origin;
+          const rootOrigin = new URL((apiService as any).rootUrl || 'https://connecther.network').origin;
+          const sameHost = (target.origin === apiOrigin || target.origin === rootOrigin);
+          return sameHost && target.pathname.startsWith('/api');
+        } catch {
+          return false;
+        }
+      })();
+      const res = await saveMediaToDevice({
+        url: file.url,
+        type: kind as any,
+        filename: preferredName,
+        headers: needsAuth && token ? { Authorization: `Bearer ${token}` } : undefined,
+        onProgress: (p) => setDownloadingMap(prev => ({ ...prev, [file.url]: p })),
+      });
+      if (res.success) {
+        if (Platform.OS === 'android' && res.path) {
+          Alert.alert('Saved', `Saved to ${res.path}`);
+        } else if (Platform.OS === 'ios' && res.openedShareSheet) {
+          // iOS share sheet opened; user can save to Files/Photos
+        } else if (res.path) {
+          Alert.alert('Saved', `Downloaded to ${res.path}`);
+        }
       } else {
-        Alert.alert('Download failed', 'Unable to save file');
+        Alert.alert('Download failed', res.message || 'Unable to save file');
       }
     } catch (err) {
       console.error('handleDownload error:', err);
@@ -1096,41 +1490,230 @@ const handleSendMessage = async () => {
     }
   };
 
-  // Share media via system share sheet without optional dependencies
+  // Share media via system share sheet, ensure file attachment on Android
   const handleShare = async (file: { url: string; name?: string; type?: string }) => {
     try {
-      const name = (file.name && file.name.trim().length > 0) ? file.name : `media-${Date.now()}`;
-      // Download remote media to a local path first
-      const res = await apiService.downloadFile(file.url, name);
+      const baseName = (file.name && file.name.trim().length > 0) ? file.name.trim() : `media-${Date.now()}`;
+      const guessExtFromMime = (mime?: string): string => {
+        const m = (mime || '').toLowerCase();
+        if (!m) return '';
+        if (m === 'application/pdf') return 'pdf';
+        if (m.startsWith('image/')) {
+          const ext = m.split('/')[1] || 'jpg';
+          return ext === 'jpeg' ? 'jpg' : ext;
+        }
+        if (m.startsWith('video/')) {
+          const ext = m.split('/')[1] || 'mp4';
+          return ext === 'quicktime' ? 'mov' : ext;
+        }
+        if (m.startsWith('audio/')) {
+          const ext = m.split('/')[1] || 'aac';
+          return ext === 'mpeg' ? 'mp3' : ext;
+        }
+        return '';
+      };
+      const guessExtFromUrl = (u: string): string => {
+        try {
+          const clean = u.split('?')[0];
+          const parts = clean.split('.');
+          const ext = parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+          if (!ext) return '';
+          const safe = ext.replace(/[^a-z0-9]/g, '');
+          return safe.length > 0 && safe.length <= 5 ? safe : '';
+        } catch { return ''; }
+      };
+      const fetchMime = async (u: string): Promise<string | null> => {
+        try {
+          // Conditionally include auth for same-host /api endpoints
+          const token = await (apiService as any)['getAuthToken']?.();
+          const needsAuth = (() => {
+            try {
+              const target = new URL(u);
+              const apiOrigin = new URL((apiService as any).baseUrl || 'https://connecther.network/api').origin;
+              const rootOrigin = new URL((apiService as any).rootUrl || 'https://connecther.network').origin;
+              const sameHost = (target.origin === apiOrigin || target.origin === rootOrigin);
+              return sameHost && target.pathname.startsWith('/api');
+            } catch {
+              return false;
+            }
+          })();
+          const resp = await fetch(u, { method: 'HEAD', headers: needsAuth && token ? { Authorization: `Bearer ${token}` } : undefined });
+          const ct = resp.headers.get('content-type');
+          return ct || null;
+        } catch {
+          return null;
+        }
+      };
+      const remoteMime = await fetchMime(file.url);
+      const effectiveMime = (remoteMime || file.type || '');
+      const ext = guessExtFromMime(effectiveMime) || guessExtFromUrl(file.url) || 'bin';
+      const nameWithExt = (() => {
+        const m = baseName.match(/\.([a-z0-9]+)$/i);
+        if (m) {
+          const currExt = m[1].toLowerCase();
+          return currExt === ext ? baseName : baseName.replace(/\.[a-z0-9]+$/i, `.${ext}`);
+        }
+        return `${baseName}.${ext}`;
+      })();
+
+      // Download remote media to a local path first (prefer app documents to avoid scoped storage issues)
+      const res = await apiService.downloadFile(file.url, nameWithExt);
       if (res?.success && res?.path) {
-        const localPath = Platform.OS === 'android' && !String(res.path).startsWith('file://') ? `file://${res.path}` : res.path;
-        if (Platform.OS === 'ios') {
-          // iOS supports local file sharing via the built-in Share API
-          await Share.share({ url: localPath, title: file.name || 'Media' });
+        const rawPath = String(res.path);
+        const fsPath = rawPath.replace(/^file:\/\//, '');
+        const exists = await RNFS.exists(fsPath);
+        if (!exists) {
+          console.warn('Downloaded file not found at path:', rawPath);
+          Alert.alert('Download failed', 'File not found after download');
+          return;
+        }
+        const localPath = Platform.OS === 'android' && !rawPath.startsWith('file://') ? `file://${fsPath}` : rawPath;
+        if (Platform.OS === 'android') {
+          const RNShare = require('react-native-share').default;
+          const mime =
+            effectiveMime ||
+            (ext === 'jpg' ? 'image/jpeg' :
+             ext === 'png' ? 'image/png' :
+             ext === 'gif' ? 'image/gif' :
+             ext === 'webp' ? 'image/webp' :
+             ext === 'heic' ? 'image/heic' :
+             ext === 'mp4' ? 'video/mp4' :
+             ext === 'mov' ? 'video/quicktime' :
+             ext === 'mp3' ? 'audio/mpeg' :
+             ext === 'wav' ? 'audio/wav' :
+             ext === 'pdf' ? 'application/pdf' : 'application/octet-stream');
+          const shareUrl = (localPath && typeof localPath === 'string' && localPath.trim().length > 0) ? localPath : file.url;
+          if (!shareUrl) {
+            Alert.alert('Error', 'Invalid media URL for sharing');
+            return;
+          }
+          try {
+            await RNShare.open({ url: shareUrl, type: mime, filename: nameWithExt });
+          } catch (e) {
+            const emsg = String((e && (e as any).message) || e);
+            if (emsg.includes('getScheme') || emsg.includes('EUNSPECIFIED')) {
+              // Fallback: share as text link
+              await Share.share({ message: file.url, title: file.name || 'Media' });
+            } else {
+              throw e;
+            }
+          }
         } else {
-          // Android fallback: built-in Share does not attach files reliably, share link instead
-          await Share.share({ message: file.url, title: file.name || 'Media' });
+          await Share.share({ url: localPath, message: file.url, title: file.name || 'Media' });
         }
       } else {
-        // If download fails, share the link gracefully
-        await Share.share({ message: file.url, title: file.name || 'Media' });
+        Alert.alert('Download failed', 'Unable to prepare file for sharing');
       }
     } catch (err) {
-      console.error('handleShare error:', err);
-      Alert.alert('Error', 'Failed to share file');
+      const msg = String((err && (err as any).message) || err);
+      if (msg.includes('User did not share') || msg.includes('E_SHARING_CANCELLED')) {
+        console.log('Share cancelled by user');
+      } else {
+        console.error('handleShare error:', err);
+        Alert.alert('Error', 'Failed to share file');
+      }
+    } finally {
+      closeMessageActions();
     }
   };
 
-  // Share an entire message (text + optional file url)
+  // Share an entire message; attach media file when available (Android)
   const shareMessage = async (msg: Message) => {
     try {
       const parts: string[] = [];
       if (msg.content && msg.content.trim().length > 0) {
         parts.push(msg.content);
       }
+
+      // If the message contains a media file, prefer attaching it
       if (msg.file?.url) {
-        parts.push(msg.file.url);
+        const file = msg.file;
+        const baseName = (file.name && file.name.trim().length > 0) ? file.name.trim() : `media-${Date.now()}`;
+        const guessExtFromMime = (mime?: string): string => {
+          const m = (mime || '').toLowerCase();
+          if (m.startsWith('image/')) {
+            const ext = m.split('/')[1] || 'jpg';
+            return ext === 'jpeg' ? 'jpg' : ext;
+          }
+          if (m.startsWith('video/')) return (m.split('/')[1] || 'mp4');
+          if (m.startsWith('audio/')) return (m.split('/')[1] || 'aac');
+          if (m === 'application/pdf') return 'pdf';
+          return '';
+        };
+        const guessExtFromUrl = (u: string): string => {
+          try {
+            const clean = u.split('?')[0];
+            const partsUrl = clean.split('.');
+            const ext = partsUrl.length > 1 ? partsUrl.pop()!.toLowerCase() : '';
+            if (!ext) return '';
+            const safe = ext.replace(/[^a-z0-9]/g, '');
+            return safe.length > 0 && safe.length <= 5 ? safe : '';
+          } catch { return ''; }
+        };
+        const fetchMime = async (u: string): Promise<string | null> => {
+          try {
+            // Conditionally include auth for same-host /api endpoints
+            const token = await (apiService as any)['getAuthToken']?.();
+            const needsAuth = (() => {
+              try {
+                const target = new URL(u);
+                const apiOrigin = new URL((apiService as any).baseUrl || 'https://connecther.network/api').origin;
+                const rootOrigin = new URL((apiService as any).rootUrl || 'https://connecther.network').origin;
+                const sameHost = (target.origin === apiOrigin || target.origin === rootOrigin);
+                return sameHost && target.pathname.startsWith('/api');
+              } catch {
+                return false;
+              }
+            })();
+            const resp = await fetch(u, { method: 'HEAD', headers: needsAuth && token ? { Authorization: `Bearer ${token}` } : undefined });
+            const ct = resp.headers.get('content-type');
+            return ct || null;
+          } catch {
+            return null;
+          }
+        };
+        const remoteMime = await fetchMime(file.url);
+        const effectiveMime = (remoteMime || file.type || '');
+        const ext = guessExtFromMime(effectiveMime) || guessExtFromUrl(file.url) || 'bin';
+        const nameWithExt = (() => {
+          const m = baseName.match(/\.([a-z0-9]+)$/i);
+          if (m) {
+            const currExt = m[1].toLowerCase();
+            return currExt === ext ? baseName : baseName.replace(/\.[a-z0-9]+$/i, `.${ext}`);
+          }
+          return `${baseName}.${ext}`;
+        })();
+
+        const res = await apiService.downloadFile(file.url, nameWithExt);
+        if (res?.success && res?.path) {
+          const rawPath = String(res.path);
+          const fsPath = rawPath.replace(/^file:\/\//, '');
+          const localPath = Platform.OS === 'android' && !rawPath.startsWith('file://') ? `file://${fsPath}` : rawPath;
+          if (Platform.OS === 'android') {
+            const RNShare = require('react-native-share').default;
+            const mime =
+              effectiveMime ||
+              (ext === 'jpg' ? 'image/jpeg' :
+               ext === 'png' ? 'image/png' :
+               ext === 'gif' ? 'image/gif' :
+               ext === 'webp' ? 'image/webp' :
+               ext === 'heic' ? 'image/heic' :
+               ext === 'mp4' ? 'video/mp4' :
+               ext === 'mov' ? 'video/quicktime' :
+               ext === 'mp3' ? 'audio/mpeg' :
+               ext === 'wav' ? 'audio/wav' :
+               ext === 'pdf' ? 'application/pdf' : 'application/octet-stream');
+            await RNShare.open({ url: localPath, type: mime, filename: nameWithExt, message: parts.join('\n') });
+            return;
+          } else {
+            await Share.share({ url: localPath, title: file.name || 'Media', message: parts.join('\n') });
+            return;
+          }
+        }
+        // If we couldn't prepare file, fall back to sharing text + link
+        parts.push(file.url);
       }
+
       const payload: any = { message: parts.join('\n') || 'Shared message' };
       if (Platform.OS === 'ios' && msg.file?.url) {
         payload.url = msg.file.url;
@@ -1140,7 +1723,12 @@ const handleSendMessage = async () => {
       }
       await Share.share(payload);
     } catch (err) {
-      console.error('shareMessage error:', err);
+      const msg = String((err && (err as any).message) || err);
+      if (msg.includes('User did not share') || msg.includes('E_SHARING_CANCELLED')) {
+        console.log('shareMessage: user cancelled share');
+      } else {
+        console.error('shareMessage error:', err);
+      }
     } finally {
       closeMessageActions();
     }
@@ -1227,13 +1815,43 @@ const handleSendMessage = async () => {
         <View style={globalStyles.flexRow}>
           <TouchableOpacity
             style={{ marginRight: 12 }}
-            onPress={() => navigation.navigate('Call' as never, { to: recipientUsername, type: 'video' } as never)}
+            onPress={async () => {
+              try {
+                const stored = await AsyncStorage.getItem('currentUser');
+                const me = stored ? JSON.parse(stored) : null;
+                const caller = me?.username || '';
+                // Trigger server-side call log + FCM wake for receiver
+                try {
+                  await apiService.post('/calls', { caller, receiver: recipientUsername, status: 'ringing', type: 'video' });
+                } catch (_) {}
+                // Emit start-call to ensure incoming notification & call state
+                try {
+                  socketService.startCall({ from: caller, to: recipientUsername, callType: 'video' });
+                } catch (_) {}
+              } catch (_) {}
+              navigation.navigate('Call' as never, { to: recipientUsername, type: 'video', mode: 'caller' } as never);
+            }}
           >
             <Icon name="videocam" size={24} color="#E9EDEF" />
           </TouchableOpacity>
           <TouchableOpacity
             style={{ marginRight: 12 }}
-            onPress={() => navigation.navigate('Call' as never, { to: recipientUsername, type: 'audio' } as never)}
+            onPress={async () => {
+              try {
+                const stored = await AsyncStorage.getItem('currentUser');
+                const me = stored ? JSON.parse(stored) : null;
+                const caller = me?.username || '';
+                // Trigger server-side call log + FCM wake for receiver
+                try {
+                  await apiService.post('/calls', { caller, receiver: recipientUsername, status: 'ringing', type: 'audio' });
+                } catch (_) {}
+                // Emit start-call to ensure incoming notification & call state
+                try {
+                  socketService.startCall({ from: caller, to: recipientUsername, callType: 'audio' });
+                } catch (_) {}
+              } catch (_) {}
+              navigation.navigate('Call' as never, { to: recipientUsername, type: 'audio', mode: 'caller' } as never);
+            }}
           >
             <Icon name="call" size={24} color="#E9EDEF" />
           </TouchableOpacity>
@@ -1284,6 +1902,22 @@ const handleSendMessage = async () => {
         ListFooterComponent={renderTypingIndicator}
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="transparent"
+            colors={["transparent"]}
+            progressBackgroundColor="transparent"
+          />
+        }
+        ListHeaderComponent={() =>
+          refreshing ? (
+            <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+              <Animated.Image source={logoSource} style={{ width: 28, height: 28, transform: [{ rotate: spin }] }} />
+            </View>
+          ) : null
+        }
       />
 
       {/* Scroll controls (appear only when user is scrolling) */}
@@ -1615,6 +2249,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     backgroundColor: 'transparent',
   },
+  dayDivider: {
+    alignSelf: 'center',
+    backgroundColor: '#0B141A',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginVertical: 8,
+  },
+  dayDividerText: {
+    color: '#E9EDEF',
+    fontSize: 12,
+    textAlign: 'center',
+  },
   messageContainer: {
     marginVertical: 2,
   },
@@ -1628,6 +2275,7 @@ const styles = StyleSheet.create({
     maxWidth: '80%',
     padding: 12,
     borderRadius: 18,
+    overflow: 'visible',
   },
   forwardedTag: {
     fontSize: 11,
@@ -1711,6 +2359,61 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginLeft: 8,
     fontSize: 14,
+  },
+  audioContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+    gap: 12,
+  },
+  audioPlayBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#2A3942',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  audioUploadBar: {
+    height: 3,
+    backgroundColor: '#555',
+    borderRadius: 2,
+    overflow: 'hidden',
+    width: '100%',
+    marginBottom: 4,
+  },
+  audioUploadProgress: {
+    height: 3,
+    backgroundColor: '#7bd88f',
+  },
+  audioProgressBar: {
+    width: '100%',
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#2A3942',
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  audioProgress: {
+    height: 4,
+    backgroundColor: '#00A884',
+  },
+  audioWave: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: 16,
+    gap: 3,
+    marginVertical: 4,
+  },
+  audioWaveBar: {
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: colors.primary,
+  },
+  audioTime: {
+    color: colors.text,
+    fontSize: 12,
+    marginTop: 2,
   },
   typingText: {
     color: colors.textMuted,
@@ -2111,6 +2814,65 @@ const styles = StyleSheet.create({
   },
   chatBgIcon: {
     margin: 12,
+  },
+  // Emoji reaction styles
+  reactionTray: {
+    position: 'absolute',
+    top: -44,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 12,
+    zIndex: 1000,
+  },
+  reactionTrayLeft: { left: 8 },
+  reactionTrayRight: { right: 8 },
+  reactionItem: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    marginHorizontal: 2,
+    marginVertical: 2,
+    borderRadius: 12,
+    backgroundColor: colors.secondary,
+  },
+  reactionText: {
+    fontSize: 16,
+  },
+  reactionMore: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    marginLeft: 4,
+    borderRadius: 12,
+    backgroundColor: colors.secondary,
+  },
+  reactionBadge: {
+    position: 'absolute',
+    right: 10,
+    bottom: -8,
+    backgroundColor: '#2A3942',
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: '#26353B',
+    zIndex: 1000,
+    elevation: 12,
+  },
+  reactionBadgeText: {
+    fontSize: 14,
+  },
+  reactionBadgeEmoji: {
+    marginHorizontal: 2,
   },
 });
 

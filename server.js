@@ -10,6 +10,8 @@ require('events').EventEmitter.defaultMaxListeners = 30;
 const app = express();
 // 🔔 Firebase Admin for push notifications
 const admin = require('./firebase');
+const https = require('https');
+const verifyTokenAndRole = require('./middleware/verifyTokenAndRole');
 
 // 🛠️ CORS Middleware
 const corsOptions = {
@@ -118,6 +120,81 @@ app.use("/api/auth", authRoutes);
 
 const postRoutes = require('./routes/posts');
 app.use('/api/posts', postRoutes);
+
+// 📎 Media proxy download (Cloudinary fallback)
+app.get('/api/media/proxy-download', verifyTokenAndRole(['user','admin','superadmin']), async (req, res) => {
+  try {
+    const rawUrl = String(req.query.url || '').trim();
+    const filename = String(req.query.filename || 'file');
+
+    if (!rawUrl) {
+      return res.status(400).json({ message: 'Missing url parameter' });
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(rawUrl);
+    } catch (err) {
+      return res.status(400).json({ message: 'Invalid url parameter' });
+    }
+
+    const host = parsed.hostname || '';
+    const allowed = /(^|\.)cloudinary\.com$/i.test(host) || /(^|\.)res\.cloudinary\.com$/i.test(host);
+    if (!allowed) {
+      return res.status(400).json({ message: 'Only Cloudinary URLs are allowed' });
+    }
+
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const MAX_REDIRECTS = 3;
+
+    const pipeFrom = (targetUrl, redirectsLeft) => {
+      try {
+        const u = new URL(targetUrl);
+        const client = u.protocol === 'http:' ? require('http') : https;
+        const reqUp = client.get(targetUrl, (upstream) => {
+          const code = upstream.statusCode || 0;
+          const loc = upstream.headers.location;
+
+          if (code >= 300 && code < 400 && loc && redirectsLeft > 0) {
+            return pipeFrom(loc, redirectsLeft - 1);
+          }
+
+          if (code >= 400) {
+            upstream.resume(); // drain
+            return res.status(502).json({ message: `Upstream error ${code}` });
+          }
+
+          res.setHeader('Content-Type', upstream.headers['content-type'] || 'application/octet-stream');
+          res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+          if (upstream.headers['content-length']) {
+            res.setHeader('Content-Length', upstream.headers['content-length']);
+          }
+          res.setHeader('Cache-Control', 'no-store');
+
+          upstream.on('error', (err) => {
+            console.error('Proxy stream error:', err);
+            try { res.status(502).end('Proxy stream failed'); } catch (_) {}
+          });
+
+          upstream.pipe(res);
+        });
+
+        reqUp.on('error', (err) => {
+          console.error('Proxy request error:', err);
+          try { res.status(502).json({ message: 'Proxy fetch failed', error: err.message }); } catch (_) {}
+        });
+      } catch (err) {
+        console.error('Proxy internal error:', err);
+        return res.status(500).json({ message: 'Proxy internal error' });
+      }
+    };
+
+    pipeFrom(rawUrl, MAX_REDIRECTS);
+  } catch (err) {
+    console.error('Proxy route error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
 
 const userRoutes = require("./routes/users");
 app.use('/api/users', userRoutes);
@@ -577,9 +654,9 @@ socket.on("send-community-message", async (message) => {
 
   const { recipient, sender, text } = message;
 
-  // ✅ Emit to community room (for users already inside community.html)
-  io.to(recipient).emit("community-message", message);
-  console.log(`📤 Sent to community ${recipient}:`, text || "[media]");
+  // ✅ Emit to community room (exclude sender)
+  socket.to(recipient).emit("community-message", message);
+  console.log(`📤 Sent to community ${recipient} (excluding sender):`, text || "[media]");
 
   try {
     // ✅ Lookup community members
@@ -691,7 +768,7 @@ socket.on("register", (username) => {
 });
 
 // ✅ STEP 2: Caller starts group call
-socket.on("incoming-group-call", async ({ from, communityId, communityName, members }) => {
+socket.on("incoming-group-call", async ({ from, communityId, communityName, members, type }) => {
   try {
     const callRoom = `call_${communityId}`;
     socket.join(callRoom);
@@ -711,7 +788,8 @@ socket.on("incoming-group-call", async ({ from, communityId, communityName, memb
           io.to(member).emit("incoming-group-call", {
             from,
             communityId,
-            communityName
+            communityName,
+            type
           });
           notifiedCount++;
         }
@@ -937,6 +1015,27 @@ socket.on("check-call-alive", ({ communityId }) => {
   socket.emit("call-alive-status", { isAlive });
 });
 
+// ✅ Host-controlled mute/unmute for group calls
+// - Broadcasts `toggle-mute-status` to the call room for UI/state sync
+// - Sends `force-mute-status` directly to target to hard-disable local mic
+socket.on("toggle-mute-status", ({ communityId, target, action }) => {
+  try {
+    if (!communityId || !target || !action) return;
+    const callRoom = `call_${communityId}`;
+    const shouldMute = String(action).toLowerCase() === "mute";
+
+    // Broadcast to the room for UI updates
+    io.to(callRoom).emit("toggle-mute-status", { username: target, isMuted: shouldMute });
+
+    // Directly signal the target to enforce mic state
+    const targetSocket = Array.from(io.sockets.sockets.values()).find((s) => s.username === target);
+    if (targetSocket) {
+      targetSocket.emit("force-mute-status", { isMuted: shouldMute });
+    }
+  } catch (err) {
+    console.error("❌ Error in toggle-mute-status:", err);
+  }
+});
 
 
 

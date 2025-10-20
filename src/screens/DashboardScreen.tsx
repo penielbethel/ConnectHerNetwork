@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
+  Animated,
+  Easing,
   Image,
   TextInput,
   Alert,
@@ -17,6 +19,7 @@ import {
 import { WebView } from 'react-native-webview';
 import Video from 'react-native-video';
 import { Share } from 'react-native';
+import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 
 import DocumentPicker from 'react-native-document-picker';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
@@ -31,6 +34,7 @@ import socketService from '../services/SocketService';
 import {colors, globalStyles} from '../styles/globalStyles';
 import LinkedText from '../components/LinkedText';
 import { ThemeContext } from '../context/ThemeContext';
+import SoundService from '../services/SoundService';
 
 const DashboardScreen = () => {
   const [showMediaPickerModal, setShowMediaPickerModal] = React.useState(false);
@@ -44,11 +48,62 @@ const DashboardScreen = () => {
   const screenWidth = Dimensions.get('window').width;
   const screenHeight = Dimensions.get('window').height;
   const mediaWidth = Math.round(screenWidth * 0.8);
+const [successSoundUrl, setSuccessSoundUrl] = React.useState<string | null>(null);
+
+const audioPlayerRef = React.useRef<AudioRecorderPlayer | null>(null);
+const playSuccessSound = async () => {
+  const candidates = ['deliver.MP3', 'deliver.mp3', 'notify.mp3', 'connectring.mp3'];
+  try {
+    if (!audioPlayerRef.current) {
+      audioPlayerRef.current = new AudioRecorderPlayer();
+    }
+    const player = audioPlayerRef.current!;
+    try {
+      await player.stopPlayer();
+      player.removePlayBackListener();
+    } catch (_) {}
+
+    for (const name of candidates) {
+      const url = apiService.normalizeAvatar(name);
+      try {
+        await player.startPlayer(url);
+        try { await player.setVolume(1.0); } catch (_) {}
+        player.addPlayBackListener((e: any) => {
+          const pos = e?.currentPosition || 0;
+          const dur = e?.duration || 0;
+          if (pos >= dur && dur > 0) {
+            try { player.stopPlayer(); } catch (_) {}
+            try { player.removePlayBackListener(); } catch (_) {}
+          }
+        });
+        return; // audio success
+      } catch (err) {
+        console.warn('playSuccessSound candidate failed', name, err);
+        try { await player.stopPlayer(); } catch (_) {}
+        try { player.removePlayBackListener(); } catch (_) {}
+      }
+    }
+  } catch (err) {
+    console.warn('playSuccessSound failed', err);
+  }
+
+  // Fallback: play via hidden Video element to ensure success
+  try {
+    const url = apiService.normalizeAvatar(candidates[0]);
+    setSuccessSoundUrl(url);
+  } catch (e) {
+    console.warn('fallback video play failed', e);
+  }
+};
 
   // Feed and user state
   const [posts, setPosts] = React.useState<Post[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
+  const logoSpin = React.useRef(new Animated.Value(0)).current;
+  const spinLoopRef = React.useRef<Animated.CompositeAnimation | null>(null);
+  const spin = logoSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const logoSource = require('../../public/logo.png');
   const [currentUser, setCurrentUser] = React.useState<any>(null);
   const [suggestedUsers, setSuggestedUsers] = React.useState<any[]>([]);
   const [isFirstTimeUser, setIsFirstTimeUser] = React.useState(false);
@@ -72,6 +127,7 @@ const DashboardScreen = () => {
   const [showMentionSuggestions, setShowMentionSuggestions] = React.useState(false);
   const [mentionQuery, setMentionQuery] = React.useState('');
   const [composerFocused, setComposerFocused] = React.useState(false);
+  const [showComposer, setShowComposer] = React.useState(false);
   const [uploadingMedia, setUploadingMedia] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState(0);
 
@@ -284,6 +340,13 @@ const DashboardScreen = () => {
         );
       });
 
+      // Prevent duplicate bindings if setup runs multiple times
+      socket.off('post-deleted');
+      // Remove post when server broadcasts deletion
+      socket.on('post-deleted', (data: { postId: string }) => {
+        setPosts(prevPosts => prevPosts.filter(p => p._id !== data.postId));
+      });
+
       // Refresh suggestions when server notifies
       socket.on('refresh-suggestions', () => {
         loadSuggestions();
@@ -301,6 +364,14 @@ const DashboardScreen = () => {
     loadCurrentUser();
     loadPosts();
     setupSocketListeners();
+  }, []);
+
+  // Cleanup socket listeners on unmount to avoid memory leaks and duplicates
+  useEffect(() => {
+    const socket = socketService.getSocket();
+    return () => {
+      socket?.off('post-deleted');
+    };
   }, []);
 
   // Load suggestions or popular list for first-time users
@@ -327,8 +398,25 @@ const DashboardScreen = () => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadPosts();
-    setRefreshing(false);
+    logoSpin.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(logoSpin, {
+        toValue: 1,
+        duration: 1200,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    spinLoopRef.current = loop;
+    loop.start();
+
+    try {
+      await loadPosts();
+    } finally {
+      spinLoopRef.current?.stop();
+      logoSpin.stopAnimation(() => logoSpin.setValue(0));
+      setRefreshing(false);
+    }
   };
 
   const handleCreatePost = async () => {
@@ -349,7 +437,8 @@ const DashboardScreen = () => {
         setNewPostFiles([]);
         setShowComposer(false);
         await loadPosts(); // Refresh posts
-        Alert.alert('Success', 'Your post has been published');
+        playSuccessSound();
+setTimeout(() => Alert.alert('Success', 'Your post has been published'), 200);
       } else {
         Alert.alert('Error', 'Failed to create post');
       }
@@ -493,22 +582,33 @@ const DashboardScreen = () => {
 
   const handleLikePost = async (postId: string) => {
     try {
+      const username = currentUser?.username || '';
+      const target = posts.find(p => p._id === postId);
+      const currentLikedBy: string[] = Array.isArray((target as any)?.likedBy)
+        ? (target as any).likedBy
+        : Array.isArray((target as any)?.likes)
+        ? ((target as any).likes as any)
+        : [];
+      const isLikedBefore = username ? currentLikedBy.includes(username) : false;
+      if (!isLikedBefore) {
+        SoundService.playPop('react');
+      }
+
       await apiService.likePost(postId);
       // Optimistically update local state
       setPosts(prevPosts => prevPosts.map(post => {
         if (post._id !== postId) return post;
-        const username = currentUser?.username || '';
-        const currentLikedBy: string[] = Array.isArray((post as any).likedBy)
+        const currentLikedByInner: string[] = Array.isArray((post as any).likedBy)
           ? (post as any).likedBy
           : Array.isArray(post.likes)
           ? (post.likes as any)
           : [];
-        const isLiked = username ? currentLikedBy.includes(username) : false;
+        const isLiked = username ? currentLikedByInner.includes(username) : false;
         const newLikedBy = isLiked
-          ? currentLikedBy.filter(u => u !== username)
+          ? currentLikedByInner.filter(u => u !== username)
           : username
-          ? [...currentLikedBy, username]
-          : currentLikedBy;
+          ? [...currentLikedByInner, username]
+          : currentLikedByInner;
         const likesCount = typeof (post as any).likes === 'number'
           ? ((post as any).likes as any) + (isLiked ? -1 : 1)
           : newLikedBy.length;
@@ -570,7 +670,8 @@ const DashboardScreen = () => {
       setResharingPost(null);
       setReshareCaption('');
       setReshareMode('choose');
-      Alert.alert('Reposted', 'Post reposted to your timeline');
+      playSuccessSound();
+setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200);
     } catch (error) {
       console.error('Error reposting:', error);
       Alert.alert('Error', 'Failed to repost');
@@ -1186,8 +1287,21 @@ const DashboardScreen = () => {
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="transparent"
+            colors={["transparent"]}
+            progressViewOffset={60}
+          />
+        }
       >
+        {refreshing && (
+          <View style={{ paddingVertical: 12, alignItems: 'center' }}>
+            <Animated.Image source={logoSource} style={{ width: 36, height: 36, transform: [{ rotate: spin }] }} />
+          </View>
+        )}
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>ConnectHer</Text>
@@ -1327,7 +1441,22 @@ const DashboardScreen = () => {
           )}
         </View>
 
-        {renderComposer()}
+        {showComposer ? renderComposer() : null}
+{successSoundUrl ? (
+  <Video
+    source={{ uri: successSoundUrl }}
+    paused={false}
+    repeat={false}
+    audioOnly
+    muted={false}
+    volume={1.0}
+    playInBackground={true}
+    ignoreSilentSwitch={'ignore'}
+    onEnd={() => setSuccessSoundUrl(null)}
+    onError={(e: any) => { console.warn('success sound video error', e); setSuccessSoundUrl(null); }}
+    style={{ width: 0, height: 0 }}
+  />
+) : null}
 
         {loading && (
           <View style={styles.loadingContainer}>
@@ -1356,7 +1485,7 @@ const DashboardScreen = () => {
       {/* Floating Action Button */}
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => setShowComposer(true)}>
+        onPress={() => setShowComposer(prev => !prev)}>
         <Icon name="add" size={24} color={colors.text} />
       </TouchableOpacity>
 

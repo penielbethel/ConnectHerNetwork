@@ -28,16 +28,16 @@ router.post("/", async (req, res) => {
       const receiverUser = await User.findOne({ username: receiver });
       if (receiverUser && Array.isArray(receiverUser.fcmTokens) && receiverUser.fcmTokens.length > 0) {
         const payload = {
-          notification: {
-            title: "📞 Incoming Call",
-            body: `${caller} is calling you (${type || "audio"})`,
-            // Use custom sound channel name if configured on client; fallback to default
-            sound: "default",
-          },
+          // Data-only payload to allow client to render full-screen call UI with actions
           data: {
+            type: 'incoming_call',
             caller,
-            type: type || "audio",
-            status,
+            callType: type || 'audio',
+            receiver,
+            status: status || 'ringing',
+          },
+          android: {
+            priority: 'high',
           },
         };
 
@@ -138,6 +138,7 @@ router.post('/group-start', async (req, res) => {
         title: '📢 Incoming Group Call',
         body: `${caller} started a ${type || 'audio'} call in ${community.name || 'community'}`,
         sound: 'default',
+        image: community.avatar || undefined,
       },
       data: {
         type: 'group_call',
@@ -145,6 +146,7 @@ router.post('/group-start', async (req, res) => {
         callType: type || 'audio',
         communityId: String(communityId),
         communityName: community.name || '',
+        communityAvatar: community.avatar || '',
       },
     };
 

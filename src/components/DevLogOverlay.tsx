@@ -4,12 +4,14 @@ import { initDevLogger, DevLogEntry } from '../services/DevLogger';
 
 const MAX_ENTRIES = 20;
 
-const DevLogOverlay: React.FC = () => {
+const DevLogOverlay: React.FC<{ enabled?: boolean }> = ({ enabled }) => {
   const [logs, setLogs] = useState<DevLogEntry[]>([]);
   const [visible, setVisible] = useState(true);
 
+  const isEnabled = (enabled ?? __DEV__);
+
   useEffect(() => {
-    if (!__DEV__) return;
+    if (!isEnabled) return;
     initDevLogger((entry) => {
       setLogs((prev) => {
         const next = [entry, ...prev];
@@ -17,11 +19,11 @@ const DevLogOverlay: React.FC = () => {
         return next;
       });
     });
-  }, []);
+  }, [isEnabled]);
 
   const latestLevel = useMemo(() => logs[0]?.level, [logs]);
 
-  if (!__DEV__ || !visible) return null;
+  if (!isEnabled || !visible) return null;
 
   return (
     <View style={styles.container} pointerEvents="box-none">
@@ -48,12 +50,14 @@ const DevLogOverlay: React.FC = () => {
   );
 };
 
-function getLevelStyle(level?: 'log' | 'warn' | 'error') {
+function getLevelStyle(level?: 'log' | 'warn' | 'error' | 'debug') {
   switch (level) {
     case 'error':
       return { borderColor: '#ff4d4f' };
     case 'warn':
       return { borderColor: '#faad14' };
+    case 'debug':
+      return { borderColor: '#8cc6ff' };
     default:
       return { borderColor: '#40a9ff' };
   }

@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 export type DevLogEntry = {
-  level: 'log' | 'warn' | 'error';
+  level: 'log' | 'warn' | 'error' | 'debug';
   message: string;
   stack?: string;
   fatal?: boolean;
@@ -19,6 +19,7 @@ export function initDevLogger(listener: DevLogListener) {
   const originalLog = console.log;
   const originalWarn = console.warn;
   const originalError = console.error;
+  const originalDebug = console.debug ? console.debug : console.log;
 
   console.log = (...args: any[]) => {
     try {
@@ -43,6 +44,13 @@ export function initDevLogger(listener: DevLogListener) {
       listener({ level: 'error', message: msg, stack, timestamp: Date.now() });
     } catch {}
     originalError(...args);
+  };
+
+  console.debug = (...args: any[]) => {
+    try {
+      listener({ level: 'debug', message: formatArgs(args), timestamp: Date.now() });
+    } catch {}
+    originalDebug(...args);
   };
 
   const globalAny: any = global as any;

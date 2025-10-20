@@ -185,7 +185,7 @@ router.post("/save-token", async (req, res) => {
  * ✅ Send push notification & save to DB (multi-device)
  */
 router.post("/send", async (req, res) => {
-  const { toUsername, title, body, type = "alert", forAll = false } = req.body;
+  const { toUsername, title, body, type = "alert", forAll = false, data: extraData = {} } = req.body;
   if (!toUsername || !title || !body) return res.status(400).json({ message: "Missing required fields." });
 
   try {
@@ -202,12 +202,41 @@ router.post("/send", async (req, res) => {
       return res.json({ success: true, message: "Notification saved, no tokens to push.", notification: newNotif });
     }
 
+    const normalizeData = (obj) => {
+      const out = {};
+      try {
+        Object.entries(obj || {}).forEach(([k, v]) => {
+          if (v === undefined || v === null) return;
+          // FCM data must be strings
+          out[String(k)] = typeof v === 'string' ? v : String(v);
+        });
+      } catch (_) {}
+      return out;
+    };
+
+    const baseData = { type, forAll: String(forAll), createdAt: newNotif.createdAt.toISOString(), url: "/dashboard.html" };
+    const mergedData = { ...baseData, ...normalizeData(extraData) };
+
+    const channelForType = (t) => {
+      const tc = String(t || '').toLowerCase();
+      if (tc === 'group_call' || tc === 'incoming_call' || tc === 'call') return 'connecther_calls';
+      if (tc === 'community_message' || tc === 'message' || tc === 'community_reaction') return 'connecther_messages';
+      return 'connecther_notifications';
+    };
+
     const messages = user.fcmTokens.map(token => ({
       token,
-      notification: { title, body, sound: "notify" },
-      android: { priority: "high", notification: { channel_id: "connecther_notifications", sound: "default", visibility: "public" } },
-      apns: { payload: { aps: { sound: "default" } } },
-      data: { type, forAll: String(forAll), createdAt: newNotif.createdAt.toISOString(), url: "/dashboard.html" }
+      // Admin SDK Notification only supports title/body/image; sound must be set via platform-specific payloads
+      notification: { title, body },
+      android: {
+        priority: 'high',
+        notification: {
+          channel_id: channelForType(type),
+          visibility: 'public'
+        }
+      },
+      apns: { payload: { aps: { sound: 'default' } } },
+      data: mergedData,
     }));
 
     // Send notifications

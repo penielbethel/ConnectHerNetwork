@@ -19,6 +19,7 @@ import socketService from '../services/SocketService';
 import {colors, globalStyles} from '../styles/globalStyles';
 import LinkedText from '../components/LinkedText';
 import { getFlagEmojiForLocation } from '../utils/flags';
+import CommunityUnreadService from '../services/CommunityUnreadService';
 
 interface Community {
   _id: string;
@@ -79,6 +80,19 @@ const CommunityScreen = () => {
   const [focusedCommunityId, setFocusedCommunityId] = useState<string | null>(null);
   const [focusedCommunity, setFocusedCommunity] = useState<Community | null>(null);
   const [focusedMembers, setFocusedMembers] = useState<Array<{username: string; name: string; avatar: string; isAdmin: boolean; isCreator: boolean}>>([]);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+
+  // Subscribe to unread counts for per-community badges
+  useEffect(() => {
+    let unsub: undefined | (() => void);
+    (async () => {
+      try { await CommunityUnreadService.init(); } catch (_) {}
+      unsub = CommunityUnreadService.subscribe((counts, _total) => {
+        setUnreadCounts(counts);
+      });
+    })();
+    return () => { if (unsub) unsub(); };
+  }, []);
 
   const getAvatarUri = (uri?: string) => {
     if (uri && uri.trim()) return uri;
@@ -463,7 +477,14 @@ const CommunityScreen = () => {
             }
             navigation.navigate('CommunityChat' as never, { communityId: community._id, communityName: community.name } as never);
           }}>
-          <Text style={styles.viewButtonText}>Chat</Text>
+          <View style={globalStyles.flexRow}>
+            <Text style={styles.viewButtonText}>Chat</Text>
+            {(unreadCounts[community._id] || 0) > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadBadgeText}>{unreadCounts[community._id]}</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
     </View>
@@ -479,9 +500,9 @@ const CommunityScreen = () => {
     } else {
       base = ownedCommunities;
     }
-    if (focusedCommunityId) {
-      base = base.filter(c => c._id === focusedCommunityId);
-    }
+    if (focusedCommunityId && activeTab !== 'joined') {
+    base = base.filter(c => c._id === focusedCommunityId);
+  }
     const q = searchQuery.toLowerCase();
     return base.filter(c =>
       (c.name || '').toLowerCase().includes(q) ||
@@ -492,6 +513,7 @@ const CommunityScreen = () => {
   const renderOwnedJoined = () => (
     <ScrollView
       style={{flex: 1}}
+      contentContainerStyle={styles.contentContainer}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
       <Text style={styles.sectionTitle}>My Communities</Text>
@@ -672,83 +694,6 @@ const CommunityScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Focused Community Header (when deep-linked) */}
-      {focusedCommunityId && focusedCommunity && (
-        <View style={[styles.section, {marginTop: 10}]}> 
-          <View style={styles.communityHeader}>
-            <Image source={{ uri: focusedCommunity.avatar }} style={styles.communityAvatar} />
-            <View style={styles.communityInfo}>
-              <Text style={styles.communityName}>{focusedCommunity.name}</Text>
-              <Text style={styles.communityDescription} numberOfLines={2}>{focusedCommunity.description}</Text>
-              <View style={globalStyles.flexRow}>
-                <Text style={styles.memberCount}>{focusedCommunity.memberCount} members</Text>
-                {focusedCommunity.isPrivate && (
-                  <Icon name="lock" size={16} color={colors.textMuted} style={{marginLeft: 10}} />
-                )}
-              </View>
-            </View>
-          </View>
-          <View style={styles.communityActions}>
-            {focusedCommunity.isJoined ? (
-              <TouchableOpacity
-                style={[globalStyles.secondaryButton, styles.actionButton]}
-                onPress={() => handleLeaveCommunity(focusedCommunity._id)}>
-                <Text style={globalStyles.secondaryButtonText}>Leave</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[globalStyles.button, styles.actionButton]}
-                onPress={() => handleJoinCommunity(focusedCommunity._id)}>
-                <Text style={globalStyles.buttonText}>Join</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              style={[globalStyles.secondaryButton, styles.actionButton]}
-              onPress={clearFocusedCommunity}
-            >
-              <Text style={globalStyles.secondaryButtonText}>Clear Focus</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Members list (compact) */}
-          {focusedMembers.length > 0 && (
-            <View style={{marginTop: 10}}>
-              <Text style={styles.sectionTitle}>Members</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{paddingVertical: 5}}>
-                {focusedMembers.map(m => {
-                  const canManage = !!currentUser && focusedMembers.some(x => x.username === currentUser.username && (x.isCreator || x.isAdmin));
-                  const isSelf = !!currentUser && m.username === currentUser.username;
-                  return (
-                    <View key={m.username} style={{alignItems: 'center', marginRight: 12}}>
-                      <Image source={{ uri: getAvatarUri(m.avatar) }} style={{width: 44, height: 44, borderRadius: 22}} />
-                      <Text style={{color: colors.text, fontSize: 12}} numberOfLines={1}>{m.name}</Text>
-                      {(m.isCreator || m.isAdmin) && (
-                        <Text style={{color: colors.textMuted, fontSize: 10}}>{m.isCreator ? 'Creator' : 'Admin'}</Text>
-                      )}
-                      {canManage && !isSelf && !m.isCreator && (
-                        <View style={{flexDirection: 'row', marginTop: 4}}>
-                          {m.isAdmin ? (
-                            <TouchableOpacity style={[globalStyles.secondaryButton, styles.actionButton]} onPress={() => handleDemoteMember(m.username)}>
-                              <Text style={globalStyles.secondaryButtonText}>Demote</Text>
-                            </TouchableOpacity>
-                          ) : (
-                            <TouchableOpacity style={[globalStyles.button, styles.actionButton]} onPress={() => handlePromoteMember(m.username)}>
-                              <Text style={globalStyles.buttonText}>Promote</Text>
-                            </TouchableOpacity>
-                          )}
-                          <TouchableOpacity style={[globalStyles.secondaryButton, styles.actionButton]} onPress={() => handleRemoveMember(m.username)}>
-                            <Text style={globalStyles.secondaryButtonText}>Remove</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          )}
-        </View>
-      )}
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
@@ -792,7 +737,9 @@ const CommunityScreen = () => {
       ) : (
         <ScrollView
           style={styles.content}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+          contentContainerStyle={styles.contentContainer}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        >
           
           {/* Communities Section */}
           <View style={styles.section}>
@@ -832,41 +779,60 @@ const styles = StyleSheet.create({
   header: {
     ...globalStyles.flexRowBetween,
     ...globalStyles.paddingHorizontal,
-    paddingVertical: 15,
-    backgroundColor: colors.secondary,
+    paddingVertical: 18,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 6,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#e91e63',
+    color: colors.text,
   },
   searchContainer: {
     ...globalStyles.flexRow,
     ...globalStyles.paddingHorizontal,
-    paddingVertical: 10,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
     alignItems: 'center',
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 4,
   },
   searchInput: {
     flex: 1,
     marginLeft: 10,
     color: colors.text,
     fontSize: 16,
+    paddingHorizontal: 4,
   },
   tabContainer: {
     ...globalStyles.flexRow,
+    marginHorizontal: 16,
+    marginBottom: 8,
     backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   tab: {
     flex: 1,
-    paddingVertical: 15,
+    paddingVertical: 12,
     alignItems: 'center',
+    borderRadius: 8,
   },
   activeTab: {
     borderBottomWidth: 2,
@@ -883,31 +849,43 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
+  contentContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
   section: {
-    margin: 10,
+    marginHorizontal: 16,
+    marginVertical: 12,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 15,
+    marginBottom: 12,
+    letterSpacing: 0.2,
   },
   communityCard: {
     backgroundColor: colors.surface,
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: colors.border,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
   },
   communityHeader: {
     ...globalStyles.flexRow,
-    marginBottom: 15,
+    marginBottom: 12,
+    alignItems: 'center',
   },
   communityAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     marginRight: 15,
   },
   communityInfo: {
@@ -917,12 +895,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 5,
+    marginBottom: 4,
   },
   communityDescription: {
     fontSize: 14,
     color: colors.textMuted,
-    marginBottom: 5,
+    marginBottom: 6,
+    lineHeight: 20,
   },
   memberCount: {
     fontSize: 12,
@@ -943,17 +922,36 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: 'bold',
   },
+  unreadBadge: {
+    marginLeft: 8,
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  unreadBadgeText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
   postCard: {
     backgroundColor: colors.surface,
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: colors.border,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
   },
   postHeader: {
     ...globalStyles.flexRowBetween,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   avatarContainer: {
     position: 'relative',
@@ -1023,9 +1021,14 @@ const styles = StyleSheet.create({
     ...globalStyles.flexRowBetween,
     ...globalStyles.paddingHorizontal,
     paddingVertical: 15,
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 6,
   },
   modalTitle: {
     fontSize: 18,
@@ -1051,7 +1054,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   textArea: {
-    height: 80,
+    height: 100,
     textAlignVertical: 'top',
   },
   checkboxContainer: {
@@ -1063,6 +1066,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
     marginLeft: 10,
+  },
+  emptyText: {
+    color: colors.textMuted,
+    fontSize: 14,
   },
 });
 

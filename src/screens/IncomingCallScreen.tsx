@@ -7,6 +7,7 @@ import socketService from '../services/SocketService';
 import apiService from '../services/ApiService';
 import { colors } from '../styles/globalStyles';
 import { RootStackParamList } from '../types/navigation';
+import { isSuppressed } from '../utils/callGuard';
 // Lazily load audio player to avoid constructor issues during navigation/mount
 
 type IncomingCallRoute = RouteProp<RootStackParamList, 'IncomingCall'>;
@@ -21,6 +22,20 @@ const IncomingCallScreen: React.FC = () => {
   const [isRinging, setIsRinging] = useState(true);
 
   useEffect(() => {
+    // Guard: if this caller is suppressed (call just ended), skip showing
+    if (isSuppressed(caller)) {
+      try { Vibration.cancel(); } catch (_) {}
+      try {
+        const nav: any = navigation as any;
+        if (nav?.canGoBack?.()) {
+          nav.goBack();
+        } else {
+          nav.navigate?.('Dashboard');
+        }
+      } catch (_) {}
+      return;
+    }
+
     (async () => {
       try {
         const raw = await AsyncStorage.getItem('currentUser');
@@ -43,20 +58,13 @@ const IncomingCallScreen: React.FC = () => {
     // Start ringtone (lazy import to prevent native constructor errors)
     (async () => {
       try {
-        let PlayerCtor: any = null;
         try {
           const mod = require('react-native-audio-recorder-player');
-          PlayerCtor = mod?.default || mod?.AudioRecorderPlayer || null;
-        } catch (_) {
-          PlayerCtor = null;
-        }
-        if (!audioRef.current && PlayerCtor) {
-          try {
-            audioRef.current = new PlayerCtor();
-          } catch (_newErr) {
-            try { audioRef.current = PlayerCtor(); } catch { audioRef.current = null; }
+          const exported = mod?.default ?? mod?.AudioRecorderPlayer ?? null;
+          if (!audioRef.current && exported) {
+            audioRef.current = typeof exported === 'function' ? new exported() : exported;
           }
-        }
+        } catch (_) {}
         if (!audioRef.current) return;
 
         const url = apiService.normalizeAvatar('/connectring.mp3');

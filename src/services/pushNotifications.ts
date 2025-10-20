@@ -1,10 +1,12 @@
 import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messaging';
 import { firebase } from '@react-native-firebase/app';
-import { Platform, Alert, PermissionsAndroid, InteractionManager } from 'react-native';
+import { Platform, Alert, PermissionsAndroid, InteractionManager, Vibration } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PushNotification from 'react-native-push-notification';
+import Sound from 'react-native-sound';
 import socketService from './SocketService';
 import { navigate } from '../navigation/RootNavigation';
+import NotificationPlugin from '../plugins/notification';
 
 export interface NotificationData {
   title: string;
@@ -21,6 +23,10 @@ export class PushNotificationService {
   private isInitialized = false;
   private firebaseAvailable = false;
   private foregroundUnsubscribe: (() => void) | null = null;
+  private ringingTimers: Record<string, ReturnType<typeof setInterval>> = {};
+  private ringingSounds: Record<string, Sound> = {};
+  private recentNotificationIds: Set<string> = new Set();
+  private activeGroupCalls: Set<string> = new Set();
 
   static getInstance(): PushNotificationService {
     if (!PushNotificationService.instance) {
@@ -129,7 +135,12 @@ export class PushNotificationService {
         
         // Handle notification tap
         if (notification.userInteraction) {
-          this.handleNotificationTap(notification);
+          try {
+            const payload = (notification as any)?.data || (notification as any)?.userInfo || {};
+            this.handleNotificationTap(payload);
+          } catch (e) {
+            console.log('onNotification tap handler error:', e);
+          }
         }
       },
 
@@ -163,6 +174,10 @@ export class PushNotificationService {
                   });
                 }
               } catch (_) {}
+              // Stop ringing when user accepts
+              this.stopRinging(String(communityId));
+              this.activeGroupCalls.add(String(communityId));
+              this.stopAllRinging();
               navigate('CommunityCall', {
                 communityId,
                 communityName,
@@ -179,6 +194,9 @@ export class PushNotificationService {
                   socketService.declineGroupCall({ communityId, username });
                 }
               } catch (_) {}
+              // Stop ringing when user declines
+              this.stopRinging(String(communityId));
+              this.stopAllRinging();
             }
           } else {
             if (action === 'Accept' && caller) {
@@ -229,7 +247,7 @@ export class PushNotificationService {
         channelName: 'Messages',
         channelDescription: 'New message notifications',
         playSound: true,
-        soundName: 'default',
+        soundName: 'notify.mp3',
         importance: 5, // MAX importance for message notifications
         vibrate: true,
       },
@@ -247,7 +265,7 @@ export class PushNotificationService {
         channelName: 'Calls',
         channelDescription: 'Incoming call alerts',
         playSound: true,
-        soundName: 'default',
+        soundName: 'connectring.mp3',
         importance: 5,
         vibrate: true,
       },
@@ -334,14 +352,22 @@ export class PushNotificationService {
       // Handle notification opened from background/quit state
       messaging().onNotificationOpenedApp((remoteMessage) => {
         console.log('Notification opened app:', remoteMessage);
-        this.handleNotificationTap(remoteMessage);
+        try {
+          this.handleNotificationTap(remoteMessage?.data || {});
+        } catch (e) {
+          console.log('onNotificationOpenedApp handler error:', e);
+        }
       });
 
       // Check if app was opened from a notification
       const initialNotification = await messaging().getInitialNotification();
       if (initialNotification) {
         console.log('App opened from notification:', initialNotification);
-        this.handleNotificationTap(initialNotification);
+        try {
+          this.handleNotificationTap(initialNotification?.data || {});
+        } catch (e) {
+          console.log('getInitialNotification handler error:', e);
+        }
       }
     } catch (error) {
       console.error('Error setting up Firebase messaging:', error);
@@ -429,25 +455,102 @@ export class PushNotificationService {
     }
   }
 
+  private isDuplicateAndMark(key?: string): boolean {
+    try {
+      if (!key) return false;
+      if (this.recentNotificationIds.has(key)) return true;
+      this.recentNotificationIds.add(key);
+      setTimeout(() => {
+        try { this.recentNotificationIds.delete(key); } catch (_) {}
+      }, 10000);
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  private computeNotificationIdForGroupCall(communityId: string): number {
+    try {
+      const s = String(communityId || '');
+      let hash = 0;
+      for (let i = 0; i < s.length; i++) {
+        hash = ((hash << 5) - hash) + s.charCodeAt(i);
+        hash |= 0;
+      }
+      return Math.abs(hash);
+    } catch (_) {
+      return Math.floor(Math.random() * 100000);
+    }
+  }
+
   private displayLocalNotification(remoteMessage: FirebaseMessagingTypes.RemoteMessage): void {
     const { notification, data } = remoteMessage;
-    
-    if (!notification) return;
+    const dtype = String((data as any)?.type || '').toLowerCase();
+    const notifTitle = notification?.title || (data as any)?.title || 'ConnectHer';
+    const isCall = !!(data?.caller || dtype === 'call' || dtype === 'group_call' || String(notifTitle || '').toLowerCase().includes('call'));
 
-    const dtype = String(data?.type || '').toLowerCase();
-    const isCall = !!(data?.caller || dtype === 'call' || dtype === 'group_call' || String(notification.title || '').toLowerCase().includes('call'));
+    // Deduplicate notifications (special handling for group calls)
+    let dedupKey: string | undefined = remoteMessage.messageId || (data as any)?.msgId || (data as any)?.id;
+    let groupCommunityId: string | undefined;
+    if (dtype === 'group_call') {
+      groupCommunityId = String((data as any)?.communityId || '');
+      // Use only communityId for dedup to unify FCM/socket
+      dedupKey = `group_call|${groupCommunityId}`;
+    } else if (!dedupKey) {
+      dedupKey = `${dtype}|${(data as any)?.communityId || ''}|${(data as any)?.from || (data as any)?.sender || ''}|${notification?.body || (data as any)?.body || ''}|${(data as any)?.createdAt || (data as any)?.time || ''}`;
+    }
+    // For group calls, do not skip duplicates here; replacement handled via stable id
+    if (dtype !== 'group_call' && this.isDuplicateAndMark(dedupKey)) {
+      return;
+    }
+
+    const reactorName = (data as any)?.reactorName || (data as any)?.senderName || (data as any)?.fromName || (data as any)?.from || '';
+    const communityName = (data as any)?.communityName || '';
+
+    const computedMessage = (() => {
+      if (dtype === 'reaction') {
+        return `${reactorName || 'Someone'} reacted to your message.`;
+      }
+      if (dtype === 'community_reaction') {
+        return `${reactorName || 'Someone'} reacted to your message on "${communityName || 'a community'}".`;
+      }
+      if (dtype === 'community_message') {
+        const body = notification?.body || (data as any)?.body;
+        return body || `New message in "${communityName || 'a community'}"`;
+      }
+      if (dtype === 'incoming_call') {
+        const callType = String((data as any)?.callType || 'audio');
+        const fromName = String((data as any)?.caller || reactorName || 'Someone');
+        return `Incoming ${callType} call from ${fromName}.`;
+      }
+      return notification?.body || (data as any)?.body || 'You have a new notification';
+    })();
+
+    const computedTitle = (() => {
+      if (dtype === 'reaction') return reactorName || 'New reaction';
+      if (dtype === 'community_reaction') return reactorName || 'New reaction';
+      if (dtype === 'community_message') {
+        if (notifTitle && notifTitle !== 'ConnectHer') return notifTitle;
+        const sender = reactorName;
+        return `${sender || 'New message'} on "${communityName || 'a community'}"`;
+      }
+      if (dtype === 'incoming_call') return 'Incoming Call';
+      return notifTitle;
+    })();
+
+    const soundName = isCall ? 'connectring.mp3' : ((dtype === 'community_message' || dtype === 'message') ? 'notify.mp3' : 'default');
     const channelId = isCall
       ? 'connecther_calls'
-      : (dtype === 'sponsor' || dtype === 'sponsor_alert'
-          ? 'sponsors_alerts'
-          : ((dtype === 'post' || dtype === 'like' || dtype === 'comment' || dtype === 'reply' || dtype === 'share')
-              ? 'connecther_notifications'
-              : (dtype === 'friend' || dtype === 'friend_request' ? 'connecther_notifications' : 'connecther_messages')));
-    const actions = isCall ? ['Accept', 'Decline'] : ['View'];
+      : (dtype === 'friend' || dtype === 'friend_request')
+        ? 'connecther_notifications'
+        : 'connecther_messages';
+
+    // Wake the screen for visibility even when device is idle
+    try { NotificationPlugin.wakeUpScreen(); } catch (_) {}
 
     PushNotification.localNotification({
-      title: notification.title || 'ConnectHer',
-      message: notification.body || 'You have a new notification',
+      title: computedTitle,
+      message: computedMessage,
       channelId,
       priority: 'max',
       importance: 'max',
@@ -456,224 +559,249 @@ export class PushNotificationService {
       ignoreInForeground: false,
       visibility: 'public',
       playSound: true,
-      soundName: 'default',
-      fullScreenIntent: isCall,
+      soundName,
+      fullScreenIntent: isCall || dtype === 'message' || dtype === 'reaction' || dtype === 'community_reaction' || dtype === 'community_message',
+      invokeApp: isCall,
       autoCancel: !isCall,
       userInfo: data,
-      actions,
+      actions: isCall ? ['Accept', 'Decline'] : undefined,
+      id: dtype === 'group_call' ? this.computeNotificationIdForGroupCall(String(groupCommunityId || '').trim() || '0') : undefined,
+      tag: dtype === 'group_call' ? `group_call_${String(groupCommunityId || '').trim()}` : undefined,
     });
+
+    // Start a 40s ringing loop for group calls (repeat sound + vibration)
+    if (dtype === 'group_call') {
+      const sid = String((data as any)?.communityId || (data as any)?.cid || '').trim();
+      if (sid) {
+        this.startRinging(sid);
+      } else {
+        console.warn('group_call without communityId; skipping startRinging');
+      }
+    }
   }
 
   showLocalNotification(notificationData: NotificationData): void {
     const dtype = String(notificationData?.data?.type || '').toLowerCase();
     const isCall = dtype === 'call' || dtype === 'group_call' || dtype === 'incoming_call' ||
       String(notificationData.title || '').toLowerCase().includes('call');
+
+    // Deduplicate notifications (special handling for group calls)
+    let dedupKey: string | undefined = notificationData?.data?.messageId || notificationData?.data?.msgId || notificationData?.data?.id;
+    let groupCommunityId: string | undefined;
+    if (dtype === 'group_call') {
+      groupCommunityId = String(notificationData?.data?.communityId || '').trim();
+      dedupKey = `group_call|${groupCommunityId}`;
+    } else if (!dedupKey) {
+      dedupKey = `${dtype}|${notificationData?.data?.communityId || ''}|${notificationData.title || ''}|${notificationData.body || ''}`;
+    }
+    if (dtype !== 'group_call' && this.isDuplicateAndMark(dedupKey)) {
+      return;
+    }
+
+    const reactorName = notificationData?.data?.reactorName || notificationData?.data?.senderName || notificationData?.data?.fromName || notificationData?.data?.from || '';
+    const communityName = notificationData?.data?.communityName || '';
+
+    const title = (() => {
+      if (dtype === 'reaction') return reactorName || 'New reaction';
+      if (dtype === 'community_reaction') return reactorName || 'New reaction';
+      if (dtype === 'community_message') {
+        if (notificationData.title) return notificationData.title;
+        return `${reactorName || 'New message'} on "${communityName || 'a community'}"`;
+      }
+      if (dtype === 'incoming_call') return 'Incoming Call';
+      return notificationData.title || 'ConnectHer';
+    })();
+
+    const message = (() => {
+      if (dtype === 'reaction') return `${reactorName || 'Someone'} reacted to your message.`;
+      if (dtype === 'community_reaction') return `${reactorName || 'Someone'} reacted to your message on "${communityName || 'a community'}".`;
+      if (dtype === 'community_message') {
+        return notificationData.body || `New message in "${communityName || 'a community'}"`;
+      }
+      if (dtype === 'incoming_call') {
+        const callType = String(notificationData?.data?.callType || 'audio');
+        const fromName = String(notificationData?.data?.caller || reactorName || 'Someone');
+        return `Incoming ${callType} call from ${fromName}.`;
+      }
+      return notificationData.body || 'You have a new notification';
+    })();
+
+    const soundName = notificationData.sound || (isCall ? 'connectring.mp3' : (dtype === 'community_message' ? 'notify.mp3' : 'default'));
+    const channelId = isCall ? 'connecther_calls' : (notificationData.channelId || 'connecther_messages');
+
+    // Wake the screen for visibility even when device is idle
+    try { NotificationPlugin.wakeUpScreen(); } catch (_) {}
+
     PushNotification.localNotification({
-      title: notificationData.title,
-      message: notificationData.body,
-      channelId: isCall ? 'connecther_calls' : (notificationData.channelId || 'connecther_notifications'),
+      title,
+      message,
+      channelId,
       priority: notificationData.priority || 'max',
       importance: 'max',
       vibrate: notificationData.vibrate !== false,
       allowWhileIdle: true,
       ignoreInForeground: false,
       visibility: 'public',
-      fullScreenIntent: isCall,
+      fullScreenIntent: isCall || dtype === 'message' || dtype === 'reaction' || dtype === 'community_reaction' || dtype === 'community_message',
       autoCancel: !isCall,
       playSound: true,
-      soundName: notificationData.sound || 'default',
+      soundName,
       userInfo: notificationData.data,
       actions: isCall ? ['Accept', 'Decline'] : undefined,
+      id: dtype === 'group_call' ? this.computeNotificationIdForGroupCall(String(groupCommunityId || '').trim() || '0') : undefined,
+      tag: dtype === 'group_call' ? `group_call_${String(groupCommunityId || '').trim()}` : undefined,
     });
-  }
 
-  private handleNotificationTap(notification: any): void {
-    console.log('Notification tapped:', notification);
-    
-    // Handle different notification types
-    const data = notification.data || notification.userInfo;
-    
-    if (data?.type) {
-      switch (data.type) {
-        case 'message':
-          // Navigate directly to Conversation screen for the sender
-          try {
-            const chatId = (data as any)?.roomId || (data as any)?.chatId;
-            const recipientUsername = (data as any)?.senderUsername || (data as any)?.from || (data as any)?.username;
-            const recipientName = (data as any)?.senderName || recipientUsername;
-            const recipientAvatar = (data as any)?.senderAvatar || '';
-            if (recipientUsername) {
-              navigate('Conversation', {
-                chatId,
-                recipientUsername,
-                recipientName,
-                recipientAvatar,
-              });
-            }
-          } catch (e) {
-            console.log('Navigate to Conversation (message) failed:', e);
-          }
-          break;
-        case 'incoming_call':
-          // Local incoming call notification from CallNotifications
-          try {
-            const caller = (data as any)?.caller || (data as any)?.from || (data as any)?.username;
-            const callType = ((data as any)?.callType === 'video' || (data as any)?.type === 'video') ? 'video' : 'audio';
-            if (caller) {
-              navigate('IncomingCall', { caller, type: callType });
-            }
-          } catch (e) {
-            console.log('Navigate to IncomingCall (incoming_call) failed:', e);
-          }
-          break;
-        case 'call':
-          // Navigate to full-screen incoming call UI
-          try {
-            const caller = (data as any)?.caller || (data as any)?.from || (data as any)?.username;
-            const callType = ((data as any)?.callType === 'video' || (data as any)?.type === 'video') ? 'video' : 'audio';
-            if (caller) {
-              navigate('IncomingCall', { caller, type: callType });
-            }
-          } catch (e) {
-            console.log('Navigate to IncomingCall failed:', e);
-          }
-          break;
-        case 'group_call':
-          // Navigate to community incoming call UI
-          try {
-            const communityId = (data as any)?.communityId;
-            const communityName = (data as any)?.communityName;
-            const caller = (data as any)?.caller;
-            const callType = ((data as any)?.callType === 'video') ? 'video' : 'audio';
-            if (communityId) {
-              navigate('CommunityIncomingCall', {
-                communityId,
-                communityName,
-                caller: { username: caller },
-                type: callType,
-                mode: 'callee',
-              });
-            }
-          } catch (e) {
-            console.log('Navigate to CommunityIncomingCall failed:', e);
-          }
-          break;
-        case 'friend':
-        case 'friend_request':
-          // Navigate to Notification screen for friend/follow requests
-          try {
-            navigate('Notification');
-          } catch (e) {
-            console.log('Navigate to Notification failed:', e);
-          }
-          break;
-        case 'event':
-          // Navigate to events screen
-          console.log('Navigate to events');
-          break;
-        case 'profile':
-          // Navigate to profile screen
-          console.log('Navigate to profile');
-          break;
-        case 'sponsor':
-          try {
-            const sponsorId = (data as any)?.sponsorId || (data as any)?.id;
-            if (sponsorId) {
-              navigate('Sponsors', { sponsorId });
-            }
-          } catch (e) {
-            console.log('Navigate to Sponsors failed:', e);
-          }
-          break;
-        case 'post':
-          try {
-            const postId = (data as any)?.postId;
-            if (postId) {
-              navigate('Profile', { postId });
-            }
-          } catch (e) {
-            console.log('Navigate to Post failed:', e);
-          }
-          break;
-        default:
-          console.log('Unknown notification type:', data.type);
-          break;
+    if (dtype === 'group_call') {
+      const sid = String(notificationData?.data?.communityId || notificationData?.data?.cid || '').trim();
+      if (sid) {
+        this.startRinging(sid);
+      } else {
+        console.warn('group_call without communityId; skipping startRinging');
       }
     }
   }
 
-  async subscribeToTopic(topic: string): Promise<void> {
-    if (!this.firebaseAvailable) {
-      console.log(`Cannot subscribe to topic ${topic}: Firebase messaging not available`);
-      return;
-    }
-    
+  private startRinging(communityId: string): void {
     try {
-      await messaging().subscribeToTopic(topic);
-      console.log(`Subscribed to topic: ${topic}`);
-    } catch (error) {
-      // Avoid noisy stack traces; surface as a concise message
-      console.log(`Subscribe to topic failed (${topic}). Messaging unavailable or not initialized.`);
+      const cid = String(communityId || '').trim();
+      if (!cid || cid.toLowerCase() === 'group') return;
+      if (this.activeGroupCalls.has(cid)) {
+        return; // Do not start ringing if call already active
+      }
+      if (this.ringingTimers[cid]) {
+        clearInterval(this.ringingTimers[cid]);
+      }
+
+      const sound = new Sound('connectring.mp3', Sound.MAIN_BUNDLE, (err) => {
+        if (err) {
+          console.warn('Failed to load ringing sound:', err);
+          return;
+        }
+        sound.setVolume(1.0);
+        sound.play((success) => {
+          if (!success) {
+            console.warn('Ringing sound playback failed');
+          }
+        });
+        this.ringingSounds[cid] = sound;
+      });
+
+      this.ringingTimers[cid] = setInterval(() => {
+        try { PushNotification.vibrate(); } catch (_) {}
+        try {
+          const s = this.ringingSounds[cid] || sound;
+          s?.stop(() => {
+            s?.play();
+          });
+        } catch (_) {}
+      }, 4000);
+    } catch (e) {
+      console.log('startRinging error', e);
     }
   }
 
-  async unsubscribeFromTopic(topic: string): Promise<void> {
-    if (!this.firebaseAvailable) {
-      console.log(`Cannot unsubscribe from topic ${topic}: Firebase messaging not available`);
-      return;
-    }
-    
+  stopRinging(communityId: string): void {
     try {
-      await messaging().unsubscribeFromTopic(topic);
-      console.log(`Unsubscribed from topic: ${topic}`);
-    } catch (error) {
-      console.log(`Unsubscribe from topic failed (${topic}). Messaging unavailable or not initialized.`);
-    }
+      const cid = String(communityId || '').trim();
+      if (this.ringingTimers[cid]) {
+        clearInterval(this.ringingTimers[cid]);
+        delete this.ringingTimers[cid];
+      }
+      const s = this.ringingSounds[cid];
+      if (s) {
+        try { s.stop(); } catch (_) {}
+        try { s.release(); } catch (_) {}
+        delete this.ringingSounds[cid];
+      }
+      this.activeGroupCalls.delete(cid);
+      try { Vibration.cancel(); } catch (_) {}
+      try { PushNotification.cancelAllLocalNotifications(); } catch (_) {}
+      try { PushNotification.removeAllDeliveredNotifications(); } catch (_) {}
+    } catch (e) {}
   }
 
-  cancelAllNotifications(): void {
-    PushNotification.cancelAllLocalNotifications();
-    console.log('All notifications cancelled');
-  }
-
-  cancelNotification(id: string): void {
-    PushNotification.cancelLocalNotifications({ id });
-    console.log(`Notification ${id} cancelled`);
-  }
-
-  async checkPermissionStatus(): Promise<boolean> {
+  stopAllRinging(): void {
     try {
-      const authStatus = await messaging().hasPermission();
-      return authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-             authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-    } catch (error) {
-      console.error('Error checking notification permission:', error);
-      return false;
-    }
+      Object.keys(this.ringingTimers).forEach((cid) => {
+        try { clearInterval(this.ringingTimers[cid]); } catch (_) {}
+        delete this.ringingTimers[cid];
+      });
+      Object.keys(this.ringingSounds).forEach((cid) => {
+        const s = this.ringingSounds[cid];
+        if (s) {
+          try { s.stop(); } catch (_) {}
+          try { s.release(); } catch (_) {}
+        }
+        delete this.ringingSounds[cid];
+      });
+      this.activeGroupCalls.clear();
+      try { Vibration.cancel(); } catch (_) {}
+      try { PushNotification.cancelAllLocalNotifications(); } catch (_) {}
+      try { PushNotification.removeAllDeliveredNotifications(); } catch (_) {}
+    } catch (_) {}
   }
 
-  showPermissionAlert(): void {
-    Alert.alert(
-      'Enable Notifications',
-      'To receive important updates and messages, please enable notifications for ConnectHer in your device settings.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Settings',
-          onPress: () => {
-            // Open app settings
-            if (Platform.OS === 'ios') {
-              // Linking.openURL('app-settings:');
-            } else {
-              // Linking.openSettings();
-            }
-          },
-        },
-      ]
-    );
+  async handleNotificationTap(data: Record<string, any>): Promise<void> {
+    try {
+      const dtype = String(data?.type || '').toLowerCase();
+      if (dtype === 'message' || dtype === 'reaction') {
+        const chatId = String(data?.chatId || '');
+        const recipientUsername = String(data?.peerUsername || data?.recipientUsername || '');
+        const recipientName = String(data?.peerName || data?.recipientName || recipientUsername || '');
+        const recipientAvatar = String(data?.peerAvatar || data?.recipientAvatar || '');
+        if (chatId && recipientUsername) {
+          navigate('Conversation', {
+            chatId,
+            recipientUsername,
+            recipientName,
+            recipientAvatar,
+          });
+        }
+        return;
+      }
+      if (dtype === 'group_call') {
+        const communityId = String(data?.communityId || '');
+        const communityName = String(data?.communityName || '');
+        const callerUsername = String(data?.caller || data?.from || '');
+        const type = (String(data?.callType || '').toLowerCase() === 'video') ? 'video' : 'audio';
+        if (communityId && communityName && callerUsername) {
+          this.stopRinging(communityId);
+          this.activeGroupCalls.add(communityId);
+          navigate('CommunityIncomingCall', {
+            communityId,
+            communityName,
+            caller: { username: callerUsername },
+            type,
+          });
+        }
+        return;
+      }
+      if (dtype === 'community_message' || dtype === 'community_reaction') {
+        const communityId = String(data?.communityId || '');
+        const communityName = String(data?.communityName || '');
+        if (communityId) {
+          navigate('CommunityChat', {
+            communityId,
+            communityName,
+          });
+        }
+        return;
+      }
+
+      if (dtype === 'incoming_call') {
+        const caller = String(data?.caller || data?.from || '');
+        const type = (String(data?.callType || '').toLowerCase() === 'video') ? 'video' : 'audio';
+        if (caller) {
+          navigate('IncomingCall', { caller, type });
+        }
+        return;
+      }
+
+      // Default: do nothing special
+    } catch (e) {
+      console.log('handleNotificationTap error', e);
+    }
   }
 }
 

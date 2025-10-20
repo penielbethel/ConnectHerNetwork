@@ -263,6 +263,21 @@ class SocketService {
     this.on('incoming-group-call', callback);
   }
 
+  async checkGroupCallAlive(communityId: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const handler = ({ isAlive }: { isAlive: boolean }) => {
+        try { this.off('call-alive-status', handler as any); } catch (_) {}
+        resolve(!!isAlive);
+      };
+      this.on('call-alive-status', handler);
+      this.emit('check-call-alive', { communityId });
+      setTimeout(() => {
+        try { this.off('call-alive-status', handler as any); } catch (_) {}
+        resolve(false);
+      }, 3000);
+    });
+  }
+
   // Call related methods
   initiateCall(data: {
     from: string;
@@ -323,12 +338,13 @@ const socketServiceProxy = {
   startCommunityTyping: (room: string, from: string) => socketServiceSingleton.startCommunityTyping(room, from),
   stopCommunityTyping: (room: string, from: string) => socketServiceSingleton.stopCommunityTyping(room, from),
   // Group call helpers
-  startGroupCall: (data: { from: string; communityId: string; communityName: string; members: string[] }) => socketServiceSingleton.startGroupCall(data),
+  startGroupCall: (data: { from: string; communityId: string; communityName: string; members: string[]; type?: 'audio' | 'video' }) => socketServiceSingleton.startGroupCall(data),
   joinGroupCall: (data: { username: string; communityId: string; communityName: string; name: string; avatar?: string }) => socketServiceSingleton.joinGroupCall(data),
   leaveGroupCall: (data: { communityId: string; username: string }) => socketServiceSingleton.leaveGroupCall(data),
   declineGroupCall: (data: { communityId: string; username: string }) => socketServiceSingleton.declineGroupCall(data),
   onGroupCallStart: (callback: (data: { communityId: string; communityName: string }) => void) => socketServiceSingleton.onGroupCallStart(callback),
   onIncomingGroupCall: (callback: (data: { from: string; communityId: string; communityName: string; type?: 'audio' | 'video' }) => void) => socketServiceSingleton.onIncomingGroupCall(callback),
+  checkGroupCallAlive: (communityId: string) => socketServiceSingleton.checkGroupCallAlive(communityId),
   initiateCall: (data: { from: string; to: string; type: 'audio' | 'video'; offer: any }) => socketServiceSingleton.initiateCall(data),
   acceptCall: (data: { from: string; to: string }) => socketServiceSingleton.acceptCall(data),
   rejectCall: (data: { from: string; to: string }) => socketServiceSingleton.rejectCall(data),

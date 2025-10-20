@@ -12,8 +12,13 @@ import {
   Modal,
   Share,
   Keyboard,
+  ScrollView,
+  ActivityIndicator,
+  RefreshControl,
+  Animated,
+  Easing,
 } from 'react-native';
-import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { useRoute, useNavigation, RouteProp, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import apiService from '../services/ApiService';
@@ -27,6 +32,12 @@ import { PermissionsManager } from '../utils/permissions';
 import RecordingWaveform from '../components/RecordingWaveform';
 import RNFS from 'react-native-fs'
 import { WebView } from 'react-native-webview'
+import AudioRecorderPlayer from 'react-native-audio-recorder-player'
+import { saveMediaToDevice } from '../utils/mediaSaver'
+import PushNotificationService from '../services/pushNotifications'
+import CommunityUnreadService from '../services/CommunityUnreadService'
+import NotificationPlugin from '../plugins/notification'
+import SoundService from '../services/SoundService'
 
 type RouteParams = {
   params: {
@@ -42,12 +53,26 @@ interface CommunityMessage {
   text: string;
   media?: Array<{ url: string; type?: string; thumbnailUrl?: string }>;
   time: string;
+  replyToId?: string;
 }
 
 const CommunityChatScreen: React.FC = () => {
   const route = useRoute<RouteProp<RouteParams, 'params'>>();
   const navigation = useNavigation();
   const { communityId, communityName } = route.params;
+
+// Focus-based unread handling: set active, clear on enter, reset on leave
+useFocusEffect(
+  React.useCallback(() => {
+    try {
+      CommunityUnreadService.setActiveCommunity(String(communityId));
+      CommunityUnreadService.clear(String(communityId));
+    } catch (_) {}
+    return () => {
+      try { CommunityUnreadService.setActiveCommunity(null); } catch (_) {}
+    };
+  }, [communityId])
+);
   const [messages, setMessages] = useState<CommunityMessage[]>([]);
   const [currentUser, setCurrentUser] = useState<{ username: string; name?: string; avatar?: string } | null>(null);
   const [inputText, setInputText] = useState('');
@@ -64,21 +89,140 @@ const CommunityChatScreen: React.FC = () => {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editText, setEditText] = useState('');
   const [avatarPreviewVisible, setAvatarPreviewVisible] = useState(false);
+  const [editCommunityModalVisible, setEditCommunityModalVisible] = useState(false);
+  const [editCommunityName, setEditCommunityName] = useState('');
+  const [editCommunityDescription, setEditCommunityDescription] = useState('');
+  const [editCommunityImage, setEditCommunityImage] = useState<string | null>(null);
+  const [isSavingCommunityEdit, setIsSavingCommunityEdit] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const atBottomRef = useRef(true);
+  const [atTop, setAtTop] = useState(true);
+  const [showScrollControls, setShowScrollControls] = useState(false);
+  const scrollControlsTimeout = useRef<NodeJS.Timeout | null>(null);
+  const currentUserRef = useRef<{ username: string; name?: string; avatar?: string } | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const itemPositions = useRef<Record<string, number>>({});
+const [refreshing, setRefreshing] = useState(false);
+const logoSpin = useRef(new Animated.Value(0)).current;
+const spinLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+const spin = logoSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+const logoSource = require('../../public/logo.png');
+const onRefresh = async () => {
+  setRefreshing(true);
+  try {
+    spinLoopRef.current = Animated.loop(
+      Animated.timing(logoSpin, { toValue: 1, duration: 900, easing: Easing.linear, useNativeDriver: true })
+    );
+    spinLoopRef.current.start();
+  } catch {}
+  try {
+    await Promise.all([loadCommunityData(), loadMessages()]);
+  } catch (e) {
+  } finally {
+    try { spinLoopRef.current?.stop(); } catch {}
+    logoSpin.setValue(0);
+    setRefreshing(false);
+  }
+};
+// Emoji reaction state
+const [reactionTargetId, setReactionTargetId] = useState<string | null>(null);
+const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
+const reactionEmojis = ['😀','😂','😍','👍','🙏','🎉','😢','🤔','🔥','🎯','👏','🙌','🥳','😮','😡','👀','💯','🤝','🫶','💡','❓','✅','❌','🍀','🌟','🚀','📌','💬','🔁','🍕','☕','🌈','🐶','🐱'];
+const openReactionTray = (id: string) => setReactionTargetId(id);
+const closeReactionTray = () => setReactionTargetId(null);
+const removeReaction = (id: string, emoji: string) => {
+  setMessageReactions(prev => {
+    const list = prev[id] || [];
+    const next = list.filter(e => e !== emoji);
+    const { [id]: _drop, ...rest } = prev;
+    return next.length ? { ...rest, [id]: next } : rest;
+  });
+};
+const playReactionPop = async () => {
+  try { await SoundService.playPop('react'); } catch (_e) {}
+};
+const pickReaction = (id: string, emoji: string) => {
+  setMessageReactions(prev => {
+    const list = prev[id] || [];
+    const exists = list.includes(emoji);
+    const next = exists ? list.filter(e => e !== emoji) : [...list, emoji];
+    if (!exists) { try { playReactionPop(); } catch {} }
+    return { ...prev, [id]: next };
+  });
+  setReactionTargetId(null);
+
+  // Send push notification to message author (if not self)
+  try {
+    const targetMsg = messages.find(m => m._id === id);
+    const sender = targetMsg?.sender;
+    const authorUsername = typeof sender === 'string' ? sender : (sender as any)?.username;
+    const me = currentUser;
+    if (authorUsername && me?.username && authorUsername !== me.username) {
+      const payload = {
+        toUsername: String(authorUsername),
+        title: String(me.name || me.username),
+        body: `reacted to your message on "${communityName || 'a community'}".`,
+        type: 'community_reaction',
+        data: {
+          communityId: String(communityId),
+          communityName: String(communityName || ''),
+          peerUsername: String(me.username),
+          peerName: String(me.name || me.username),
+          peerAvatar: String(me.avatar || ''),
+          reactorName: String(me.name || me.username),
+          senderName: String(me.name || me.username),
+        },
+      };
+      (async () => {
+        try {
+          const token = await (apiService as any)['getAuthToken']?.();
+          await fetch('https://connecther.network/api/notifications/send', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify(payload),
+          });
+        } catch (_e) {}
+      })();
+    }
+  } catch (_e) {}
+};
   // Media preview & download state
-  const [previewMedia, setPreviewMedia] = useState<{ url: string; type: 'image' | 'video' | 'file'; filename: string } | null>(null);
+  const [previewMedia, setPreviewMedia] = useState<{ url: string; type: 'image' | 'video' | 'audio' | 'document' | 'file'; filename: string } | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   // Derived privileges & lock state
   const meUsername = currentUser?.username;
   const meIsAdminOrCreator = !!members.find(m => m.username === meUsername && (m.isAdmin || m.isCreator));
   const isGroupLocked = !!(community?.isLocked || community?.locked || (community?.status === 'locked'));
+
+  useEffect(() => {
+    if (editModalVisible && actionTarget) {
+      setEditText(actionTarget.text || '');
+    }
+  }, [editModalVisible, actionTarget]);
+
+  useEffect(() => {
+    if (editCommunityModalVisible && community) {
+      setEditCommunityName(community.name || '');
+      setEditCommunityDescription(community.description || '');
+      setEditCommunityImage(community.avatar || null);
+    }
+  }, [editCommunityModalVisible, community]);
+
   // Voice note state
   const [isRecording, setIsRecording] = useState(false);
   const [recordTimeMs, setRecordTimeMs] = useState(0);
   const [recordFileUri, setRecordFileUri] = useState<string | null>(null);
-  const emojis: string[] = ['😀','😂','😍','👍','🙏','🎉','😎','❤️','🔥','🥳','😢','🤔','👏','💯'];
+  const audioPlayerRef = useRef<AudioRecorderPlayer | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [playPosition, setPlayPosition] = useState<number>(0);
+  const [playDuration, setPlayDuration] = useState<number>(0);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const emojis: string[] = ['😀','😂','😍','👍','🙏','🎉','😎','❤️','🔥','🥳','😢','🤔','👏','💯','💖','🥰','😘','💥','✨'];
   const handleEmojiSelect = (emoji: string) => {
     setInputText(prev => prev + emoji);
   };
@@ -96,14 +240,25 @@ const CommunityChatScreen: React.FC = () => {
     }
   };
 
-  const guessMediaType = (m: { url: string; type?: string }): 'image' | 'video' | 'file' => {
+  const guessMediaType = (m: { url: string; type?: string }): 'image' | 'video' | 'audio' | 'document' | 'file' => {
     const t = (m.type || '').toLowerCase();
     if (t.startsWith('image')) return 'image';
     if (t.startsWith('video')) return 'video';
-    const ext = m.url.toLowerCase().match(/\.(jpg|jpeg|png|webp|gif|mp4|mov|webm|mkv)$/)?.[1];
+    if (t.startsWith('audio')) return 'audio';
+    if (t === 'application/pdf') return 'document';
+    if (
+      t.startsWith('application/vnd.openxmlformats') ||
+      t === 'application/msword' ||
+      t === 'application/vnd.ms-excel' ||
+      t === 'application/vnd.ms-powerpoint' ||
+      t.startsWith('text/')
+    ) return 'document';
+    const ext = m.url.toLowerCase().match(/\.(jpg|jpeg|png|webp|gif|mp4|mov|webm|mkv|mp3|m4a|aac|wav|ogg|pdf|doc|docx|ppt|pptx|xls|xlsx|txt)$/)?.[1];
     if (ext && ['jpg','jpeg','png','webp','gif'].includes(ext)) return 'image';
     if (ext && ['mp4','mov','webm','mkv'].includes(ext)) return 'video';
-    return 'file';
+    if (ext && ['mp3','m4a','aac','wav','ogg'].includes(ext)) return 'audio';
+    if (ext && ['pdf','doc','docx','ppt','pptx','xls','xlsx','txt'].includes(ext)) return 'document';
+    return 'document';
   };
 
   const openMediaPreview = (media: { url: string; type?: string }) => {
@@ -125,6 +280,7 @@ const CommunityChatScreen: React.FC = () => {
     const map: Record<string, string> = {
       jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
       mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska',
+      mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', wav: 'audio/wav', ogg: 'audio/ogg',
       pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', txt: 'text/plain'
     };
@@ -137,43 +293,42 @@ const CommunityChatScreen: React.FC = () => {
       Alert.alert('Permission required', 'Storage permission is needed to save media.');
       return;
     }
+
     const type = guessMediaType(media);
     const filename = getFilenameFromUrl(media.url);
-    const extMatch = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
-    const ext = extMatch ? extMatch[1] : (type === 'image' ? 'jpg' : type === 'video' ? 'mp4' : 'bin');
-    const mime = mimeFromExt(ext);
-
-    let baseDir = RNFS.DownloadDirectoryPath;
-    if (Platform.OS === 'android') {
-      if (type === 'image' && RNFS.PicturesDirectoryPath) baseDir = RNFS.PicturesDirectoryPath;
-      else if (type === 'video' && RNFS.MoviesDirectoryPath) baseDir = RNFS.MoviesDirectoryPath;
-    } else {
-      baseDir = RNFS.DocumentDirectoryPath;
-    }
-
-    const destPath = `${baseDir}/${filename}`;
     setIsDownloading(true);
     setDownloadProgress(0);
     try {
-      const task = RNFS.downloadFile({
-        fromUrl: media.url,
-        toFile: destPath,
-        progress: (p) => {
-          const pct = Math.floor((p.bytesWritten / p.contentLength) * 100);
-          setDownloadProgress(Math.max(0, Math.min(100, pct)));
-        },
-        progressDivider: 5,
-      });
-      const result = await task.promise;
-      if (result.statusCode >= 200 && result.statusCode < 300) {
+      const token = await (apiService as any)['getAuthToken']?.();
+      const needsAuth = (() => {
         try {
-          // Make visible in gallery/file managers
-          // @ts-ignore
-          if (RNFS.scanFile) await RNFS.scanFile([{ path: destPath, mime }]);
-        } catch (_) {}
-        Alert.alert('Saved', `Saved to ${destPath}`);
+          const target = new URL(media.url);
+          const apiOrigin = new URL((apiService as any).baseUrl || 'https://connecther.network/api').origin;
+          const rootOrigin = new URL((apiService as any).rootUrl || 'https://connecther.network').origin;
+          const sameHost = (target.origin === apiOrigin || target.origin === rootOrigin);
+          return sameHost && target.pathname.startsWith('/api');
+        } catch {
+          return false;
+        }
+      })();
+      const res = await saveMediaToDevice({
+        url: media.url,
+        type,
+        filename,
+        headers: needsAuth && token ? { Authorization: `Bearer ${token}` } : undefined,
+        onProgress: (p) => setDownloadProgress(Math.max(0, Math.min(100, p)))
+      });
+
+      if (res.success) {
+        if (Platform.OS === 'android' && res.path) {
+          Alert.alert('Saved', `Saved to ${res.path}`);
+        } else if (Platform.OS === 'ios' && res.openedShareSheet) {
+          // Share sheet handles user save action on iOS
+        } else if (res.path) {
+          Alert.alert('Saved', `Downloaded to ${res.path}`);
+        }
       } else {
-        Alert.alert('Download failed', `Status code ${result.statusCode}`);
+        Alert.alert('Download failed', res.message || 'Unable to save file');
       }
     } catch (e: any) {
       Alert.alert('Download error', e?.message || 'Could not save file.');
@@ -184,10 +339,25 @@ const CommunityChatScreen: React.FC = () => {
   };
 
   useEffect(() => {
+    const title =
+      editCommunityModalVisible
+        ? (editCommunityName?.trim()
+            ? `# ${editCommunityName}`
+            : (community?.name
+                ? `# ${community?.name}`
+                : communityName
+                  ? `# ${communityName}`
+                  : 'Community Chat'))
+        : (community?.name
+            ? `# ${community?.name}`
+            : communityName
+              ? `# ${communityName}`
+              : 'Community Chat');
     navigation.setOptions({
-      headerTitle: communityName ? `# ${communityName}` : 'Community Chat',
+      headerTitle: title,
+      headerTitleStyle: editCommunityModalVisible ? { color: '#FF1493' } : { color: colors.text },
     });
-  }, [communityName, navigation]);
+  }, [community?.name, communityName, editCommunityModalVisible, editCommunityName, navigation]);
 
   // Auto-close header menu after 3 seconds if unused
   useEffect(() => {
@@ -196,6 +366,11 @@ const CommunityChatScreen: React.FC = () => {
       return () => clearTimeout(t);
     }
   }, [menuVisible]);
+
+  // Keep a ref to currentUser to avoid stale closures in socket handlers
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   useEffect(() => {
     (async () => {
@@ -215,12 +390,36 @@ const CommunityChatScreen: React.FC = () => {
       // Only handle messages for this community
       const mid = msg?.communityId || msg?.community || route.params.communityId;
       if (String(mid) !== String(communityId)) return;
+
+      const normalized = normalizeMessage(msg);
+      const senderUsername = typeof normalized.sender === 'string' ? normalized.sender : normalized.sender?.username;
+      const cu = currentUserRef.current;
+      const isFromMe = !!(cu?.username && senderUsername && String(senderUsername) === String(cu.username));
+
       setMessages(prev => {
         const exists = prev.some(m => m._id === msg?._id);
         if (exists) return prev;
-        const normalized = normalizeMessage(msg);
         return [...prev, normalized];
       });
+
+      if (!isFromMe) {
+        const title = communityName ? `# ${communityName}` : 'Community Message';
+        const body = normalized.text?.length ? normalized.text : (normalized.media?.length ? 'New attachment' : 'New message');
+        try {
+          PushNotificationService.getInstance().showLocalNotification({
+            title,
+            body,
+            channelId: 'connecther_messages',
+            vibrate: true,
+            priority: 'max',
+            importance: 'max',
+            playSound: true,
+            data: { type: 'community_message', communityId: String(communityId) },
+          });
+          try { NotificationPlugin.wakeUpScreen(); } catch (_) {}
+        } catch (_) {}
+      }
+
       if (atBottomRef.current) {
         scrollToEnd();
       }
@@ -250,10 +449,117 @@ const CommunityChatScreen: React.FC = () => {
     }
   };
 
+  // Edit community helpers
+  const openEditCommunity = () => {
+    setEditCommunityName(community?.name || '');
+    setEditCommunityDescription(community?.description || '');
+    setEditCommunityImage(community?.avatar || null);
+    setEditCommunityModalVisible(true);
+  };
+
+  const handleSelectCommunityImage = () => {
+    launchImageLibrary(
+      {
+        mediaType: 'photo',
+        quality: 0.8,
+        maxWidth: 800,
+        maxHeight: 800,
+      },
+      (response) => {
+        try {
+          if (response?.assets && response.assets[0]) {
+            setEditCommunityImage(response.assets[0].uri || null);
+          }
+        } catch (_) {}
+      }
+    );
+  };
+
+  const handleSaveCommunityEdit = async () => {
+    if (!meIsAdminOrCreator) {
+      Alert.alert('Forbidden', 'Only admins or the creator can edit this community.');
+      return;
+    }
+    const name = (editCommunityName || '').trim();
+    const description = (editCommunityDescription || '').trim();
+    if (!name) {
+      Alert.alert('Invalid', 'Name is required');
+      return;
+    }
+    setIsSavingCommunityEdit(true);
+    try {
+      let avatarUrl: string | undefined = undefined;
+      if (editCommunityImage) {
+        const isRemote = /^https?:\/\//i.test(editCommunityImage);
+        if (isRemote) {
+          avatarUrl = editCommunityImage;
+        } else {
+          try {
+            const uploadRes = await apiService.uploadImage(editCommunityImage);
+            avatarUrl = (uploadRes as any)?.url || undefined;
+          } catch (e) {
+            console.warn('Avatar upload failed; continuing without avatar', e);
+          }
+        }
+      }
+      const res = await apiService.editCommunity(communityId, {
+        name,
+        description,
+        avatar: avatarUrl,
+      });
+      if ((res as any)?.success) {
+        await loadCommunityData();
+        setEditCommunityModalVisible(false);
+        Alert.alert('Updated', 'Community details saved');
+      } else {
+        Alert.alert('Failed', (res as any)?.message || 'Unable to update community');
+      }
+    } catch (e: any) {
+      console.error('Edit community error:', e);
+      Alert.alert('Error', e?.response?.data?.message || 'Failed to update community');
+    } finally {
+      setIsSavingCommunityEdit(false);
+    }
+  };
+
   const scrollToEnd = () => {
     try {
       flatListRef.current?.scrollToEnd({ animated: true });
     } catch (_) {}
+  };
+
+  const scrollToTop = () => {
+    try {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    } catch (_) {}
+  };
+
+  const scrollToMessageId = (id?: string) => {
+    if (!id) return;
+    const idx = messages.findIndex(m => m._id === id);
+    if (idx >= 0 && flatListRef.current) {
+      try {
+        flatListRef.current.scrollToIndex({ index: idx, animated: true, viewPosition: 0.4 });
+      } catch (_e) {
+        const y = itemPositions.current[id];
+        if (typeof y === 'number') {
+          try {
+            flatListRef.current.scrollToOffset({ offset: Math.max(0, y - 60), animated: true });
+          } catch (_) {}
+        }
+      }
+      setHighlightedId(id);
+      setTimeout(() => setHighlightedId(null), 1600);
+      return;
+    }
+    const y = itemPositions.current[id];
+    if (typeof y === 'number' && flatListRef.current) {
+      try {
+        flatListRef.current.scrollToOffset({ offset: Math.max(0, y - 60), animated: true });
+      } catch (_) {}
+      setHighlightedId(id);
+      setTimeout(() => setHighlightedId(null), 1600);
+    }
   };
 
   const normalizeMessage = (m: any): CommunityMessage => {
@@ -270,6 +576,7 @@ const CommunityChatScreen: React.FC = () => {
       text: m?.text || m?.content || '',
       media: apiService['normalizeMedia'] ? (apiService as any)['normalizeMedia'](m?.media) : (Array.isArray(m?.media) ? m.media : []),
       time: m?.time || m?.createdAt || new Date().toISOString(),
+      replyToId: m?.replyToId || m?.replyTo || (m?.reply?.replyToId || m?.reply?.replyTo) || undefined,
     };
   };
 
@@ -389,14 +696,47 @@ const CommunityChatScreen: React.FC = () => {
       return;
     }
     setInputText('');
+    const nowIso = new Date().toISOString();
+    let optimisticId: string | null = null;
     try {
+      const sender = currentUser ? { username: currentUser.username, name: currentUser.name, avatar: (apiService as any)['normalizeAvatar']?.(currentUser.avatar) || currentUser.avatar } : undefined;
+      const optimistic = normalizeMessage({ sender, text, time: nowIso, media: [] });
+      optimisticId = optimistic._id;
+      setMessages(prev => {
+        const next = [...prev, optimistic];
+        const seen = new Set<string>();
+        const dedup: CommunityMessage[] = [];
+        for (const m of next) {
+          if (!seen.has(m._id)) { seen.add(m._id); dedup.push(m); }
+        }
+        return dedup;
+      });
+      // Emit socket event immediately for snappy UX
+      if (currentUser?.username) {
+        socketService.sendCommunityMessage({ room: communityId, from: currentUser.username, message: text, replyTo: replyTo || undefined });
+      }
+      setReplyTo(null);
+      scrollToEnd();
+      try { SoundService.playPop('send'); } catch (_) {}
+
+      // Persist to API afterward
       const res = await apiService.sendCommunityTextMessage(communityId, text, replyTo || undefined);
       const saved = (res as any)?.message || res;
       const normalized = normalizeMessage(saved);
-      setMessages(prev => [...prev, normalized]);
-      setReplyTo(null);
-      scrollToEnd();
+      setMessages(prev => {
+        const filtered = optimisticId ? prev.filter(m => m._id !== optimisticId) : prev;
+        const next = [...filtered, normalized];
+        const seen = new Set<string>();
+        const dedup: CommunityMessage[] = [];
+        for (const m of next) {
+          if (!seen.has(m._id)) { seen.add(m._id); dedup.push(m); }
+        }
+        return dedup;
+      });
     } catch (e) {
+      if (optimisticId) {
+        setMessages(prev => prev.filter(m => m._id !== optimisticId!));
+      }
       Alert.alert('Send failed', 'Could not send message.');
     }
   };
@@ -407,6 +747,29 @@ const CommunityChatScreen: React.FC = () => {
     const mm = String(Math.floor(s / 60)).padStart(2, '0');
     const ss = String(s % 60).padStart(2, '0');
     return `${mm}:${ss}`;
+  };
+
+  // Day divider helpers
+  const isSameDay = (a: Date, b: Date) => {
+    return (
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
+    );
+  };
+
+  const formatDayLabel = (d: Date) => {
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    if (isSameDay(d, today)) return 'Today';
+    if (isSameDay(d, yesterday)) return 'Yesterday';
+    return d.toLocaleDateString(undefined, {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
   };
 
   const requestAudioPermission = async () => {
@@ -454,6 +817,59 @@ const CommunityChatScreen: React.FC = () => {
     setRecordFileUri(null);
   };
 
+  useEffect(() => {
+    const p = new AudioRecorderPlayer();
+    audioPlayerRef.current = p;
+    return () => {
+      try { p.stopPlayer(); } catch (_) {}
+      try { p.removePlayBackListener(); } catch (_) {}
+      audioPlayerRef.current = null;
+    };
+  }, []);
+
+  const toggleAudioPlayback = async (url: string, id: string) => {
+    try {
+      if (!audioPlayerRef.current) {
+        audioPlayerRef.current = new AudioRecorderPlayer();
+      }
+      const player = audioPlayerRef.current!;
+      if (playingId === id) {
+        if (isPaused) {
+          await player.resumePlayer();
+          setIsPaused(false);
+        } else {
+          await player.pausePlayer();
+          setIsPaused(true);
+        }
+        return;
+      }
+      try {
+        await player.stopPlayer();
+        player.removePlayBackListener();
+      } catch (_) {}
+      setPlayingId(id);
+      setIsPaused(false);
+      setPlayPosition(0);
+      setPlayDuration(0);
+      await player.startPlayer(url);
+      player.addPlayBackListener((e: any) => {
+        const pos = e?.currentPosition || 0;
+        const dur = e?.duration || 0;
+        setPlayPosition(pos);
+        setPlayDuration(dur);
+        if (pos >= dur && dur > 0) {
+          setPlayingId(null);
+          setIsPaused(false);
+          try { player.stopPlayer(); } catch (_) {}
+          try { player.removePlayBackListener(); } catch (_) {}
+        }
+      });
+    } catch (err) {
+      console.error('toggleAudioPlayback error', err);
+      Alert.alert('Playback error', 'Could not play audio.');
+    }
+  };
+
   const sendVoiceNote = async () => {
     try {
       if (isGroupLocked && !meIsAdminOrCreator) {
@@ -466,19 +882,40 @@ const CommunityChatScreen: React.FC = () => {
         setIsRecording(false);
       }
       if (!uri) return;
+
+      // Optimistic message with local audio URI
+      const localUri = (uri.startsWith('file://') || uri.startsWith('content://')) ? uri : `file://${uri}`;
+      const nowIso = new Date().toISOString();
+      const sender = currentUser ? { username: currentUser.username, name: currentUser.name, avatar: (apiService as any)['normalizeAvatar']?.(currentUser.avatar) || currentUser.avatar } : undefined;
+      const optimistic = normalizeMessage({ sender, text: '', time: nowIso, media: [{ url: localUri, type: 'audio' }] });
+      const optimisticId = optimistic._id;
+      setMessages(prev => {
+        const next = [...prev, optimistic];
+        const seen = new Set<string>();
+        const dedup: CommunityMessage[] = [];
+        for (const m of next) { if (!seen.has(m._id)) { seen.add(m._id); dedup.push(m); } }
+        return dedup;
+      });
+      // Socket-first emit without files (for snappy UX)
+      if (currentUser?.username) {
+        socketService.sendCommunityMessage({ room: communityId, from: currentUser.username, message: '', replyTo: replyTo || undefined });
+      }
+      scrollToEnd();
+      try { SoundService.playPop('send'); } catch (_) {}
+
+      // Upload audio file to get persistent URL
       const audioFile = {
-        uri: uri.startsWith('file://') ? uri : `file://${uri}`,
+        uri: localUri,
         type: 'audio/m4a',
         name: `voice-note-${Date.now()}.m4a`,
       } as any;
+      setUploadProgress(prev => ({ ...prev, [localUri]: 0 }));
       const uploadResponse = await apiService.uploadFile(
-        {
-          uri: audioFile.uri,
-          type: audioFile.type,
-          name: audioFile.name,
-        } as any,
-        'audio'
+        { uri: audioFile.uri, type: audioFile.type, name: audioFile.name } as any,
+        'audio',
+        (p: number) => setUploadProgress(prev => ({ ...prev, [localUri]: Math.max(0, Math.min(100, Math.floor(p))) }))
       );
+      setUploadProgress(prev => ({ ...prev, [localUri]: 100 }));
       const uploaded: Array<{ url: string; type?: string; name?: string }> = [];
       if (Array.isArray((uploadResponse as any)?.files)) {
         ((uploadResponse as any).files as any[]).forEach((f: any) => {
@@ -489,9 +926,12 @@ const CommunityChatScreen: React.FC = () => {
         uploaded.push({ url: (uploadResponse as any).url, type: 'audio' });
       }
       if (uploaded.length === 0) {
+        setMessages(prev => prev.filter(m => m._id !== optimisticId));
         Alert.alert('Upload failed', 'Could not send voice note.');
         return;
       }
+
+      // Persist community message with uploaded media URLs
       const stored = await AsyncStorage.getItem('currentUser');
       const current = stored ? JSON.parse(stored) : null;
       const username = current?.username;
@@ -509,8 +949,26 @@ const CommunityChatScreen: React.FC = () => {
       });
       const saved = (resp as any)?.message || resp;
       const normalized = normalizeMessage(saved);
-      setMessages(prev => [...prev, normalized]);
+      setMessages(prev => {
+        const filtered = prev.filter(m => m._id !== optimisticId);
+        const next = [...filtered, normalized];
+        const seen = new Set<string>();
+        const dedup: CommunityMessage[] = [];
+        for (const m of next) { if (!seen.has(m._id)) { seen.add(m._id); dedup.push(m); } }
+        return dedup;
+      });
       setReplyTo(null);
+      // Emit socket event with uploaded URLs
+      const fromUser = username || currentUser?.username;
+      if (fromUser) {
+        socketService.sendCommunityMessage({ room: communityId, from: fromUser, message: normalized.text || '', files: uploaded, replyTo: replyTo || undefined });
+      }
+      // Trigger push notifications for media/audio message
+      try {
+        await apiService.triggerCommunityMessageNotifications(String(communityId), normalized.text || '', normalized._id, uploaded as any);
+      } catch (notifyErr) {
+        if (__DEV__) console.debug('triggerCommunityMessageNotifications (audio) failed:', notifyErr);
+      }
       scrollToEnd();
     } catch (e) {
       console.error('sendVoiceNote error:', e);
@@ -530,6 +988,38 @@ const CommunityChatScreen: React.FC = () => {
         return;
       }
       if (!currentUser?.username) return;
+
+      // Optimistic message first using local URIs
+      const nowIso = new Date().toISOString();
+      const sender = currentUser ? { username: currentUser.username, name: currentUser.name, avatar: (apiService as any)['normalizeAvatar']?.(currentUser.avatar) || currentUser.avatar } : undefined;
+      const localMedia = fileUris.map((uri) => {
+        const guessedExt = uri?.toLowerCase().match(/\.(mp4|mov|webm|jpg|jpeg|png|webp|mp3|wav|m4a|aac|pdf|docx|pptx|xlsx|txt)$/)?.[1] || 'bin';
+        const mimeMap: any = {
+          jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+          mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
+          mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac',
+          pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', txt: 'text/plain', bin: 'application/octet-stream'
+        };
+        const type = mimeMap[guessedExt] || 'application/octet-stream';
+        const kind: 'image' | 'video' | 'audio' | 'document' = type.startsWith('image/') ? 'image' : type.startsWith('video/') ? 'video' : type.startsWith('audio/') ? 'audio' : 'document';
+        const localUrl = (uri.startsWith('file://') || uri.startsWith('content://')) ? uri : `file://${uri}`;
+        return { url: localUrl, type: kind };
+      });
+      const optimistic = normalizeMessage({ sender, text: caption || '', time: nowIso, media: localMedia });
+      const optimisticId = optimistic._id;
+      setMessages(prev => {
+        const next = [...prev, optimistic];
+        const seen = new Set<string>();
+        const dedup: CommunityMessage[] = [];
+        for (const m of next) { if (!seen.has(m._id)) { seen.add(m._id); dedup.push(m); } }
+        return dedup;
+      });
+      // Socket emit deferred until after upload to avoid duplicates
+      scrollToEnd();
+      try { SoundService.playPop('send'); } catch (_) {}
+
       // Step 1: Upload each file to get persistent URLs (server expects media array, not raw files)
       const uploaded: Array<{ url: string; type?: string; name?: string }> = [];
       for (let idx = 0; idx < fileUris.length; idx++) {
@@ -550,7 +1040,12 @@ const CommunityChatScreen: React.FC = () => {
           type.startsWith('audio/') ? 'audio' : 'document';
 
         const name = `file_${idx}.${guessedExt}`;
-        const res = await apiService.uploadFile({ uri, name, type }, kind);
+        const localUrl = (uri.startsWith('file://') || uri.startsWith('content://')) ? uri : `file://${uri}`;
+        setUploadProgress(prev => ({ ...prev, [localUrl]: 0 }));
+        const res = await apiService.uploadFile({ uri, name, type }, kind, (p: number) =>
+          setUploadProgress(prev => ({ ...prev, [localUrl]: Math.max(0, Math.min(100, Math.floor(p))) }))
+        );
+        setUploadProgress(prev => ({ ...prev, [localUrl]: 100 }));
         if (Array.isArray((res as any)?.files)) {
           ((res as any).files as any[]).forEach((f: any) => {
             const url = f?.secure_url || f?.url || (f?.path ? String(f.path) : '')
@@ -562,6 +1057,8 @@ const CommunityChatScreen: React.FC = () => {
       }
 
       if (uploaded.length === 0) {
+        // Remove optimistic message on failure
+        setMessages(prev => prev.filter(m => m._id !== optimisticId));
         Alert.alert('Upload failed', 'Could not send media.');
         return;
       }
@@ -587,8 +1084,28 @@ const CommunityChatScreen: React.FC = () => {
       });
       const saved = (resp as any)?.message || resp;
       const normalized = normalizeMessage(saved);
-      setMessages(prev => [...prev, normalized]);
+      setMessages(prev => {
+        const filtered = prev.filter(m => m._id !== optimisticId);
+        const next = [...filtered, normalized];
+        const seen = new Set<string>();
+        const dedup: CommunityMessage[] = [];
+        for (const m of next) {
+          if (!seen.has(m._id)) { seen.add(m._id); dedup.push(m); }
+        }
+        return dedup;
+      });
       setReplyTo(null);
+      // Emit socket event to notify others in the community (with uploaded URLs)
+      const fromUser2 = username || currentUser?.username;
+      if (fromUser2) {
+        socketService.sendCommunityMessage({ room: communityId, from: fromUser2, message: caption || normalized.text || '', files: uploaded, replyTo: replyTo || undefined });
+      }
+      // Trigger push notifications for media/audio message
+      try {
+        await apiService.triggerCommunityMessageNotifications(String(communityId), caption || normalized.text || '', normalized._id, uploaded as any);
+      } catch (notifyErr) {
+        if (__DEV__) console.debug('triggerCommunityMessageNotifications (media) failed:', notifyErr);
+      }
       scrollToEnd();
     } catch (e) {
       console.error('sendMediaWithCaption error:', e);
@@ -626,8 +1143,11 @@ const CommunityChatScreen: React.FC = () => {
       const picks = await DocumentPicker.pick({
         type: [DocumentPicker.types.allFiles],
         allowMultiSelection: true,
+        copyTo: 'cachesDirectory',
       });
-      const uris = picks.map(p => p.uri).filter(Boolean);
+      const uris = picks
+        .map(p => (p.fileCopyUri || p.uri))
+        .filter((u): u is string => !!u);
       if (uris.length) await sendMediaWithCaption(uris);
     } catch (e: any) {
       if (DocumentPicker.isCancel(e)) return;
@@ -688,46 +1208,175 @@ const CommunityChatScreen: React.FC = () => {
     }
   };
 
-  const renderItem = ({ item }: { item: CommunityMessage }) => {
+  const renderItem = ({ item, index }: { item: CommunityMessage; index: number }) => {
     const isMine = (currentUser?.username && (item.sender as any)?.username === currentUser.username) || false;
     const avatar = (item.sender as any)?.avatar;
     return (
-      <TouchableOpacity
-        activeOpacity={0.95}
-        onLongPress={() => { setActionTarget(item); setActionsVisible(true); }}
-        style={[styles.msg, isMine ? styles.msgMine : styles.msgTheirs]}
-      >
-        <View style={styles.msgHeader}>
-          {!isMine ? (
-            <View style={styles.senderRow}>
-              {avatar ? <Image source={{ uri: avatar }} style={styles.senderAvatar} /> : 
-                <View style={[styles.senderAvatar, styles.senderAvatarPlaceholder]}>
-                  <Text style={styles.avatarInitial}>{((item.sender as any)?.name || (item.sender as any)?.username || '?')[0]}</Text>
-                </View>
-              }
-              <Text style={styles.senderName}>{(item.sender as any)?.name || (item.sender as any)?.username}</Text>
+      <>
+        {(() => {
+          const itemDate = new Date(item.time);
+          const prev = index > 0 ? messages[index - 1] : null;
+          const prevDate = prev ? new Date(prev.time) : null;
+          const showDay = index === 0 || (prevDate && !isSameDay(itemDate, prevDate));
+          if (!showDay) return null;
+          return (
+            <View style={styles.dayDivider}>
+              <Text style={styles.dayDividerText}>{formatDayLabel(itemDate)}</Text>
             </View>
-          ) : (
-            <Text style={styles.senderName}>You</Text>
-          )}
-          <Text style={styles.msgTime}>{new Date(item.time).toLocaleTimeString()}</Text>
-        </View>
-        {item.text ? <Text style={styles.msgText}>{item.text}</Text> : null}
-        {Array.isArray(item.media) && item.media.length > 0 ? (
-          <FlatList
-            data={item.media}
-            horizontal
-            keyExtractor={(m, idx) => `${item._id}-m-${idx}`}
-            renderItem={({ item: media }) => (
-              <TouchableOpacity onPress={() => openMediaPreview(media)} onLongPress={() => downloadMedia(media)}>
-                <Image source={{ uri: media.thumbnailUrl || media.url }} style={styles.mediaThumb} />
-              </TouchableOpacity>
+          );
+        })()}
+        <TouchableOpacity
+          activeOpacity={0.95}
+          onLongPress={() => openReactionTray(item._id)}
+          onPress={() => { reactionTargetId ? closeReactionTray() : (setActionTarget(item), setActionsVisible(true)); }}
+          onLayout={(e) => { itemPositions.current[item._id] = e.nativeEvent.layout.y; }}
+          style={[styles.msg, isMine ? styles.msgMine : styles.msgTheirs, highlightedId === item._id ? styles.msgHighlighted : undefined]}
+        >
+          <View style={styles.msgHeader}>
+            {!isMine ? (
+              <View style={styles.senderRow}>
+                {avatar ? <Image source={{ uri: avatar }} style={styles.senderAvatar} /> : 
+                  <View style={[styles.senderAvatar, styles.senderAvatarPlaceholder]}>
+                    <Text style={styles.avatarInitial}>{((item.sender as any)?.name || (item.sender as any)?.username || '?')[0]}</Text>
+                  </View>
+                }
+                <Text style={styles.senderName}>{(item.sender as any)?.name || (item.sender as any)?.username}</Text>
+              </View>
+            ) : (
+              <Text style={styles.senderName}>You</Text>
             )}
-            style={{ marginTop: 6 }}
-            showsHorizontalScrollIndicator={false}
-          />
-        ) : null}
-      </TouchableOpacity>
+            <Text style={styles.msgTime}>{new Date(item.time).toLocaleTimeString()}</Text>
+          </View>
+          {item.replyToId ? (() => {
+            const parent = messages.find(m => m._id === item.replyToId);
+            const parentSenderName =
+              parent && typeof parent.sender !== 'string'
+                ? (parent.sender.name || parent.sender.username)
+                : (typeof parent?.sender === 'string' ? parent?.sender : undefined);
+            return (
+              <TouchableOpacity style={styles.replyPreview} onPress={() => scrollToMessageId(item.replyToId)}>
+                {!!parentSenderName && <Text style={styles.replyPreviewTitle}>Reply to {parentSenderName}</Text>}
+                {!!parent?.text && <Text style={styles.replyPreviewText} numberOfLines={2}>{parent!.text}</Text>}
+              </TouchableOpacity>
+            );
+          })() : null}
+          {item.text ? <Text style={styles.msgText}>{item.text}</Text> : null}
+          {Array.isArray(item.media) && item.media.length > 0 ? (
+            <View style={styles.mediaRow}>
+              {item.media.map((media, index) => {
+                const type = guessMediaType(media);
+                const id = `${item._id}-m-${index}`;
+                if (type === 'audio') {
+                  const progressPercent = playDuration > 0 && playingId === id ? Math.min(100, Math.floor((playPosition / playDuration) * 100)) : 0;
+                  const isPlayingThis = playingId === id && !isPaused;
+                  const uploadPercent = uploadProgress[media.url] ?? 0;
+                  return (
+                    <View key={id} style={styles.mediaItem}>
+                      <View style={styles.audioContainer}>
+                        <TouchableOpacity style={[styles.audioPlayBtn, isPlayingThis ? { backgroundColor: '#4CAF50' } : null]} onPress={() => toggleAudioPlayback(media.url, id)}>
+                          <Icon name={isPlayingThis ? 'pause' : 'play-arrow'} size={22} color={'#fff'} />
+                        </TouchableOpacity>
+                        <View style={styles.audioContent}>
+                          {uploadPercent > 0 && uploadPercent < 100 ? (
+                            <View style={styles.audioUploadBar}>
+                              <View style={[styles.audioUploadProgress, { width: `${uploadPercent}%` }]} />
+                            </View>
+                          ) : null}
+                          {isPlayingThis ? (
+                            <View style={styles.audioWave}>
+                              {[0,1,2,3,4,5,6,7].map(i => {
+                                const height = 6 + 8 * Math.abs(Math.sin(((playingId === id ? playPosition : 0) / 150) + i));
+                                return <View key={i} style={[styles.audioWaveBar, { height }]} />;
+                              })}
+                            </View>
+                          ) : null}
+                          <View style={styles.audioProgressBar}>
+                            <View style={[styles.audioProgress, { width: `${progressPercent}%` }]} />
+                          </View>
+                          <Text style={styles.audioTime}>{formatRecordTime(playingId === id ? playPosition : 0)} / {formatRecordTime(playingId === id ? playDuration : 0)}</Text>
+                        </View>
+                        <View style={styles.audioActions}>
+                          <TouchableOpacity style={styles.audioDownloadBtn} onPress={() => downloadMedia({ url: media.url, type: 'audio' })}>
+                            <Icon name="file-download" size={18} color={'#fff'} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                }
+                if (type === 'document') {
+                  const fname = getFilenameFromUrl(media.url);
+                  const percent = uploadProgress[media.url] ?? 0;
+                  return (
+                    <View key={id} style={styles.mediaItem}>
+                      <View style={[styles.docTile, percent > 0 && percent < 100 ? { opacity: 0.7 } : undefined]}>
+                        <View style={styles.docIcon}>
+                          <Icon name="description" size={22} color={colors.primary} />
+                        </View>
+                        <View style={styles.docContent}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <Text style={styles.docName} numberOfLines={1}>{fname || 'Document'}</Text>
+                            {percent > 0 && percent < 100 ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+                          </View>
+                          {percent > 0 && percent < 100 ? (
+                            <View style={styles.docProgressBar}>
+                              <View style={[styles.docProgress, { width: `${percent}%` }]} />
+                            </View>
+                          ) : null}
+                        </View>
+                        <TouchableOpacity style={styles.docDownloadBtn} onPress={() => downloadMedia({ url: media.url, type: 'document' })}>
+                          <Icon name="file-download" size={18} color={'#fff'} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                }
+                return (
+                  <View key={id} style={styles.mediaItem}>
+                    <TouchableOpacity onPress={() => openMediaPreview(media)} style={styles.mediaThumbWrapper} activeOpacity={0.85}>
+                      <Image source={{ uri: media.thumbnailUrl || media.url }} style={styles.mediaThumb} />
+                      {uploadProgress[media.url] > 0 && uploadProgress[media.url] < 100 ? (
+                        <View style={styles.mediaUploadOverlay}>
+                          <View style={styles.mediaUploadProgressBar}>
+                            <View style={[styles.mediaUploadProgress, { width: `${uploadProgress[media.url]}%` }]} />
+                          </View>
+                          <Text style={styles.mediaUploadText}>{uploadProgress[media.url]}%</Text>
+                        </View>
+                      ) : null}
+                      <TouchableOpacity style={styles.mediaDownloadBtn} onPress={() => downloadMedia(media)}>
+                        <Icon name="download" size={18} color={'#fff'} />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+          {Array.isArray(messageReactions[item._id]) && messageReactions[item._id].length ? (
+            <View style={styles.reactionBadge}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {messageReactions[item._id].map(e => (
+                  <TouchableOpacity key={e} style={styles.reactionBadgeEmoji} onPress={() => removeReaction(item._id, e)}>
+                    <Text style={styles.reactionBadgeText}>{e}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          ) : null}
+          {reactionTargetId === item._id ? (
+            <View pointerEvents="box-none" style={[styles.reactionTray, isMine ? styles.reactionTrayRight : styles.reactionTrayLeft]}>
+              {reactionEmojis.map(e => (
+                <TouchableOpacity key={e} style={styles.reactionItem} onPress={() => pickReaction(item._id, e)}>
+                  <Text style={styles.reactionText}>{e}</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity style={styles.reactionMore} onPress={() => { closeReactionTray(); setActionTarget(item); setActionsVisible(true); }}>
+                <Icon name="more-horiz" size={18} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </TouchableOpacity>
+      </>
     );
   };
 
@@ -750,13 +1399,47 @@ const CommunityChatScreen: React.FC = () => {
               </View>
             )}
             <View style={{ flex: 1 }}>
-              <Text style={styles.headerTitle}>{communityName ? `# ${communityName}` : 'Community Chat'}</Text>
-              {!!community?.purpose || !!community?.description ? (
-                <Text style={styles.headerSubtitle} numberOfLines={1}>
-                  {(community?.purpose || community?.description || '').toString()}
-                </Text>
-              ) : null}
-            </View>
+          {meIsAdminOrCreator ? (
+            <TouchableOpacity onPress={openEditCommunity} activeOpacity={0.7}>
+              <Text style={[styles.headerTitle, editCommunityModalVisible ? { color: '#FF1493' } : null]}>
+                {editCommunityModalVisible
+                  ? (editCommunityName?.trim()
+                      ? `# ${editCommunityName}`
+                      : (community?.name
+                          ? `# ${community?.name}`
+                          : communityName
+                            ? `# ${communityName}`
+                            : 'Community Chat'))
+                  : (community?.name
+                      ? `# ${community?.name}`
+                      : communityName
+                        ? `# ${communityName}`
+                        : 'Community Chat')}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={[styles.headerTitle, editCommunityModalVisible ? { color: '#FF1493' } : null]}>
+              {editCommunityModalVisible
+                ? (editCommunityName?.trim()
+                    ? `# ${editCommunityName}`
+                    : (community?.name
+                        ? `# ${community?.name}`
+                        : communityName
+                          ? `# ${communityName}`
+                          : 'Community Chat'))
+                : (community?.name
+                    ? `# ${community?.name}`
+                    : communityName
+                      ? `# ${communityName}`
+                      : 'Community Chat')}
+            </Text>
+          )}
+          {!!community?.purpose || !!community?.description ? (
+            <Text style={styles.headerSubtitle} numberOfLines={1}>
+              {(community?.purpose || community?.description || '').toString()}
+            </Text>
+          ) : null}
+        </View>
           </View>
         <View style={styles.headerStatsRow}>
           <View style={styles.statsChip}>
@@ -788,14 +1471,50 @@ const CommunityChatScreen: React.FC = () => {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="transparent"
+            colors={["transparent"]}
+            progressBackgroundColor="transparent"
+          />
+        }
+        ListHeaderComponent={() =>
+          refreshing ? (
+            <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+              <Animated.Image source={logoSource} style={{ width: 28, height: 28, transform: [{ rotate: spin }] }} />
+            </View>
+          ) : null
+        }
         onScroll={(e) => {
           const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-          const paddingToBottom = 24; // threshold
-          const isBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - paddingToBottom;
+          const threshold = 24;
+          const isBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - threshold;
+          const isTop = contentOffset.y <= threshold;
           atBottomRef.current = isBottom;
           setAtBottom(isBottom);
+          setAtTop(isTop);
+          setShowScrollControls(true);
+          if (scrollControlsTimeout.current) { try { clearTimeout(scrollControlsTimeout.current); } catch (_) {} }
+          scrollControlsTimeout.current = setTimeout(() => { setShowScrollControls(false); }, 1500);
         }}
       />
+
+      {showScrollControls && (
+        <View style={{ position: 'absolute', right: 12, bottom: 86, alignItems: 'center' }}>
+          {!atTop && (
+            <TouchableOpacity onPress={scrollToTop} style={{ backgroundColor: '#0B2141', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 24, elevation: 2 }}>
+              <Icon name="keyboard-arrow-up" size={22} color="#fff" />
+            </TouchableOpacity>
+          )}
+          {!atBottom && (
+            <TouchableOpacity onPress={scrollToEnd} style={{ marginTop: 10, backgroundColor: '#0B2141', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 24, elevation: 2 }}>
+              <Icon name="keyboard-arrow-down" size={22} color="#fff" />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {!!replyTo && (
         <View style={styles.replyPill}>
@@ -847,13 +1566,13 @@ const CommunityChatScreen: React.FC = () => {
       )}
 
       {emojiVisible && (
-        <View style={styles.emojiTray}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.emojiTray} contentContainerStyle={styles.emojiTrayContent}>
           {emojis.map((e) => (
             <TouchableOpacity key={e} style={styles.emojiItem} onPress={() => handleEmojiSelect(e)}>
               <Text style={styles.emojiText}>{e}</Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       )}
 
       {/* Members & Admin management modal */}
@@ -925,6 +1644,12 @@ const CommunityChatScreen: React.FC = () => {
               <Text style={styles.menuItemText}>Members</Text>
             </TouchableOpacity>
             {meIsAdminOrCreator && (
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); openEditCommunity(); }}>
+                <Icon name="edit" size={18} color={colors.text} />
+                <Text style={styles.menuItemText}>Edit community</Text>
+              </TouchableOpacity>
+            )}
+            {meIsAdminOrCreator && (
               isGroupLocked ? (
                 <TouchableOpacity style={styles.menuItem} onPress={handleUnlockGroup}>
                   <Icon name="lock-open" size={18} color={colors.text} />
@@ -941,6 +1666,53 @@ const CommunityChatScreen: React.FC = () => {
               <Icon name="delete-sweep" size={18} color={colors.text} />
               <Text style={styles.menuItemText}>Clear my messages</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit community modal */}
+      <Modal visible={editCommunityModalVisible} transparent animationType="slide" onRequestClose={() => setEditCommunityModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Community</Text>
+              <TouchableOpacity onPress={() => setEditCommunityModalVisible(false)}>
+                <Icon name="close" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
+              <TouchableOpacity onPress={handleSelectCommunityImage} style={{ alignSelf: 'center', marginBottom: 16 }}>
+                {editCommunityImage ? (
+                  <Image source={{ uri: editCommunityImage }} style={{ width: 100, height: 100, borderRadius: 50 }} />
+                ) : (
+                  <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: '#111', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="add-a-photo" size={24} color={colors.text} />
+                    <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 6 }}>Add photo</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TextInput
+                style={[styles.input, { color: '#FF1493' }]}
+                value={editCommunityName}
+                onChangeText={setEditCommunityName}
+                placeholder="Community name"
+                placeholderTextColor={colors.textMuted}
+              />
+              <TextInput
+                style={[styles.input, { marginTop: 10, color: '#FF1493', minHeight: 80, textAlignVertical: 'top' }]}
+                value={editCommunityDescription}
+                onChangeText={setEditCommunityDescription}
+                placeholder="Description"
+                placeholderTextColor={colors.textMuted}
+                multiline
+              />
+            </View>
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.shareInviteBtn} onPress={handleSaveCommunityEdit} disabled={isSavingCommunityEdit}>
+                <Icon name="save" size={18} color={'#fff'} />
+                <Text style={styles.shareInviteText}>{isSavingCommunityEdit ? 'Saving...' : 'Save'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -971,6 +1743,8 @@ const CommunityChatScreen: React.FC = () => {
                 <Image source={{ uri: previewMedia.url }} style={{ width: '100%', height: '80%', borderRadius: 8 }} resizeMode="contain" />
               ) : previewMedia?.type === 'video' && previewMedia?.url ? (
                 <WebView source={{ html: `<html><body style=\"margin:0;background:#000\"><video src=\"${previewMedia.url}\" controls autoplay style=\"width:100%;height:100%\"></video></body></html>` }} style={{ flex: 1 }} />
+              ) : previewMedia?.type === 'audio' && previewMedia?.url ? (
+                <WebView source={{ html: `<html><body style=\"margin:0;background:#000\"><audio src=\"${previewMedia.url}\" controls autoplay style=\"width:100%\"></audio></body></html>` }} style={{ flex: 1 }} />
               ) : (
                 <Text style={styles.modalTitle}>No preview available</Text>
               )}
@@ -999,16 +1773,62 @@ const CommunityChatScreen: React.FC = () => {
               <Icon name="reply" size={18} color={colors.text} />
               <Text style={styles.menuItemText}>Reply</Text>
             </TouchableOpacity>
+            {!!(currentUser?.username && ((typeof actionTarget?.sender === 'string' ? actionTarget?.sender : (actionTarget?.sender as any)?.username) === currentUser.username)) && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setActionsVisible(false);
+                  setEditText(actionTarget?.text || '');
+                  setEditModalVisible(true);
+                }}
+              >
+                <Icon name="edit" size={18} color={colors.text} />
+                <Text style={styles.menuItemText}>Edit</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => {
                 setActionsVisible(false);
-                setEditText(actionTarget?.text || '');
-                setEditModalVisible(true);
+                try {
+                  const text = (actionTarget?.text || '').trim();
+                  let payload = text;
+                  if (!payload && Array.isArray(actionTarget?.media) && actionTarget.media.length) {
+                    payload = actionTarget.media.map(m => m.url).join('\n');
+                  }
+                  const Clipboard = require('@react-native-clipboard/clipboard').default;
+                  if (Clipboard && typeof Clipboard.setString === 'function') {
+                    Clipboard.setString(payload || '');
+                    Alert.alert('Copied', 'Content copied to clipboard');
+                  } else {
+                    Alert.alert('Clipboard unavailable', payload || 'Nothing to copy');
+                  }
+                } catch (e) {
+                  Alert.alert('Clipboard error', 'Unable to copy content');
+                }
               }}
             >
-              <Icon name="edit" size={18} color={colors.text} />
-              <Text style={styles.menuItemText}>Edit</Text>
+              <Icon name="content-copy" size={18} color={colors.text} />
+              <Text style={styles.menuItemText}>Copy</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={async () => {
+                setActionsVisible(false);
+                try {
+                  const parts: string[] = [];
+                  if (actionTarget?.text) parts.push(actionTarget.text);
+                  if (Array.isArray(actionTarget?.media) && actionTarget.media.length) {
+                    parts.push('Media:');
+                    parts.push(...actionTarget.media.map(m => m.url));
+                  }
+                  const msg = parts.join('\n');
+                  await Share.share({ message: msg });
+                } catch (_) {}
+              }}
+            >
+              <Icon name="share" size={18} color={colors.text} />
+              <Text style={styles.menuItemText}>Share</Text>
             </TouchableOpacity>
             {Array.isArray(actionTarget?.media) && actionTarget?.media?.length ? (
               <TouchableOpacity
@@ -1074,10 +1894,11 @@ const CommunityChatScreen: React.FC = () => {
             </View>
             <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: '#FF1493', minHeight: 80, textAlignVertical: 'top' }]}
                 value={editText}
                 onChangeText={setEditText}
                 multiline
+                autoFocus
                 placeholder="Update your message"
                 placeholderTextColor={colors.textMuted}
               />
@@ -1249,13 +2070,46 @@ const styles = StyleSheet.create({
     borderColor: colors.primary + '50',
   },
   msgTheirs: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.cardBackground,
-    borderTopLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  msgHeader: {
+     alignSelf: 'flex-start',
+     backgroundColor: colors.cardBackground,
+     borderTopLeftRadius: 4,
+     borderWidth: 1,
+     borderColor: 'rgba(255,255,255,0.1)',
+   },
+   msgHighlighted: {
+     borderColor: colors.primary,
+     borderWidth: 2,
+   },
+   replyPreview: {
+     marginTop: 6,
+     paddingHorizontal: 8,
+     paddingVertical: 6,
+     borderRadius: 10,
+     backgroundColor: 'rgba(255,255,255,0.06)',
+     borderLeftWidth: 3,
+     borderLeftColor: colors.primary,
+   },
+   replyPreviewTitle: {
+     fontSize: 11,
+     color: colors.textMuted,
+     marginBottom: 2,
+   },
+   replyPreviewText: {
+     fontSize: 13,
+     color: colors.text,
+   },
+   replyPreviewMediaRow: {
+     flexDirection: 'row',
+     marginTop: 4,
+   },
+   replyPreviewMediaThumb: {
+     width: 20,
+     height: 20,
+     borderRadius: 4,
+     backgroundColor: '#333',
+     marginRight: 4,
+   },
+   msgHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1301,6 +2155,213 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     marginRight: 6,
     backgroundColor: '#111',
+  },
+  mediaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 6,
+  },
+  mediaItem: {
+    marginRight: 8,
+    marginBottom: 6,
+  },
+  audioContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#222',
+    borderRadius: 8,
+    padding: 4,
+    flexShrink: 1,
+    maxWidth: 320,
+  },
+  audioPlayBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  audioContent: {
+    flex: 1,
+    minWidth: 120,
+  },
+  audioUploadBar: {
+    height: 3,
+    backgroundColor: '#555',
+    borderRadius: 2,
+    overflow: 'hidden',
+    width: '100%',
+    marginBottom: 4,
+  },
+  audioUploadProgress: {
+    height: 3,
+    backgroundColor: '#7bd88f',
+  },
+  audioProgressBar: {
+    height: 3,
+    backgroundColor: '#444',
+    borderRadius: 2,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  audioProgress: {
+    height: 3,
+    backgroundColor: colors.primary,
+  },
+  audioWave: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: 16,
+    gap: 3,
+    marginVertical: 4,
+  },
+  audioWaveBar: {
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: colors.primary,
+  },
+  audioTime: {
+    marginTop: 4,
+    color: colors.textMuted,
+    fontSize: 10,
+  },
+  audioActions: {
+    marginLeft: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  audioDownloadBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#333',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaThumbWrapper: {
+    position: 'relative',
+  },
+  mediaDownloadBtn: {
+    position: 'absolute',
+    right: 4,
+    bottom: 4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaUploadOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  mediaUploadProgressBar: {
+    height: 4,
+    width: '80%',
+    backgroundColor: '#666',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  mediaUploadProgress: {
+    height: 4,
+    backgroundColor: colors.primary,
+  },
+  mediaUploadText: {
+    color: '#fff',
+    fontSize: 12,
+  },
+
+  // New day divider styles
+  dayDivider: {
+    alignSelf: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#f1f1f3',
+    marginVertical: 10,
+  },
+  dayDividerText: {
+    fontSize: 12,
+    color: '#666',
+  },
+
+  // New document tile styles
+  docTile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#f7f7fa',
+    borderWidth: 1,
+    borderColor: '#e6e6ef',
+    marginTop: 8,
+  },
+  docIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    backgroundColor: '#e9f2ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  docContent: {
+    flex: 1,
+  },
+  docName: {
+    fontSize: 14,
+    color: '#333',
+  },
+  docProgressBar: {
+    height: 4,
+    backgroundColor: '#e5e5e5',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginTop: 6,
+  },
+  docProgress: {
+    height: 4,
+    backgroundColor: colors.primary,
+  },
+  docDownloadBtn: {
+    marginLeft: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+
+  emojiTray: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#333',
+    backgroundColor: '#1f1f1f',
+    maxHeight: 60,
+  },
+  emojiTrayContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  emojiItem: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginRight: 8,
+  },
+  emojiText: {
+    fontSize: 20,
+    color: colors.text,
   },
   inputBar: {
     flexDirection: 'row',
@@ -1453,6 +2514,65 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
     borderRadius: 12,
     backgroundColor: '#000',
+  },
+  // Emoji reaction styles
+  reactionTray: {
+    position: 'absolute',
+    top: -44,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 12,
+    zIndex: 1000,
+  },
+  reactionTrayLeft: { left: 8 },
+  reactionTrayRight: { right: 8 },
+  reactionItem: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    marginHorizontal: 2,
+    marginVertical: 2,
+    borderRadius: 12,
+    backgroundColor: colors.secondary,
+  },
+  reactionText: {
+    fontSize: 16,
+  },
+  reactionMore: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    marginLeft: 4,
+    borderRadius: 12,
+    backgroundColor: colors.secondary,
+  },
+  reactionBadge: {
+    position: 'absolute',
+    right: 10,
+    bottom: -8,
+    backgroundColor: '#2A3942',
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: '#26353B',
+    zIndex: 1000,
+    elevation: 12,
+  },
+  reactionBadgeText: {
+    fontSize: 14,
+  },
+  reactionBadgeEmoji: {
+    marginHorizontal: 2,
   },
 });
 
