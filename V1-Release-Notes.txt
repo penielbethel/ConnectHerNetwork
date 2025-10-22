@@ -1,0 +1,46 @@
+ConnectHer Mobile v1.0 — Release Notes (User Edition)
+
+Highlights
+- Fast, reliable messaging with real-time presence and clear “last seen” updates.
+- Voice and video calling with simple incoming/outgoing screens.
+- Communities for group conversations and shared media.
+- Push notifications for messages and calls.
+- Smooth performance and improved app responsiveness.
+
+Messaging
+- One-to-one chat with text, emojis, images, videos, and voice notes.
+- Friend list reorders instantly based on last seen presence.
+- Faster chat screen loading and quicker message delivery feedback.
+- Improved friend search and filtering to find people faster.
+
+Calls
+- High-quality voice and video calls.
+- Easy call flow: ring, accept/decline, and in-call controls.
+- Call history aligned with conversations.
+
+Communities
+- Create or join communities to chat with multiple people.
+- Group conversations with media sharing similar to private chats.
+
+Notifications
+- Receive alerts for new messages and incoming calls.
+- In-app notifications keep you informed while using the app.
+
+Profile & Privacy
+- View and update your profile details.
+- Clear online/offline indicators and more accurate last seen.
+
+Performance & Reliability
+- Faster initial loads and smoother scrolling.
+- More responsive friend list ordering during presence changes.
+- Improved offline handling with clear communication of connectivity.
+
+Known Limitations
+- Background restrictions on some devices may delay notifications.
+- Very large conversations may take a moment to initially sync.
+
+Tips
+- Use the friend search to quickly find and message contacts.
+- Check Settings to tailor notifications and app behavior.
+
+Thank you for using ConnectHer Mobile! We’re excited to keep improving your experience with future updates.

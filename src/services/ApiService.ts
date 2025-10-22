@@ -22,7 +22,7 @@ export class ApiService {
   constructor() {
     // Prefer production API by default for smoother loading on devices
     // Developers can re-enable local API by toggling the flag below if needed
-    const preferProd = true;
+    const preferProd = false;
     this.devHost = getDevHost();
     if (!preferProd && __DEV__ && this.devHost) {
       const localRoot = `http://${this.devHost}:3000`;
@@ -1654,18 +1654,24 @@ export class ApiService {
 
   async likePost(postId: string) {
     try {
-      const userStr = await AsyncStorage.getItem('currentUser');
-      const username = userStr ? JSON.parse(userStr).username : undefined;
-      return this.makeRequest(`/posts/${postId}/like`, {
+      const me = await this.getCurrentUserSafe();
+      const username = me?.username ? String(me.username).trim() : undefined;
+      if (!username) {
+        console.warn('likePost aborted: missing username');
+        return { success: false, status: 401, message: 'Not authenticated' } as any;
+      }
+      return await this.makeRequest(`/posts/${postId}/like`, {
         method: 'POST',
         body: JSON.stringify({ username }),
       });
-    } catch (error) {
-      console.error('Error preparing likePost request:', error);
-      // Fallback without username to avoid UI breakage
-      return this.makeRequest(`/posts/${postId}/like`, {
-        method: 'POST',
-      });
+    } catch (err: any) {
+      const status = err?.status;
+      if (status && status >= 500) {
+        console.debug('likePost failed (5xx):', status);
+      } else {
+        console.error('likePost error:', err);
+      }
+      return { success: false, status, message: String(err?.message || 'Error') } as any;
     }
   }
 
@@ -1733,87 +1739,107 @@ export class ApiService {
     }
   }
   async commentOnPost(postId: string, comment: string) {
+    let username: string | undefined = undefined;
     try {
       const userStr = await AsyncStorage.getItem('currentUser');
-      const username = userStr ? JSON.parse(userStr).username : undefined;
-      return this.makeRequest(`/posts/${postId}/comment`, {
+      username = userStr ? JSON.parse(userStr).username : undefined;
+    } catch (prepErr) {
+      console.error('Error reading currentUser for commentOnPost:', prepErr);
+    }
+    try {
+      const bodyObj: any = { text: comment };
+      if (username) bodyObj.username = username;
+      return await this.makeRequest(`/posts/${postId}/comment`, {
         method: 'POST',
-        body: JSON.stringify({ username, text: comment }),
+        body: JSON.stringify(bodyObj),
       });
-    } catch (error) {
-      console.error('Error preparing commentOnPost request:', error);
-      // Fallback without username to avoid breaking UI
-      return this.makeRequest(`/posts/${postId}/comment`, {
-        method: 'POST',
-        body: JSON.stringify({ text: comment }),
-      });
+    } catch (err: any) {
+      console.error('commentOnPost error:', err);
+      return { success: false, status: err?.status, message: String(err?.message || 'Error') } as any;
     }
   }
 
   async replyToComment(postId: string, commentIndex: number, text: string) {
+    let username: string | undefined = undefined;
     try {
       const userStr = await AsyncStorage.getItem('currentUser');
-      const username = userStr ? JSON.parse(userStr).username : undefined;
-      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}/reply`, {
+      username = userStr ? JSON.parse(userStr).username : undefined;
+    } catch (prepErr) {
+      console.error('Error reading currentUser for replyToComment:', prepErr);
+    }
+    try {
+      const bodyObj: any = { text };
+      if (username) bodyObj.username = username;
+      return await this.makeRequest(`/posts/${postId}/comment/${commentIndex}/reply`, {
         method: 'POST',
-        body: JSON.stringify({ username, text }),
+        body: JSON.stringify(bodyObj),
       });
-    } catch (error) {
-      console.error('Error preparing replyToComment request:', error);
-      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}/reply`, {
-        method: 'POST',
-        body: JSON.stringify({ text }),
-      });
+    } catch (err: any) {
+      console.error('replyToComment error:', err);
+      return { success: false, status: err?.status, message: String(err?.message || 'Error') } as any;
     }
   }
 
   async editComment(postId: string, commentIndex: number, text: string) {
+    let username: string | undefined = undefined;
     try {
       const userStr = await AsyncStorage.getItem('currentUser');
-      const username = userStr ? JSON.parse(userStr).username : undefined;
-      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}`, {
+      username = userStr ? JSON.parse(userStr).username : undefined;
+    } catch (prepErr) {
+      console.error('Error reading currentUser for editComment:', prepErr);
+    }
+    try {
+      const bodyObj: any = { text };
+      if (username) bodyObj.username = username;
+      return await this.makeRequest(`/posts/${postId}/comment/${commentIndex}`, {
         method: 'PUT',
-        body: JSON.stringify({ username, text }),
+        body: JSON.stringify(bodyObj),
       });
-    } catch (error) {
-      console.error('Error preparing editComment request:', error);
-      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}`, {
-        method: 'PUT',
-        body: JSON.stringify({ text }),
-      });
+    } catch (err: any) {
+      console.error('editComment error:', err);
+      return { success: false, status: err?.status, message: String(err?.message || 'Error') } as any;
     }
   }
 
   async deleteComment(postId: string, commentIndex: number) {
+    let username: string | undefined = undefined;
     try {
       const userStr = await AsyncStorage.getItem('currentUser');
-      const username = userStr ? JSON.parse(userStr).username : undefined;
-      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}`, {
+      username = userStr ? JSON.parse(userStr).username : undefined;
+    } catch (prepErr) {
+      console.error('Error reading currentUser for deleteComment:', prepErr);
+    }
+    try {
+      const bodyObj: any = {};
+      if (username) bodyObj.username = username;
+      return await this.makeRequest(`/posts/${postId}/comment/${commentIndex}`, {
         method: 'DELETE',
-        body: JSON.stringify({ username }),
+        body: Object.keys(bodyObj).length ? JSON.stringify(bodyObj) : undefined,
       });
-    } catch (error) {
-      console.error('Error preparing deleteComment request:', error);
-      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}`, {
-        method: 'DELETE',
-      });
+    } catch (err: any) {
+      console.error('deleteComment error:', err);
+      return { success: false, status: err?.status, message: String(err?.message || 'Error') } as any;
     }
   }
 
   async editReply(postId: string, commentIndex: number, replyIndex: number, text: string) {
+    let username: string | undefined = undefined;
     try {
       const userStr = await AsyncStorage.getItem('currentUser');
-      const username = userStr ? JSON.parse(userStr).username : undefined;
-      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}/reply/${replyIndex}`, {
+      username = userStr ? JSON.parse(userStr).username : undefined;
+    } catch (prepErr) {
+      console.error('Error reading currentUser for editReply:', prepErr);
+    }
+    try {
+      const bodyObj: any = { text };
+      if (username) bodyObj.username = username;
+      return await this.makeRequest(`/posts/${postId}/comment/${commentIndex}/reply/${replyIndex}`, {
         method: 'PUT',
-        body: JSON.stringify({ username, text }),
+        body: JSON.stringify(bodyObj),
       });
-    } catch (error) {
-      console.error('Error preparing editReply request:', error);
-      return this.makeRequest(`/posts/${postId}/comment/${commentIndex}/reply/${replyIndex}`, {
-        method: 'PUT',
-        body: JSON.stringify({ text }),
-      });
+    } catch (err: any) {
+      console.error('editReply error:', err);
+      return { success: false, status: err?.status, message: String(err?.message || 'Error') } as any;
     }
   }
 

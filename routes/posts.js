@@ -1,5 +1,8 @@
 const express = require('express');
 const router = express.Router();
+// Ensure JSON bodies are parsed for comment/like/save/etc.
+router.use(express.json());
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Friendship = require("../models/Friendship");
 const Post = require('../models/Post');
@@ -250,43 +253,63 @@ router.post('/:id/comment', async (req, res) => {
 
 
 router.post('/:id/like', async (req, res) => {
-  const { username } = req.body;
-  const post = await Post.findById(req.params.id);
-  if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
-
-  if (post.likedBy.includes(username)) {
-    return res.status(400).json({ success: false, message: 'Already liked' });
-  }
-
-  post.likes += 1;
-  post.likedBy.push(username);
-  await post.save();
-
-  if (username !== post.username) {
-    const notification = await Notification.create({
-      to: post.username,
-      from: username,
-      type: "like",
-      title: "New Like",
-      content: `${username} liked your post.`,
-      postId: post._id
-    });
-    io.to(post.username).emit("new-notification", notification);
-
-    const owner = await User.findOne({ username: post.username });
-    const tokens = owner?.fcmTokens || [];
-    if (tokens.length > 0) {
-      const messages = tokens.map(token => ({
-        token,
-        notification: { title: "New Like", body: `${username} liked your post.` },
-        android: { priority: "high", notification: { channel_id: "connecther_notifications", sound: "default" } },
-        data: { type: "like", postId: String(post._id) }
-      }));
-      try { await Promise.allSettled(messages.map(m => admin.messaging().send(m))); } catch (e) { console.log("FCM like push failed", e?.message || e); }
+  try {
+    const { username } = req.body;
+    if (!username || typeof username !== 'string' || !username.trim()) {
+      return res.status(400).json({ success: false, message: 'Username required' });
     }
-  }
 
-  res.json({ success: true, likes: post.likes });
+    const user = await User.findOne({ username });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    const id = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid post id' });
+    }
+    const post = await Post.findById(id);
+    if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
+
+    if (post.likedBy.includes(username)) {
+      return res.status(400).json({ success: false, message: 'Already liked' });
+    }
+
+    post.likes += 1;
+    post.likedBy.push(username);
+    await post.save();
+
+    if (username !== post.username) {
+      try {
+        const notification = await Notification.create({
+          to: post.username,
+          from: username,
+          type: "like",
+          title: "New Like",
+          content: `${username} liked your post.`,
+          postId: post._id
+        });
+        io.to(post.username).emit("new-notification", notification);
+      } catch (e) {
+        console.error('Notification create failed (like):', e);
+      }
+
+      const owner = await User.findOne({ username: post.username });
+      const tokens = owner?.fcmTokens || [];
+      if (tokens.length > 0) {
+        const messages = tokens.map(token => ({
+          token,
+          notification: { title: "New Like", body: `${username} liked your post.` },
+          android: { priority: "high", notification: { channel_id: "connecther_notifications", sound: "default" } },
+          data: { type: "like", postId: String(post._id) }
+        }));
+        try { await Promise.allSettled(messages.map(m => admin.messaging().send(m))); } catch (e) { console.log("FCM like push failed", e?.message || e); }
+      }
+    }
+
+    res.json({ success: true, likes: post.likes });
+  } catch (err) {
+    console.error('❌ Like error:', err);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
 });
 
 

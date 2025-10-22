@@ -583,20 +583,9 @@ setTimeout(() => Alert.alert('Success', 'Your post has been published'), 200);
   const handleLikePost = async (postId: string) => {
     try {
       const username = currentUser?.username || '';
-      const target = posts.find(p => p._id === postId);
-      const currentLikedBy: string[] = Array.isArray((target as any)?.likedBy)
-        ? (target as any).likedBy
-        : Array.isArray((target as any)?.likes)
-        ? ((target as any).likes as any)
-        : [];
-      const isLikedBefore = username ? currentLikedBy.includes(username) : false;
-      if (!isLikedBefore) {
-        SoundService.playPop('react');
-      }
-
-      await apiService.likePost(postId);
-      // Optimistically update local state
-      setPosts(prevPosts => prevPosts.map(post => {
+      const prevPosts = posts;
+      // Compute next state optimistically
+      const nextPosts = prevPosts.map(post => {
         if (post._id !== postId) return post;
         const currentLikedByInner: string[] = Array.isArray((post as any).likedBy)
           ? (post as any).likedBy
@@ -613,9 +602,27 @@ setTimeout(() => Alert.alert('Success', 'Your post has been published'), 200);
           ? ((post as any).likes as any) + (isLiked ? -1 : 1)
           : newLikedBy.length;
         return { ...post, likedBy: newLikedBy, likes: likesCount as any };
-      }));
+      });
+
+      // Play sound only when changing from unliked to liked
+      const target = posts.find(p => p._id === postId);
+      const currentLikedBy: string[] = Array.isArray((target as any)?.likedBy)
+        ? (target as any).likedBy
+        : Array.isArray((target as any)?.likes)
+        ? ((target as any).likes as any)
+        : [];
+      const wasLiked = username ? currentLikedBy.includes(username) : false;
+      if (!wasLiked) {
+        SoundService.playPop('react');
+      }
+
+      // Apply optimistic update immediately
+      setPosts(nextPosts);
+      await apiService.likePost(postId);
     } catch (error) {
       console.error('Error liking post:', error);
+      // Roll back on failure
+      setPosts(prevPosts);
     }
   };
 
@@ -631,11 +638,27 @@ setTimeout(() => Alert.alert('Success', 'Your post has been published'), 200);
     const text = (commentTextByPost[postId] || '').trim();
     if (!text) return;
     setSubmittingCommentByPost(prev => ({ ...prev, [postId]: true }));
+    const optimisticComment = {
+      author: {
+        username: currentUser?.username,
+        name: (currentUser as any)?.name || currentUser?.username,
+        avatar: (currentUser as any)?.avatar,
+      },
+      content: text,
+      createdAt: new Date().toISOString(),
+      replies: [],
+    } as any;
+    // Optimistically append comment
+    const prevPosts = posts;
+    const nextPosts = prevPosts.map(p => p._id === postId ? { ...p, comments: [...p.comments, optimisticComment] } : p);
+    setPosts(nextPosts);
     try {
       await apiService.commentOnPost(postId, text);
       setCommentTextByPost(prev => ({ ...prev, [postId]: '' }));
-      await loadPosts();
+      // No heavy reload; the backend will be reflected in next fetch
     } catch (error: any) {
+      // Roll back if posting failed
+      setPosts(prevPosts);
       Alert.alert('Comment failed', error?.message || 'Unable to post comment');
     } finally {
       setSubmittingCommentByPost(prev => ({ ...prev, [postId]: false }));

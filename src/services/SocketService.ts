@@ -13,7 +13,10 @@ class SocketService {
   initialize() {
     if (!this.socket) {
       this.socket = io(this.baseUrl, {
-        transports: ['websocket'],
+        transports: ['websocket', 'polling'],
+        path: '/socket.io',
+        secure: true,
+        forceNew: true,
         autoConnect: true,
         reconnection: true,
         reconnectionAttempts: Infinity,

@@ -10,6 +10,9 @@ const fs = require("fs");
 require("dotenv").config();
 require('events').EventEmitter.defaultMaxListeners = 30; 
 const app = express();
+// Parse JSON and URL-encoded bodies globally
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 // 🔔 Firebase Admin for push notifications
 const admin = require('./firebase');
 const https = require('https');
