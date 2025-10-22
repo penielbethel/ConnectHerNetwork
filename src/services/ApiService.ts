@@ -278,14 +278,19 @@ export class ApiService {
       }
       // Suppress noisy logs for expected client-handled statuses
       const status = (error as any)?.status;
+      const msg = String(error?.message || '');
+      const isNoise = endpoint.startsWith('/friends/');
       if (typeof status === 'number' && status >= 500) {
         if (__DEV__) {
           console.debug('API 5xx suppressed:', status, endpoint);
         }
         // Do not warn for server errors; caller handles fallback UX
       } else if (status !== 404) {
-        const msg = String(error?.message || '');
-        console.warn('API request warning:', status, endpoint, msg);
+        if (isNoise) {
+          if (__DEV__) console.debug('API request warning:', status, endpoint, msg);
+        } else {
+          console.warn('API request warning:', status, endpoint, msg);
+        }
       }
       throw error;
     }
@@ -368,13 +373,18 @@ export class ApiService {
         }
       }
       const status = (error as any)?.status;
+      const msg = String(error?.message || '');
+      const isNoise = endpoint.startsWith('/friend-requests/');
       if (typeof status === 'number' && status >= 500) {
         if (__DEV__) {
           console.debug('API root 5xx suppressed:', status, endpoint);
         }
       } else if (status !== 404) {
-        const msg = String(error?.message || '');
-        console.warn('API root request warning:', status, endpoint, msg);
+        if (isNoise) {
+          if (__DEV__) console.debug('API root request warning:', status, endpoint, msg);
+        } else {
+          console.warn('API root request warning:', status, endpoint, msg);
+        }
       }
       throw error;
     }
@@ -845,31 +855,51 @@ export class ApiService {
         throw new Error('Missing username for friends request');
       }
 
-      // Prefer new backend route: /api/friends/:username
+      // Try enriched route first: /api/friends/:username
       try {
-        const data = await this.makeRequest(`/friends/${encodeURIComponent(user)}`);
-        const users = Array.isArray(data)
-          ? data
-          : Array.isArray((data as any)?.users)
-            ? (data as any).users
-            : [];
+        const enriched = await this.makeRequest(`/friends/${encodeURIComponent(user)}`);
+        const users = (Array.isArray(enriched) ? enriched : Array.isArray((enriched as any)?.users) ? (enriched as any).users : [])
+          .map((u: any) => ({
+            username: u?.username || u?.user?.username || u,
+            name: u?.name || u?.user?.name,
+            avatar: this.normalizeAvatar(u?.avatar || u?.user?.avatar),
+          }))
+          .filter((u: any) => !!u.username);
+        try { await AsyncStorage.setItem('friends:list', JSON.stringify(users)); } catch (_) {}
         return { users };
-      } catch (err: any) {
-        // Fallback to legacy route: /api/users/:username/friends
+      } catch (primaryErr: any) {
+        // Fallback to legacy route: /api/users/:username/friends -> ["alice","bob"]
         try {
           const legacy = await this.makeRequest(`/users/${encodeURIComponent(user)}/friends`);
-          const users = Array.isArray(legacy)
-            ? legacy
-            : Array.isArray((legacy as any)?.users)
-              ? (legacy as any).users
-              : [];
+          const usernames: string[] = Array.isArray(legacy) ? legacy : Array.isArray((legacy as any)?.users) ? (legacy as any).users : [];
+          const users: any[] = [];
+          for (const uname of usernames) {
+            if (!uname) continue;
+            try {
+              const prof = await this.makeRootRequest(`/api/users/user/${encodeURIComponent(uname)}`);
+              const usernameVal = prof?.username || uname;
+              // Skip unresolved or deleted users to avoid stale FriendList entries
+              if (!prof || !usernameVal || (!prof?.name && !prof?.avatar)) continue;
+              users.push({
+                username: usernameVal,
+                name: prof?.name || usernameVal,
+                avatar: this.normalizeAvatar(prof?.avatar),
+              });
+            } catch (_) {
+              // Do not include unresolved users in FriendList
+              continue;
+            }
+          }
+          try { await AsyncStorage.setItem('friends:list', JSON.stringify(users)); } catch (_) {}
           return { users };
-        } catch (innerErr: any) {
-          // Gracefully handle 404s (e.g., user not found) by returning empty list
-          if (innerErr?.status === 404) {
+        } catch (fallbackErr: any) {
+          const code = fallbackErr?.status ?? primaryErr?.status;
+          if (code === 404) {
+            try { await AsyncStorage.setItem('friends:list', JSON.stringify([])); } catch (_) {}
             return { users: [] };
           }
-          throw innerErr;
+          // Propagate errors (e.g., 5xx) so caller can use cache-based fallback
+          throw fallbackErr;
         }
       }
     } catch (err) {
@@ -925,21 +955,25 @@ export class ApiService {
       const uniqueUsernames = Array.from(new Set(usernames));
 
       // Enrich with minimal profile for avatar/name display
-      const profiles = await Promise.all(
+      const profilesRaw = await Promise.all(
         uniqueUsernames.map(async (from) => {
           try {
             const p: any = await this.getUserByUsername(from);
+            if (!p || !p.username) return null; // Skip deleted or missing users
             const name = p?.name || `${p?.firstName || ''} ${p?.surname || ''}`.trim() || from;
             return { username: from, name, avatar: this.normalizeAvatar(p?.avatar) };
           } catch (_) {
-            return { username: from, name: from, avatar: undefined } as any;
+            return null; // Drop entries that fail to resolve
           }
         })
       );
 
+      const profiles = (profilesRaw.filter(Boolean) as any[]);
       return profiles;
     } catch (error) {
-      console.error('getFriendRequests error:', error);
+      if (__DEV__) {
+        console.debug('getFriendRequests suppressed:', String((error as any)?.message || error));
+      }
       return [];
     }
   }
@@ -1553,8 +1587,11 @@ export class ApiService {
       const res = await this.makeRootRequest(`/api/users/last-seen/${encodeURIComponent(username)}`);
       // Expected shape: { lastSeen: ISOString }
       return res;
-    } catch (error) {
-      console.error('getLastSeen error:', error);
+    } catch (error: any) {
+      const status = (error as any)?.status;
+      if (status !== 404) {
+        console.error('getLastSeen error:', error);
+      }
       throw error;
     }
   }

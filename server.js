@@ -1,5 +1,7 @@
 // 📦 Load required packages
 const User = require('./models/User');
+const FriendRequest = require('./models/FriendRequest');
+const Friendship = require('./models/Friendship');
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");

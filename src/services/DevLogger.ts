@@ -21,17 +21,33 @@ export function initDevLogger(listener: DevLogListener) {
   const originalError = console.error;
   const originalDebug = console.debug ? console.debug : console.log;
 
-  console.log = (...args: any[]) => {
+  const defer = (fn: () => void) => {
     try {
-      listener({ level: 'log', message: formatArgs(args), timestamp: Date.now() });
-    } catch {}
+      setTimeout(fn, 0);
+    } catch {
+      try {
+        Promise.resolve().then(fn);
+      } catch {
+        fn();
+      }
+    }
+  };
+
+  console.log = (...args: any[]) => {
+    defer(() => {
+      try {
+        listener({ level: 'log', message: formatArgs(args), timestamp: Date.now() });
+      } catch {}
+    });
     originalLog(...args);
   };
 
   console.warn = (...args: any[]) => {
-    try {
-      listener({ level: 'warn', message: formatArgs(args), timestamp: Date.now() });
-    } catch {}
+    defer(() => {
+      try {
+        listener({ level: 'warn', message: formatArgs(args), timestamp: Date.now() });
+      } catch {}
+    });
     originalWarn(...args);
   };
 
@@ -40,16 +56,20 @@ export function initDevLogger(listener: DevLogListener) {
     let stack: string | undefined;
     const maybeError = args.find(a => a && (a as any).stack);
     if (maybeError && typeof (maybeError as any).stack === 'string') stack = (maybeError as any).stack;
-    try {
-      listener({ level: 'error', message: msg, stack, timestamp: Date.now() });
-    } catch {}
+    defer(() => {
+      try {
+        listener({ level: 'error', message: msg, stack, timestamp: Date.now() });
+      } catch {}
+    });
     originalError(...args);
   };
 
   console.debug = (...args: any[]) => {
-    try {
-      listener({ level: 'debug', message: formatArgs(args), timestamp: Date.now() });
-    } catch {}
+    defer(() => {
+      try {
+        listener({ level: 'debug', message: formatArgs(args), timestamp: Date.now() });
+      } catch {}
+    });
     originalDebug(...args);
   };
 
@@ -57,15 +77,17 @@ export function initDevLogger(listener: DevLogListener) {
   const defaultHandler = globalAny.ErrorUtils && globalAny.ErrorUtils.getGlobalHandler ? globalAny.ErrorUtils.getGlobalHandler() : undefined;
   if (globalAny.ErrorUtils && globalAny.ErrorUtils.setGlobalHandler) {
     globalAny.ErrorUtils.setGlobalHandler((error: any, isFatal?: boolean) => {
-      try {
-        listener({
-          level: 'error',
-          message: error?.message || String(error),
-          stack: error?.stack,
-          fatal: !!isFatal,
-          timestamp: Date.now(),
-        });
-      } catch {}
+      defer(() => {
+        try {
+          listener({
+            level: 'error',
+            message: error?.message || String(error),
+            stack: error?.stack,
+            fatal: !!isFatal,
+            timestamp: Date.now(),
+          });
+        } catch {}
+      });
       if (typeof defaultHandler === 'function') defaultHandler(error, isFatal);
     });
   }

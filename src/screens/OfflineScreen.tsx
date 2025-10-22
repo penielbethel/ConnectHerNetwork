@@ -6,7 +6,7 @@ const OfflineScreen = () => {
   // Rotate animation setup
   const spinValue = useRef(new Animated.Value(0)).current;
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
-  const spin = spinValue.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });On 
+  const spin = spinValue.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
   useEffect(() => {
     // Start continuous rotation while offline screen is visible
     loopRef.current = Animated.loop(

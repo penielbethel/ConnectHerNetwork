@@ -10,6 +10,9 @@ android/app/build/
 firebase-service-account.json
 uploads/
 android/app/debug.keystore
+# Ignore release keystore and signing props
+android/app/*.keystore
+android/app/keystore.properties
 android/local.properties
 *.log
 android/.gradle/
