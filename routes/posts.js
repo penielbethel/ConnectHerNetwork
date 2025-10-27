@@ -472,20 +472,35 @@ router.delete('/:postId/comment/:commentIndex/reply/:replyIndex', async (req, re
 // ✅ Feed, search, and user-post routes – untouched
 router.get('/', async (req, res) => {
   try {
-    // Fetch all posts and randomize order like TikTok/Instagram
-    const posts = await Post.find();
-    const shuffled = posts.sort(() => Math.random() - 0.5);
+    const limitRaw = String(req.query.limit || '');
+    const pageRaw = String(req.query.page || '');
+    const limit = Math.min(50, Math.max(1, parseInt(limitRaw || '25', 10)));
+    const page = Math.max(1, parseInt(pageRaw || '1', 10));
+    const skip = (page - 1) * limit;
 
-    // Ensure location is present for legacy posts
-    const withLoc = await Promise.all(shuffled.map(async (p) => {
-      if (!p.location) {
-        const u = await User.findOne({ username: p.username });
-        if (u && u.location) p.location = u.location;
-      }
-      return p;
-    }));
-    res.status(200).json(withLoc);
+    // Fetch recent posts only, avoid scanning full collection
+    const posts = await Post.find({})
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // Bulk backfill locations for legacy posts missing location field
+    const missingUsernames = Array.from(new Set(posts.filter(p => !p.location).map(p => p.username))).filter(Boolean);
+    if (missingUsernames.length > 0) {
+      const users = await User.find({ username: { $in: missingUsernames } }).lean();
+      const locMap = new Map(users.map(u => [u.username, u.location]));
+      posts.forEach(p => {
+        if (!p.location) {
+          const loc = locMap.get(p.username);
+          if (loc) p.location = loc;
+        }
+      });
+    }
+
+    return res.status(200).json(posts);
   } catch (err) {
+    console.error('❌ Error fetching posts:', err);
     res.status(500).json({ message: 'Error fetching posts.' });
   }
 });
@@ -494,34 +509,52 @@ router.get("/:username/feed", async (req, res) => {
   const { username } = req.params;
 
   try {
-    const user = await User.findOne({ username });
+    const user = await User.findOne({ username }).lean();
     if (!user) return res.status(404).json([]);
 
-    const friendships = await Friendship.find({ users: username });
+    const limitRaw = String(req.query.limit || '');
+    const pageRaw = String(req.query.page || '');
+    const limit = Math.min(50, Math.max(1, parseInt(limitRaw || '25', 10)));
+    const page = Math.max(1, parseInt(pageRaw || '1', 10));
+    const skip = (page - 1) * limit;
+
+    // Resolve direct friends and friends-of-friends
+    const friendships = await Friendship.find({ users: username }).lean();
     const directFriends = friendships.flatMap(f => f.users.filter(u => u !== username));
-    const secondDegree = await Friendship.find({ users: { $in: directFriends } });
+    const secondDegree = directFriends.length > 0
+      ? await Friendship.find({ users: { $in: directFriends } }).lean()
+      : [];
     const friendsOfFriends = secondDegree.flatMap(f => f.users).filter(u => u !== username && !directFriends.includes(u));
 
     const allowedUsers = [...new Set([...directFriends, ...friendsOfFriends, username])];
 
-    // Randomize posts; include friends, FOAF, same-location, and sponsored
-    const posts = await Post.find();
-    const filtered = posts.filter(p =>
-      allowedUsers.includes(p.username) ||
-      p.location === user.location || 
-      p.sponsored === true
-    ).sort(() => Math.random() - 0.5);
+    // Query efficiently in Mongo instead of fetching all posts and filtering in JS
+    const posts = await Post.find({
+      $or: [
+        { username: { $in: allowedUsers } },
+        { location: user.location },
+        { sponsored: true }
+      ]
+    })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
 
-    // Backfill location for any posts missing it
-    const withLoc = await Promise.all(filtered.map(async (p) => {
-      if (!p.location) {
-        const u = await User.findOne({ username: p.username });
-        if (u && u.location) p.location = u.location;
-      }
-      return p;
-    }));
+    // Bulk backfill location for any posts missing it
+    const missingUsernames = Array.from(new Set(posts.filter(p => !p.location).map(p => p.username))).filter(Boolean);
+    if (missingUsernames.length > 0) {
+      const users = await User.find({ username: { $in: missingUsernames } }).lean();
+      const locMap = new Map(users.map(u => [u.username, u.location]));
+      posts.forEach(p => {
+        if (!p.location) {
+          const loc = locMap.get(p.username);
+          if (loc) p.location = loc;
+        }
+      });
+    }
 
-    res.status(200).json(withLoc);
+    res.status(200).json(posts);
   } catch (err) {
     console.error("❌ Feed error:", err);
     res.status(500).json({ message: 'Feed error' });
@@ -549,15 +582,32 @@ router.get("/search/:query", async (req, res) => {
 
 router.get('/user/:username', async (req, res) => {
   try {
-    const posts = await Post.find({ username: req.params.username }).sort({ createdAt: -1 });
-    const withLoc = await Promise.all(posts.map(async (p) => {
-      if (!p.location) {
-        const u = await User.findOne({ username: p.username });
-        if (u && u.location) p.location = u.location;
-      }
-      return p;
-    }));
-    res.status(200).json(withLoc);
+    const { username } = req.params;
+    const limitRaw = String(req.query.limit || '');
+    const pageRaw = String(req.query.page || '');
+    const limit = Math.min(50, Math.max(1, parseInt(limitRaw || '25', 10)));
+    const page = Math.max(1, parseInt(pageRaw || '1', 10));
+    const skip = (page - 1) * limit;
+
+    const posts = await Post.find({ username })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const missingUsernames = Array.from(new Set(posts.filter(p => !p.location).map(p => p.username))).filter(Boolean);
+    if (missingUsernames.length > 0) {
+      const users = await User.find({ username: { $in: missingUsernames } }).lean();
+      const locMap = new Map(users.map(u => [u.username, u.location]));
+      posts.forEach(p => {
+        if (!p.location) {
+          const loc = locMap.get(p.username);
+          if (loc) p.location = loc;
+        }
+      });
+    }
+
+    res.status(200).json(posts);
   } catch (err) {
     console.error("Failed to fetch posts by user:", err);
     res.status(500).json({ message: "Server error fetching posts" });

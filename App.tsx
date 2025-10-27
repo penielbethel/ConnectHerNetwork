@@ -110,6 +110,8 @@ const AppDuplicate: React.FC = () => {
   const [locked, setLocked] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState<boolean>(true);
   const [devLogsEnabled, setDevLogsEnabled] = useState<boolean>(false);
+  const [showOfflineOverlay, setShowOfflineOverlay] = useState<boolean>(false);
+  const offlineTimerRef = useRef<any>(null);
   const [communityUnreadTotal, setCommunityUnreadTotal] = useState<number>(0);
   const [chatUnreadTotal, setChatUnreadTotal] = useState<number>(0);
   const [notificationUnreadTotal, setNotificationUnreadTotal] = useState<number>(0);
@@ -626,6 +628,29 @@ const AppDuplicate: React.FC = () => {
     };
   }, []);
 
+  // Debounce offline overlay to avoid flicker
+  useEffect(() => {
+    if (!isConnected) {
+      if (!offlineTimerRef.current) {
+        offlineTimerRef.current = setTimeout(() => {
+          setShowOfflineOverlay(true);
+        }, 2000);
+      }
+    } else {
+      if (offlineTimerRef.current) {
+        clearTimeout(offlineTimerRef.current);
+        offlineTimerRef.current = null;
+      }
+      setShowOfflineOverlay(false);
+    }
+    return () => {
+      if (offlineTimerRef.current) {
+        clearTimeout(offlineTimerRef.current);
+        offlineTimerRef.current = null;
+      }
+    };
+  }, [isConnected]);
+
   const navTheme = {
     ...DefaultTheme,
     colors: {
@@ -758,9 +783,7 @@ const AppDuplicate: React.FC = () => {
         </View>
       </Modal>
       {/* Offline overlay */}
-      <Modal visible={!isConnected} transparent={false} animationType="fade" onRequestClose={() => {}}>
-        <OfflineScreen />
-      </Modal>
+      {showOfflineOverlay && <OfflineScreen />}
       </NavigationContainer>
     </ThemeContext.Provider>
   );

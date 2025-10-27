@@ -231,6 +231,37 @@ class SocketService {
     this.emit('stopTyping', {from, to});
   }
 
+  // Recording indicators
+  startRecording(to: string) {
+    const from = this.currentUsername;
+    if (!from) {
+      AsyncStorage.getItem('currentUser')
+        .then(userStr => {
+          const user = userStr ? JSON.parse(userStr) : null;
+          this.currentUsername = user?.username || null;
+          this.emit('recording', { from: this.currentUsername, to });
+        })
+        .catch(() => this.emit('recording', { from: '', to }));
+      return;
+    }
+    this.emit('recording', { from, to });
+  }
+
+  stopRecording(to: string) {
+    const from = this.currentUsername;
+    if (!from) {
+      AsyncStorage.getItem('currentUser')
+        .then(userStr => {
+          const user = userStr ? JSON.parse(userStr) : null;
+          this.currentUsername = user?.username || null;
+          this.emit('stopRecording', { from: this.currentUsername, to });
+        })
+        .catch(() => this.emit('stopRecording', { from: '', to }));
+      return;
+    }
+    this.emit('stopRecording', { from, to });
+  }
+
   startCommunityTyping(room: string, from: string) {
     this.emit('typing-community', {room, from});
   }
@@ -338,6 +369,8 @@ const socketServiceProxy = {
   leaveCommunity: (communityId: string) => socketServiceSingleton.leaveCommunity(communityId),
   startTyping: (to: string) => socketServiceSingleton.startTyping(to),
   stopTyping: (to: string) => socketServiceSingleton.stopTyping(to),
+  startRecording: (to: string) => socketServiceSingleton.startRecording(to),
+  stopRecording: (to: string) => socketServiceSingleton.stopRecording(to),
   startCommunityTyping: (room: string, from: string) => socketServiceSingleton.startCommunityTyping(room, from),
   stopCommunityTyping: (room: string, from: string) => socketServiceSingleton.stopCommunityTyping(room, from),
   // Group call helpers

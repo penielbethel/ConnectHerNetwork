@@ -18,6 +18,7 @@ export class ApiService {
   private baseUrl: string;
   private rootUrl: string;
   private devHost: string | null = null;
+  private requestTimeoutMs: number = __DEV__ ? 7000 : 10000;
 
   constructor() {
     // Prefer production API by default for smoother loading on devices
@@ -222,7 +223,15 @@ export class ApiService {
     } catch (_e) {}
 
     const doFetch = async (base: string) => {
-      const response = await fetch(`${base}${endpoint}`, config);
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : undefined;
+      const timer = controller ? setTimeout(() => { try { (controller as any).abort(); } catch (_) {} }, this.requestTimeoutMs) : undefined;
+
+      let response: any;
+      try {
+        response = await fetch(`${base}${endpoint}`, controller ? { ...config, signal: (controller as any).signal } : config);
+      } finally {
+        if (timer) clearTimeout(timer as any);
+      }
 
       const contentType = response.headers.get('content-type') || '';
       const isJson = contentType.includes('application/json');
@@ -233,10 +242,10 @@ export class ApiService {
           typeof payload === 'object' && payload && 'message' in payload
             ? (payload as any).message
             : `HTTP error ${response.status}`;
-        const err = new Error(message);
+        const err: any = new Error(message);
         // Attach status and payload for callers to inspect
-        (err as any).status = response.status;
-        (err as any).payload = payload;
+        err.status = response.status;
+        err.payload = payload;
         throw err;
       }
 
@@ -247,7 +256,9 @@ export class ApiService {
       return await doFetch(this.baseUrl);
     } catch (error: any) {
       // Fallback for Android emulator: if dev host is localhost and network fails, try 10.0.2.2
-      const networkFailed = String(error?.message || '').includes('Network request failed');
+      const msgStr = String(error?.message || '');
+      const aborted = (error?.name === 'AbortError') || /aborted/i.test(msgStr);
+      const networkFailed = aborted || msgStr.includes('Network request failed');
       const isAndroidEmuDev = __DEV__ && Platform.OS === 'android' && (this.devHost === 'localhost' || !this.devHost);
       if (networkFailed && isAndroidEmuDev) {
         const altRoot = 'http://10.0.2.2:3000';
@@ -323,7 +334,15 @@ export class ApiService {
     };
 
     const doFetch = async (root: string) => {
-      const response = await fetch(`${root}${endpoint}`, config);
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : undefined;
+      const timer = controller ? setTimeout(() => { try { (controller as any).abort(); } catch (_) {} }, this.requestTimeoutMs) : undefined;
+
+      let response: any;
+      try {
+        response = await fetch(`${root}${endpoint}`, controller ? { ...config, signal: (controller as any).signal } : config);
+      } finally {
+        if (timer) clearTimeout(timer as any);
+      }
 
       const contentType = response.headers.get('content-type') || '';
       const isJson = contentType.includes('application/json');
@@ -334,9 +353,9 @@ export class ApiService {
           typeof payload === 'object' && payload && 'message' in payload
             ? (payload as any).message
             : `HTTP error ${response.status}`;
-        const err = new Error(message);
-        (err as any).status = response.status;
-        (err as any).payload = payload;
+        const err: any = new Error(message);
+        err.status = response.status;
+        err.payload = payload;
         throw err;
       }
 
@@ -346,7 +365,9 @@ export class ApiService {
     try {
       return await doFetch(this.rootUrl);
     } catch (error: any) {
-      const networkFailed = String(error?.message || '').includes('Network request failed');
+      const msgStr = String(error?.message || '');
+      const aborted = (error?.name === 'AbortError') || /aborted/i.test(msgStr);
+      const networkFailed = aborted || msgStr.includes('Network request failed');
       const isAndroidEmuDev = __DEV__ && Platform.OS === 'android' && (this.devHost === 'localhost' || !this.devHost);
       if (networkFailed && isAndroidEmuDev) {
         const altRoot = 'http://10.0.2.2:3000';
@@ -1603,20 +1624,20 @@ export class ApiService {
   }
 
   // Posts methods
-  async getPosts(page: number = 1) {
+  async getPosts(page: number = 1, limit: number = 25) {
     // Prefer personalized randomized feed when current user exists
     try {
       const userStr = await AsyncStorage.getItem('currentUser');
       const username = userStr ? JSON.parse(userStr).username : undefined;
       if (username) {
-        const data = await this.makeRequest(`/posts/${encodeURIComponent(username)}/feed?page=${page}`);
+        const data = await this.makeRequest(`/posts/${encodeURIComponent(username)}/feed?page=${page}&limit=${limit}`);
         const raw = Array.isArray(data) ? data : (data as any)?.posts || [];
         return raw.map((p: any) => this.normalizePost(p));
       }
     } catch (err) {
       // Fall through to global feed
     }
-    const data = await this.makeRequest(`/posts?page=${page}`);
+    const data = await this.makeRequest(`/posts?page=${page}&limit=${limit}`);
     const raw = Array.isArray(data) ? data : (data as any)?.posts || [];
     return raw.map((p: any) => this.normalizePost(p));
   }

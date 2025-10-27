@@ -28,74 +28,56 @@ const OfflineScreen = () => {
   }, [spinValue]);
 
   return (
-    <View style={[globalStyles.container, styles.container]}> 
-      <View style={styles.card}>
+    <View pointerEvents="none" style={styles.overlayContainer}>
+      <View style={styles.overlayBanner}>
         <Animated.Image
           source={require('../../public/logo.png')}
-          style={[styles.logo, { transform: [{ rotate: spin }] }]}
+          style={[styles.bannerIcon, { transform: [{ rotate: spin }] }]}
           resizeMode="contain"
         />
-        <Text style={styles.title}>You are offline</Text>
-        <Text style={styles.subtitle}>Please turn on your Internet connection.</Text>
-        <Text style={styles.hint}>Tip: Check Wi‑Fi or Mobile Data and try again.</Text>
-        <TouchableOpacity activeOpacity={0.8} style={styles.retryButton}>
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.bannerTitle}>No internet connection</Text>
+          <Text style={styles.bannerSubtitle}>Some actions may be limited.</Text>
+        </View>
       </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  overlayContainer: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
+    zIndex: 9999,
+  },
+  overlayBanner: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.background,
-    paddingHorizontal: 24,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#1f2937',
+    opacity: 0.92,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  card: {
-    width: '100%',
-    maxWidth: 420,
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    paddingVertical: 32,
-    paddingHorizontal: 24,
-    borderWidth: 1,
-    borderColor: colors.border,
+  bannerIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 8,
   },
-  logo: {
-    width: 120,
-    height: 120,
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 6,
-  },
-  subtitle: {
+  bannerTitle: {
     fontSize: 14,
-    color: colors.textMuted,
-    marginBottom: 14,
-    textAlign: 'center',
-  },
-  hint: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  retryButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: colors.primary,
-  },
-  retryText: {
+    fontWeight: '600',
     color: '#fff',
-    fontWeight: 'bold',
+  },
+  bannerSubtitle: {
+    fontSize: 12,
+    color: '#e5e7eb',
   },
 });
 

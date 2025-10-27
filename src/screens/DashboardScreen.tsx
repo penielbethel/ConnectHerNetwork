@@ -288,25 +288,27 @@ const playSuccessSound = async () => {
 
   const loadPosts = async () => {
     try {
-      const data = await apiService.getPosts();
+      const PAGE_LIMIT = 25;
+      const data = await apiService.getPosts(1, PAGE_LIMIT);
       // Support both array and { posts: [...] } shapes
       const list = Array.isArray(data) ? data : (data as any)?.posts || [];
       setPosts(list);
 
-      // Prefetch originals for reshares
-      const originalIds = Array.from(
+      // Prefetch originals for reshares (cap to reduce network load)
+      const ORIGINAL_PREFETCH_LIMIT = 6;
+      const originalIdsAll = Array.from(
         new Set(list.map(p => (p as any)?.originalPostId).filter(Boolean))
       );
+      const originalIds = originalIdsAll.slice(0, ORIGINAL_PREFETCH_LIMIT);
       if (originalIds.length) {
         try {
-          const results = await Promise.all(
-            originalIds.map(id =>
-              apiService.getPost(String(id)).catch(() => null)
-            )
+          const results = await Promise.allSettled(
+            originalIds.map(id => apiService.getPost(String(id)))
           );
           setOriginalPostsById(prev => {
             const next: Record<string, Post> = { ...prev };
-            results.forEach(res => {
+            results.forEach(r => {
+              const res = r.status === 'fulfilled' ? r.value : null;
               const postObj = res && (res as any).post ? (res as any).post : res;
               if (postObj && (postObj as any)._id) {
                 next[String((postObj as any)._id)] = postObj as Post;
@@ -1109,7 +1111,7 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
             return (
               <>
                 <Icon
-                  name={isLiked ? 'favorite' : 'favorite-border'}
+                  name={isLiked ? 'thumb-up' : 'thumb-up-off-alt'}
                   size={20}
                   color={isLiked ? colors.primary : colors.textMuted}
                 />

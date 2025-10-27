@@ -167,6 +167,17 @@ const ChatScreen = () => {
       setFilteredChats(sortChatsByPresence(baselineChats));
       setLoading(false);
 
+      // Hydrate last message previews from cache for instant display
+      try {
+        const hydrated = await Promise.all(baselineChats.map(async (c) => {
+          const raw = await AsyncStorage.getItem(`lastPreview:${c._id}`);
+          const preview = raw ? JSON.parse(raw) : null;
+          return preview ? ({ ...c, lastMessage: preview, updatedAt: (preview.timestamp || c.updatedAt) } as Chat) : c;
+        }));
+        setChats(hydrated);
+        setFilteredChats(sortChatsByPresence(hydrated));
+      } catch (_) {}
+
       // Fire-and-forget reconcile to avoid blocking UI
       try { apiService.request('/friends/reconcile', { method: 'POST' }).catch(() => {}); } catch (_) {}
 
@@ -464,7 +475,7 @@ const ChatScreen = () => {
     };
 
     const getLastMessagePreview = (message: any) => {
-      if (!message) return 'No messages yet';
+      if (!message) return '';
       
       switch (message.type) {
         case 'image':

@@ -43,6 +43,7 @@ import RNFS from 'react-native-fs';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { saveMediaToDevice } from '../utils/mediaSaver';
 
+
 interface Message {
   _id: string;
   sender: string;
@@ -95,6 +96,7 @@ const ConversationScreen = () => {
   const [loading, setLoading] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [recipientTyping, setRecipientTyping] = useState(false);
+  const [recipientRecording, setRecipientRecording] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
   const [showEmojiPanel, setShowEmojiPanel] = useState(false);
   // Compose context
@@ -108,6 +110,7 @@ const ConversationScreen = () => {
   const [keyboardVisible, setKeyboardVisible] = useState<boolean>(false);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
   const logoSpin = useRef(new Animated.Value(0)).current;
   const spinLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const spin = logoSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
@@ -129,6 +132,7 @@ const ConversationScreen = () => {
       setRefreshing(false);
     }
   };
+
   // Audio playback state
   const audioPlayerRef = useRef<AudioRecorderPlayer | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -224,6 +228,8 @@ const ConversationScreen = () => {
   // Reload messages whenever this screen gains focus
   useEffect(() => {
     if (isFocused) {
+      // Reset initial autoscroll so we snap to the latest on entry
+      didInitialAutoScroll.current = false;
       loadMessages();
     }
   }, [isFocused, chatId]);
@@ -271,6 +277,8 @@ const ConversationScreen = () => {
         // Ensure chronological order: oldest at top, newest at bottom
         normalized.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
         setMessages(normalized);
+        // Snap to latest after initial load
+        try { scrollToBottomOnce(); } catch (_) {}
       }
     } catch (error) {
       console.error('Error loading messages:', error);
@@ -409,6 +417,7 @@ const ConversationScreen = () => {
       socket.on('disconnect', () => {
         setIsOnline(false);
         setRecipientTyping(false);
+        setRecipientRecording(false);
         setHeaderStatus('Offline');
       });
 
@@ -475,6 +484,22 @@ const ConversationScreen = () => {
         const to = data.to;
         if ((who === recipientUsername) || (to === currentUser?.username)) {
           setRecipientTyping(false);
+        }
+      });
+
+      socket.on('recording', (data: { from?: string; username?: string; chatId?: string; to?: string }) => {
+        const who = data.username || data.from;
+        const to = data.to;
+        if ((who === recipientUsername) || (to === currentUser?.username)) {
+          setRecipientRecording(true);
+        }
+      });
+
+      socket.on('stopRecording', (data: { from?: string; username?: string; chatId?: string; to?: string }) => {
+        const who = data.username || data.from;
+        const to = data.to;
+        if ((who === recipientUsername) || (to === currentUser?.username)) {
+          setRecipientRecording(false);
         }
       });
 
@@ -771,6 +796,8 @@ const handleSendMessage = async () => {
 
   const typingTimeout = useRef<NodeJS.Timeout | null>(null);
   const typingInterval = useRef<NodeJS.Timeout | null>(null);
+  const recordingTimeout = useRef<NodeJS.Timeout | null>(null);
+  const recordingInterval = useRef<NodeJS.Timeout | null>(null);
   const itemPositions = useRef<Record<string, number>>({});
 // Emoji reaction state
 const [reactionTargetId, setReactionTargetId] = useState<string | null>(null);
@@ -1086,6 +1113,12 @@ const pickReaction = (id: string, emoji: string) => {
       const uri = await audioRecorderService.startRecording();
       setRecordFileUri(uri);
       setIsRecording(true);
+      // Emit recording start and keep pinging while recording
+      try { socketService.startRecording(recipientUsername); } catch (_) {}
+      if (recordingInterval.current) { clearInterval(recordingInterval.current as any); recordingInterval.current = null; }
+      recordingInterval.current = setInterval(() => {
+        try { socketService.startRecording(recipientUsername); } catch (_) {}
+      }, 1000);
     } catch (err) {
       console.error('startRecording error', err);
       Alert.alert('Error', 'Failed to start recording');
@@ -1097,6 +1130,10 @@ const pickReaction = (id: string, emoji: string) => {
       const uri = await audioRecorderService.stopRecording();
       setRecordFileUri(uri || recordFileUri);
       setIsRecording(false);
+      // Notify recipient and clear pings
+      try { socketService.stopRecording(recipientUsername); } catch (_) {}
+      if (recordingInterval.current) { clearInterval(recordingInterval.current as any); recordingInterval.current = null; }
+      if (recordingTimeout.current) { clearTimeout(recordingTimeout.current as any); recordingTimeout.current = null; }
     } catch (err) {
       console.error('stopRecording error', err);
     }
@@ -1109,6 +1146,9 @@ const pickReaction = (id: string, emoji: string) => {
     setIsRecording(false);
     setRecordTimeMs(0);
     setRecordFileUri(null);
+    try { socketService.stopRecording(recipientUsername); } catch (_) {}
+    if (recordingInterval.current) { clearInterval(recordingInterval.current as any); recordingInterval.current = null; }
+    if (recordingTimeout.current) { clearTimeout(recordingTimeout.current as any); recordingTimeout.current = null; }
   };
 
   const sendVoiceNote = async () => {
@@ -1118,12 +1158,35 @@ const pickReaction = (id: string, emoji: string) => {
         uri = await audioRecorderService.stopRecording();
         setIsRecording(false);
       }
+      // Stop recording indicator immediately
+      try { socketService.stopRecording(recipientUsername); } catch (_) {}
+      if (recordingInterval.current) { clearInterval(recordingInterval.current as any); recordingInterval.current = null; }
+      if (recordingTimeout.current) { clearTimeout(recordingTimeout.current as any); recordingTimeout.current = null; }
+
       if (!uri) return;
       const audioFile = {
         uri: uri.startsWith('file://') ? uri : `file://${uri}`,
         type: 'audio/m4a',
         name: `voice-note-${Date.now()}.m4a`,
       } as any;
+
+      // Optimistically render voice note so UI doesn't hang
+      const created = new Date().toISOString();
+      const optimistic: Message = {
+        _id: Date.now().toString(),
+        sender: currentUser?.username || '',
+        content: 'Voice note',
+        type: 'audio',
+        timestamp: created,
+        status: 'sent',
+        reply: replyingTo ? (replyingTo.type === 'text' ? replyingTo.content : replyingTo.type === 'image' ? 'Photo' : replyingTo.type === 'video' ? 'Video' : replyingTo.type === 'audio' ? 'Voice note' : 'File') : undefined,
+        replyFrom: replyingTo ? (replyingTo.sender || '') : undefined,
+        replyToId: replyingTo?._id,
+      };
+      setMessages(prev => [...prev, optimistic]);
+      scrollToBottom();
+
+      // Upload and deliver in background
       await handleFileUpload(audioFile);
     } catch (err) {
       console.error('sendVoiceNote error', err);
@@ -1131,6 +1194,7 @@ const pickReaction = (id: string, emoji: string) => {
     } finally {
       setRecordTimeMs(0);
       setRecordFileUri(null);
+      setReplyingTo(null);
       setShowEmojiPanel(false);
       Keyboard.dismiss();
     }
@@ -1155,12 +1219,57 @@ const pickReaction = (id: string, emoji: string) => {
           name: f?.name || (file.fileName || file.name || 'media'),
           type: f?.type || file.type,
         }));
+
+        // Immediately deliver via socket so recipient sees it without refresh
+        if (currentUser?.username) {
+          try {
+            const isAudio = !!file.type && file.type.startsWith('audio/');
+            socketService.sendMessage({
+              from: currentUser.username,
+              to: recipientUsername,
+              message: isAudio ? '' : (file.fileName || file.name || ''),
+              media: enriched as any,
+              files: enriched,
+              replyTo: replyingTo?._id,
+            } as any);
+          } catch (_) {}
+        }
+
         // Persist via API for history
         await apiService.sendMessage({
           to: recipientUsername,
-          message: (file.fileName || file.name || ''),
+          message: (file.type?.startsWith('audio/') ? '' : (file.fileName || file.name || '')),
           media: enriched,
+          replyTo: replyingTo?._id,
         } as any);
+        // Ensure we snap to the latest after sending
+        scrollToBottom();
+      } else if (uploadResponse?.success && (uploadResponse as any)?.url) {
+        // Fallback: single URL without public_id (avoid persisting without public_id)
+        const single = { url: (uploadResponse as any).url, type: file.type };
+
+        // Socket delivery for fallback shape
+        if (currentUser?.username) {
+          try {
+            socketService.sendMessage({
+              from: currentUser.username,
+              to: recipientUsername,
+              message: (file.fileName || file.name || ''),
+              files: [single],
+              media: [single] as any,
+              replyTo: replyingTo?._id,
+            } as any);
+          } catch (_) {}
+        }
+
+        // Persist via API
+        await apiService.sendMessage({
+          to: recipientUsername,
+          message: (file.fileName || file.name || ''),
+          files: [single] as any,
+          replyTo: replyingTo?._id,
+        } as any);
+        scrollToBottom();
       }
     } catch (error) {
       console.error('Error uploading file:', error);
@@ -1754,13 +1863,13 @@ const pickReaction = (id: string, emoji: string) => {
   };
 
   const renderTypingIndicator = () => {
-    if (!recipientTyping) return null;
-    
+    if (!recipientTyping && !recipientRecording) return null;
+    const label = recipientRecording ? 'recording…' : 'typing…';
     return (
       <View style={[styles.messageContainer, styles.otherMessage]}>
         <View style={[styles.messageBubble, styles.otherBubble, { flexDirection: 'row', alignItems: 'center' }]}>
           <RecordingWaveform active={true} barCount={5} width={40} height={16} color={colors.textMuted} />
-          <Text style={[styles.typingText, { marginLeft: 8 }]}>typing…</Text>
+          <Text style={[styles.typingText, { marginLeft: 8 }]}>{label}</Text>
         </View>
       </View>
     );
@@ -1869,6 +1978,7 @@ const pickReaction = (id: string, emoji: string) => {
         </View>
       </View>
 
+
       {/* Full-screen video preview modal */}
       {previewVideoUrl && (
         <Modal visible={!!previewVideoUrl} transparent={true} onRequestClose={() => setPreviewVideoUrl(null)}>
@@ -1895,6 +2005,7 @@ const pickReaction = (id: string, emoji: string) => {
         style={[styles.messagesList]}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: 12 }}
+        onLayout={() => scrollToBottomOnce()}
         onContentSizeChange={scrollToBottomOnce}
         onScrollBeginDrag={() => setShowScrollControls(true)}
         onMomentumScrollEnd={() => setTimeout(() => setShowScrollControls(false), 1500)}
