@@ -820,6 +820,7 @@ const pickReaction = (id: string, emoji: string) => {
   useEffect(() => {
     const p = new AudioRecorderPlayer();
     audioPlayerRef.current = p;
+    p.setSubscriptionDuration?.(0.1);
     return () => {
       try { p.stopPlayer(); } catch (_) {}
       try { p.removePlayBackListener(); } catch (_) {}
@@ -831,15 +832,47 @@ const pickReaction = (id: string, emoji: string) => {
     try {
       if (!audioPlayerRef.current) {
         audioPlayerRef.current = new AudioRecorderPlayer();
+        audioPlayerRef.current.setSubscriptionDuration?.(0.1);
       }
       const player = audioPlayerRef.current!;
       if (playingId === id) {
-        if (isPaused) {
-          await player.resumePlayer();
+        const nearEnd = (playDuration || 0) > 0 && (playPosition || 0) >= ((playDuration || 0) - 300);
+        if (nearEnd) {
+          try { await player.stopPlayer(); player.removePlayBackListener(); } catch (_) {}
           setIsPaused(false);
+          setPlayPosition(0);
+          setPlayDuration(0);
+          await player.startPlayer(url);
+          player.addPlayBackListener((e: any) => {
+            const pos = e?.currentPosition || 0;
+            const dur = e?.duration || 0;
+            setPlayPosition(pos);
+            setPlayDuration(dur);
+            if (pos >= dur && dur > 0) {
+              setPlayingId(null);
+              setIsPaused(false);
+              try { player.stopPlayer(); } catch (_) {}
+              try { player.removePlayBackListener(); } catch (_) {}
+            }
+          });
+          return;
+        }
+        if (isPaused) {
+          try {
+            await player.resumePlayer();
+            setIsPaused(false);
+          } catch (_) {
+            await player.startPlayer(url);
+            setIsPaused(false);
+          }
         } else {
-          await player.pausePlayer();
-          setIsPaused(true);
+          try {
+            await player.pausePlayer();
+            setIsPaused(true);
+          } catch (_) {
+            await player.startPlayer(url);
+            setIsPaused(false);
+          }
         }
         return;
       }
@@ -867,6 +900,40 @@ const pickReaction = (id: string, emoji: string) => {
     } catch (err) {
       console.error('toggleAudioPlayback error', err);
       Alert.alert('Playback error', 'Could not play audio.');
+    }
+  };
+
+  const replayAudio = async (url: string, id: string) => {
+    try {
+      if (!audioPlayerRef.current) {
+        audioPlayerRef.current = new AudioRecorderPlayer();
+        audioPlayerRef.current.setSubscriptionDuration?.(0.1);
+      }
+      const player = audioPlayerRef.current!;
+      try {
+        await player.stopPlayer();
+        player.removePlayBackListener();
+      } catch (_) {}
+      setPlayingId(id);
+      setIsPaused(false);
+      setPlayPosition(0);
+      setPlayDuration(0);
+      await player.startPlayer(url);
+      player.addPlayBackListener((e: any) => {
+        const pos = e?.currentPosition || 0;
+        const dur = e?.duration || 0;
+        setPlayPosition(pos);
+        setPlayDuration(dur);
+        if (pos >= dur && dur > 0) {
+          setPlayingId(null);
+          setIsPaused(false);
+          try { player.stopPlayer(); } catch (_) {}
+          try { player.removePlayBackListener(); } catch (_) {}
+        }
+      });
+    } catch (err) {
+      console.error('replayAudio error', err);
+      Alert.alert('Replay error', 'Could not replay audio.');
     }
   };
 
@@ -1298,6 +1365,9 @@ const pickReaction = (id: string, emoji: string) => {
                         <View style={styles.audioActions}>
                           <TouchableOpacity style={styles.audioDownloadBtn} onPress={() => downloadMedia({ url: media.url, type: 'audio' })}>
                             <Icon name="file-download" size={18} color={'#fff'} />
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.audioReplayBtn} onPress={() => replayAudio(media.url, id)}>
+                            <Icon name="replay" size={18} color={'#fff'} />
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -2239,6 +2309,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#333',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  audioReplayBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#333',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
   },
   mediaThumbWrapper: {
     position: 'relative',

@@ -37,7 +37,7 @@ const OfflineScreen = () => {
         />
         <View style={{ flex: 1 }}>
           <Text style={styles.bannerTitle}>No internet connection</Text>
-          <Text style={styles.bannerSubtitle}>Some actions may be limited.</Text>
+          <Text style={styles.bannerSubtitle}>We are trying to get you connected, please switch to a better internet network or connect to Wi-Fi</Text>
         </View>
       </View>
     </View>

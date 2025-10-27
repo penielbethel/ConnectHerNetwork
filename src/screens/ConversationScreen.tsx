@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef, useCallback} from 'react';
+import React, {useState, useEffect, useRef, useCallback, useMemo} from 'react';
 import {
   View,
   Text,
@@ -191,6 +191,7 @@ const ConversationScreen = () => {
     const player = new AudioRecorderPlayer();
     audioPlayerRef.current = player;
     try { player.removePlayBackListener(); } catch {}
+    player.setSubscriptionDuration(0.1);
     const sub = player.addPlayBackListener((e: any) => {
       setPlayPosition(e?.currentPosition || 0);
       setPlayDuration(e?.duration || 0);
@@ -445,7 +446,10 @@ const ConversationScreen = () => {
             if (
               last &&
               last.sender === msg.sender &&
-              last.content === (message?.text || msg.content)
+              (
+                last.content === (message?.text || msg.content) ||
+                (last.type === 'audio' && !last.file && msg.type === 'audio' && !!msg.file)
+              )
             ) {
               const copy = prev.slice(0, -1);
               return [...copy, msg];
@@ -567,9 +571,9 @@ const ConversationScreen = () => {
   const didInitialAutoScroll = useRef(false);
   const scrollToBottomOnce = useCallback(() => {
     if (didInitialAutoScroll.current) return;
-    didInitialAutoScroll.current = true;
     setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: false });
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+      didInitialAutoScroll.current = true;
     }, 0);
   }, []);
 
@@ -578,7 +582,7 @@ const ConversationScreen = () => {
     // Defer to next frame to let list update layout
     requestAnimationFrame(() => {
       try {
-        flatListRef.current?.scrollToEnd({ animated: true });
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
       } catch (_e) {}
     });
   }, []);
@@ -586,18 +590,20 @@ const ConversationScreen = () => {
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [showScrollControls, setShowScrollControls] = useState<boolean>(false);
 
+  // Reverse messages for inverted list rendering (newest appears at bottom)
+  const displayMessages = useMemo(() => {
+    return [...messages].reverse();
+  }, [messages]);
+
   const scrollToMessageId = useCallback((id: string) => {
-    // Prefer index-based scrolling for accuracy across dynamic item heights
-    const index = messages.findIndex(m => m._id === id);
+    // Prefer index-based scrolling for accuracy across dynamic item heights (in inverted list)
+    const index = displayMessages.findIndex(m => m._id === id);
     if (index >= 0) {
       try {
         flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.1 });
       } catch (_e) {
-        // Fallback to offset if index scroll throws due to unknown layouts
-        const y = itemPositions.current[id];
-        if (typeof y === 'number') {
-          flatListRef.current?.scrollToOffset({ offset: Math.max(y - 20, 0), animated: true });
-        }
+        // Fallback to end if index scroll throws due to unknown layouts
+        try { flatListRef.current?.scrollToOffset({ offset: 0, animated: true }); } catch {}
       }
       setHighlightedId(id);
       setTimeout(() => setHighlightedId(null), 1600);
@@ -610,7 +616,7 @@ const ConversationScreen = () => {
         setTimeout(() => setHighlightedId(null), 1600);
       }
     }
-  }, [messages]);
+  }, [displayMessages]);
 
 const handleSendMessage = async () => {
   const text = messageText.trim();
@@ -1177,6 +1183,7 @@ const pickReaction = (id: string, emoji: string) => {
         sender: currentUser?.username || '',
         content: 'Voice note',
         type: 'audio',
+        file: { url: audioFile.uri, name: audioFile.name, size: 0, type: audioFile.type },
         timestamp: created,
         status: 'sent',
         reply: replyingTo ? (replyingTo.type === 'text' ? replyingTo.content : replyingTo.type === 'image' ? 'Photo' : replyingTo.type === 'video' ? 'Video' : replyingTo.type === 'audio' ? 'Voice note' : 'File') : undefined,
@@ -1298,29 +1305,71 @@ const pickReaction = (id: string, emoji: string) => {
   };
 
   const toggleAudioPlayback = async (msg: Message) => {
-    const player = audioPlayerRef.current;
     const url = msg.file?.url;
-    if (!player || !url) return;
+    if (!url) return;
     try {
+      if (!audioPlayerRef.current) {
+        audioPlayerRef.current = new AudioRecorderPlayer();
+        audioPlayerRef.current.setSubscriptionDuration?.(0.1);
+      }
+      const player = audioPlayerRef.current!;
       if (playingId === msg._id) {
+        const nearEnd = (playDuration || 0) > 0 && (playPosition || 0) >= (playDuration - 300);
+        if (nearEnd) {
+          try { await player.stopPlayer(); } catch {}
+          setIsPaused(false);
+          setPlayPosition(0);
+          setPlayDuration(0);
+          await player.startPlayer(url);
+          return;
+        }
         if (isPaused) {
-          await player.resumePlayer();
+          try {
+            await player.resumePlayer();
+          } catch (_) {
+            try { await player.stopPlayer(); } catch {}
+            await player.startPlayer(url);
+          }
           setIsPaused(false);
         } else {
-          await player.pausePlayer();
-          setIsPaused(true);
+          try {
+            await player.pausePlayer();
+            setIsPaused(true);
+          } catch (_) {
+            // ignore non-pausable state
+          }
         }
-      } else {
-        try { await player.stopPlayer(); } catch {}
-        setPlayingId(msg._id);
-        setIsPaused(false);
-        setPlayPosition(0);
-        setPlayDuration(0);
-        await player.startPlayer(url);
+        return;
       }
+      try { await player.stopPlayer(); } catch {}
+      setPlayingId(msg._id);
+      setIsPaused(false);
+      setPlayPosition(0);
+      setPlayDuration(0);
+      await player.startPlayer(url);
     } catch (err) {
       console.error('toggleAudioPlayback error', err);
       Alert.alert('Playback failed', 'Unable to play voice note.');
+    }
+  };
+
+  const replayAudio = async (msg: Message) => {
+    const url = msg.file?.url;
+    if (!url) return;
+    try {
+      if (!audioPlayerRef.current) {
+        audioPlayerRef.current = new AudioRecorderPlayer();
+        audioPlayerRef.current.setSubscriptionDuration?.(0.1);
+      }
+      const player = audioPlayerRef.current!;
+      try { await player.stopPlayer(); } catch {}
+      setPlayingId(msg._id);
+      setIsPaused(false);
+      setPlayPosition(0);
+      setPlayDuration(0);
+      await player.startPlayer(url);
+    } catch (err) {
+      console.error('replayAudio error', err);
     }
   };
 
@@ -1335,19 +1384,7 @@ const pickReaction = (id: string, emoji: string) => {
 
     return (
       <> 
-        {(() => {
-          const itemDate = new Date(item.timestamp);
-          const prev = index > 0 ? messages[index - 1] : null;
-          const prevDate = prev ? new Date(prev.timestamp) : null;
-          const showDay = index === 0 || (prevDate && !isSameDay(itemDate, prevDate));
-          if (!showDay) return null;
-          return (
-            <View style={styles.dayDivider}>
-              <Text style={styles.dayDividerText}>{formatDayLabel(itemDate)}</Text>
-            </View>
-          );
-        })()}
-        <View style={[
+          <View style={[
           styles.messageContainer,
           isOwnMessage ? styles.ownMessage : styles.otherMessage
         ]}
@@ -1462,6 +1499,10 @@ const pickReaction = (id: string, emoji: string) => {
                   <Icon name="share" size={18} color={colors.text} />
                   <Text style={styles.mediaActionText}>Share</Text>
                 </TouchableOpacity>
+                <TouchableOpacity style={styles.mediaActionBtn} onPress={() => replayAudio(item)}>
+                  <Icon name="replay" size={18} color={colors.text} />
+                  <Text style={styles.mediaActionText}>Replay</Text>
+                </TouchableOpacity>
               </View>
             </>
           )}
@@ -1527,6 +1568,18 @@ const pickReaction = (id: string, emoji: string) => {
           </Text>
         </Pressable>
       </View>
+      {(() => {
+          const itemDate = new Date(item.timestamp);
+          const next = index < displayMessages.length - 1 ? displayMessages[index + 1] : null;
+          const nextDate = next ? new Date(next.timestamp) : null;
+          const showDayEnd = index === displayMessages.length - 1 || (nextDate && !isSameDay(itemDate, nextDate));
+          if (!showDayEnd) return null;
+          return (
+            <View style={styles.dayDivider}>
+              <Text style={styles.dayDividerText}>{formatDayLabel(itemDate)}</Text>
+            </View>
+          );
+        })()}
       </>
     );
   };
@@ -1999,17 +2052,29 @@ const pickReaction = (id: string, emoji: string) => {
       {/* Messages */}
       <FlatList
         ref={flatListRef}
-        data={messages}
+        data={displayMessages}
         keyExtractor={item => item._id}
         renderItem={renderMessage}
         style={[styles.messagesList]}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: 12 }}
+        inverted
+        initialNumToRender={50}
+        maxToRenderPerBatch={50}
+        windowSize={12}
+        updateCellsBatchingPeriod={20}
+        removeClippedSubviews={true}
+        maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: 1 }}
         onLayout={() => scrollToBottomOnce()}
         onContentSizeChange={scrollToBottomOnce}
         onScrollBeginDrag={() => setShowScrollControls(true)}
         onMomentumScrollEnd={() => setTimeout(() => setShowScrollControls(false), 1500)}
         onScroll={() => setShowScrollControls(true)}
+        onScrollToIndexFailed={(info) => {
+          try {
+            flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+          } catch (_) {}
+        }}
         ListFooterComponent={renderTypingIndicator}
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
@@ -2033,14 +2098,18 @@ const pickReaction = (id: string, emoji: string) => {
 
       {/* Scroll controls (appear only when user is scrolling) */}
       {showScrollControls && (
-        <View style={styles.scrollControls} pointerEvents="box-none">
-          <TouchableOpacity style={styles.scrollBtn} onPress={() => flatListRef.current?.scrollToIndex({ index: 0, animated: true, viewPosition: 0 })}>
-            <Icon name="keyboard-arrow-up" size={24} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.scrollBtn} onPress={() => flatListRef.current?.scrollToEnd({ animated: true })}>
-            <Icon name="keyboard-arrow-down" size={24} color="#fff" />
-          </TouchableOpacity>
-        </View>
+        <>
+          <View style={styles.scrollControlsTop} pointerEvents="box-none">
+            <TouchableOpacity style={styles.scrollBtn} onPress={() => flatListRef.current?.scrollToEnd({ animated: true })}>
+              <Icon name="keyboard-arrow-up" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.scrollControlsBottom} pointerEvents="box-none">
+            <TouchableOpacity style={styles.scrollBtn} onPress={() => flatListRef.current?.scrollToOffset({ offset: 0, animated: true })}>
+              <Icon name="keyboard-arrow-down" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </>
       )}
 
       {/* Incoming Call Modal */}
@@ -2742,7 +2811,15 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
   },
-  scrollControls: {
+  scrollControlsTop: {
+    position: 'absolute',
+    right: 16,
+    top: 90,
+    flexDirection: 'column',
+    gap: 8,
+    zIndex: 1000,
+  },
+  scrollControlsBottom: {
     position: 'absolute',
     right: 16,
     bottom: 90,

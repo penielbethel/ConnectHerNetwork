@@ -388,6 +388,9 @@ const ChatScreen = () => {
         ...chat,
         participants: chat.participants.map(p => ({ ...p, isOnline: false })),
       })));
+      // Clear all indicators when socket disconnects
+      setTypingByUser({});
+      setRecordingByUser({});
     });
   
     // Handle online users list from server
@@ -450,6 +453,44 @@ const ChatScreen = () => {
           setLastSeenByUser(prev => ({ ...prev, [username]: ts }));
         }
       }).catch(() => {});
+      // Clear typing/recording indicators when offline
+      setTypingByUser(prev => ({ ...prev, [username]: false }));
+      setRecordingByUser(prev => ({ ...prev, [username]: false }));
+    });
+  
+    // Typing/Recording indicators
+    socket.off('typing');
+    socket.off('stopTyping');
+    socket.off('recording');
+    socket.off('stopRecording');
+  
+    socket.on('typing', (data: { from?: string; username?: string; to?: string }) => {
+      const from = (data?.from || data?.username || '').trim();
+      const to = String(data?.to || '').trim();
+      if (from && (!to || !currentUser?.username || to === currentUser.username)) {
+        setTypingByUser(prev => ({ ...prev, [from]: true }));
+      }
+    });
+    socket.on('stopTyping', (data: { from?: string; username?: string; to?: string }) => {
+      const from = (data?.from || data?.username || '').trim();
+      const to = String(data?.to || '').trim();
+      if (from && (!to || !currentUser?.username || to === currentUser.username)) {
+        setTypingByUser(prev => ({ ...prev, [from]: false }));
+      }
+    });
+    socket.on('recording', (data: { from?: string; username?: string; to?: string }) => {
+      const from = (data?.from || data?.username || '').trim();
+      const to = String(data?.to || '').trim();
+      if (from && (!to || !currentUser?.username || to === currentUser.username)) {
+        setRecordingByUser(prev => ({ ...prev, [from]: true }));
+      }
+    });
+    socket.on('stopRecording', (data: { from?: string; username?: string; to?: string }) => {
+      const from = (data?.from || data?.username || '').trim();
+      const to = String(data?.to || '').trim();
+      if (from && (!to || !currentUser?.username || to === currentUser.username)) {
+        setRecordingByUser(prev => ({ ...prev, [from]: false }));
+      }
     });
   };
 
@@ -461,7 +502,9 @@ const ChatScreen = () => {
 
     // Track last-seen per friend to display accurate time-ago in the list
     const [lastSeenByUser, setLastSeenByUser] = useState<Record<string, string>>({});
-
+    // Add per-user typing/recording indicators
+    const [typingByUser, setTypingByUser] = useState<Record<string, boolean>>({});
+    const [recordingByUser, setRecordingByUser] = useState<Record<string, boolean>>({});
     const formatTime = (dateString: string) => {
       const date = new Date(dateString);
       const now = new Date();
@@ -548,7 +591,11 @@ const ChatScreen = () => {
               <Text
                 style={[styles.lastMessage, isUnread && styles.unreadText]}
                 numberOfLines={1}>
-                {lastMessageSender}{getLastMessagePreview(item.lastMessage)}
+                {recordingByUser[otherParticipant.username]
+                  ? 'recording…'
+                  : typingByUser[otherParticipant.username]
+                  ? 'typing…'
+                  : `${lastMessageSender}${getLastMessagePreview(item.lastMessage)}`}
               </Text>
               {isUnread && (
                 <View style={styles.unreadBadge}>
