@@ -35,6 +35,7 @@ import {colors, globalStyles} from '../styles/globalStyles';
 import LinkedText from '../components/LinkedText';
 import { ThemeContext } from '../context/ThemeContext';
 import SoundService from '../services/SoundService';
+import RecordingWaveform from '../components/RecordingWaveform';
 
 const DashboardScreen = () => {
   const [showMediaPickerModal, setShowMediaPickerModal] = React.useState(false);
@@ -1167,6 +1168,14 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
                   <View style={{ width: itemWidth, height: 120, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }}>
                     <Icon name="audiotrack" size={28} color={colors.textMuted} />
                     <Text style={{ color: colors.text, fontSize: 13, marginLeft: 10 }} numberOfLines={1}>{(file as any)?.name || 'Audio'}</Text>
+                    <View style={{ marginLeft: 12 }}>
+                      <RecordingWaveform
+                        active={isPlaying}
+                        width={Math.max(80, itemWidth - 180)}
+                        height={28}
+                        color={colors.primary}
+                      />
+                    </View>
                     <Video
                       source={{ uri: String(file?.url || '') }}
                       audioOnly
