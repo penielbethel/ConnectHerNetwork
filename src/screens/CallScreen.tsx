@@ -546,6 +546,12 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     paddingHorizontal: 20,
     paddingVertical: 14,
+    // subtle shadow/elevation for card look
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   controlIcon: {
     width: 60,
@@ -556,6 +562,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#2a2d31',
     marginHorizontal: 8,
     marginVertical: 6,
+    // card-style shadow/elevation
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
   hangIcon: {
     backgroundColor: '#d32f2f',
