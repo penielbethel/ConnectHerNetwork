@@ -58,3 +58,23 @@ allprojects {
         }
     }
 }
+
+// Apply consistent Kotlin compiler options across all subprojects to avoid using
+// newer JDK APIs (e.g. List.reversed in JDK 21) that aren't available on Android's runtime.
+// This ensures Kotlin targets JDK 17 APIs when compiling modules like gesture-handler.
+subprojects {
+    afterEvaluate { project ->
+        tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach { task ->
+            if (task.kotlinOptions != null) {
+                // Keep classfile target aligned with RN's Java 17 baseline
+                task.kotlinOptions.jvmTarget = "17"
+                // Constrain API linkage to JDK 17 to prevent accidental calls to newer JDK methods
+                def opts = task.kotlinOptions.freeCompilerArgs ?: []
+                if (!opts.contains('-Xjdk-release=17')) {
+                    opts += ['-Xjdk-release=17']
+                }
+                task.kotlinOptions.freeCompilerArgs = opts
+            }
+        }
+    }
+}

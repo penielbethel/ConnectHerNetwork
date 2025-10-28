@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "build-android": "cd android && ./gradlew assembleRelease",
     "server": "node server.js",
-    "server-dev": "nodemon server.js"
+    "server-dev": "nodemon server.js",
+    "postinstall": "patch-package"
   },
   "author": "Ymoinsights",
   "license": "MIT",
@@ -80,6 +81,7 @@
     "jest": "^29.6.3",
     "metro-react-native-babel-preset": "0.77.0",
     "nodemon": "^3.1.10",
+    "patch-package": "^8.0.1",
     "prettier": "2.8.8",
     "react-test-renderer": "18.2.0",
     "serve": "^14.2.5",
