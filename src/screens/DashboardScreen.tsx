@@ -267,6 +267,7 @@ const playSuccessSound = async () => {
   };
 
   const openMediaPreview = (post: Post, startIndex: number) => {
+    try { markInteraction((post as any)?._id || String((post as any)?.originalPostId || '')); } catch (_) {}
     try { console.log('[Dashboard] openMediaPreview', { postId: (post as any)?._id || String((post as any)?.originalPostId || ''), startIndex }); } catch (_) {}
     setPreviewPost(post);
     setPreviewIndex(startIndex);
@@ -329,13 +330,53 @@ const playSuccessSound = async () => {
     }
   };
 
+  // Track engagement and idle state to gate randomization
+  const engagedPostIdsRef = React.useRef<Set<string>>(new Set());
+  const lastInteractionRef = React.useRef<number>(Date.now());
+  const markInteraction = (postId?: string) => {
+    if (postId) engagedPostIdsRef.current.add(postId);
+    lastInteractionRef.current = Date.now();
+  };
+  const isIdle = () => Date.now() - lastInteractionRef.current > 10000; // 10s idle window
+
+  // Shuffle helpers
+  const shuffleArray = (arr: Post[]) => {
+    const copy = arr.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = copy[i];
+      copy[i] = copy[j];
+      copy[j] = tmp;
+    }
+    return copy;
+  };
+
+  const shuffleExceptEngaged = (arr: Post[]) => {
+    const engaged = engagedPostIdsRef.current;
+    const unengaged = arr.filter(p => !engaged.has(p._id));
+    const shuffled = shuffleArray(unengaged);
+    const result: Post[] = new Array(arr.length);
+    let u = 0;
+    for (let i = 0; i < arr.length; i++) {
+      const p = arr[i];
+      if (engaged.has(p._id)) {
+        result[i] = p;
+      } else {
+        result[i] = shuffled[u++];
+      }
+    }
+    return result;
+  };
+
   const loadPosts = async () => {
     try {
       const PAGE_LIMIT = 25;
       const data = await apiService.getPosts(1, PAGE_LIMIT);
       // Support both array and { posts: [...] } shapes
       const list = Array.isArray(data) ? data : (data as any)?.posts || [];
-      setPosts(list);
+      // Client-side shuffle to guarantee mixed order regardless of server defaults
+      const randomized = shuffleArray(list);
+      setPosts(randomized);
 
       // Prefetch originals for reshares (cap to reduce network load)
       const ORIGINAL_PREFETCH_LIMIT = 6;
@@ -374,7 +415,33 @@ const playSuccessSound = async () => {
     const socket = socketService.getSocket();
     if (socket) {
       socket.on('new-post', (post: Post) => {
-        setPosts(prevPosts => [post, ...prevPosts]);
+        // Insert new posts at a random position to keep the feed randomized
+        setPosts(prevPosts => {
+          const idx = Math.floor(Math.random() * (prevPosts.length + 1));
+          const next = prevPosts.slice();
+          next.splice(idx, 0, post);
+          return next;
+        });
+      });
+
+      // Prevent duplicate bindings if setup runs multiple times
+      socket.off('random-older-post');
+      // Streamed older posts arrive periodically; insert at a random index and dedupe
+      socket.on('random-older-post', (post: Post) => {
+        setPosts(prevPosts => {
+          if (prevPosts.some(p => p._id === post._id)) return prevPosts;
+          const idx = Math.floor(Math.random() * (prevPosts.length + 1));
+          const next = prevPosts.slice();
+          next.splice(idx, 0, post);
+          return next;
+        });
+      });
+
+      // Randomize feed every server tick when user is idle; keep engaged posts anchored
+      socket.off('randomize-feed');
+      socket.on('randomize-feed', () => {
+        if (!isIdle()) return; // skip if user interacted within 10s
+        setPosts(prev => shuffleExceptEngaged(prev));
       });
 
       socket.on('post-liked', (data: {postId: string; likes: string[]}) => {
@@ -408,6 +475,8 @@ const playSuccessSound = async () => {
   useEffect(() => {
     loadCurrentUser();
     loadPosts();
+    // Ensure socket is connected so listeners below are active
+    socketService.initialize();
     setupSocketListeners();
   }, []);
 
@@ -442,6 +511,7 @@ const playSuccessSound = async () => {
   }, [currentUser?.username]);
 
   const onRefresh = async () => {
+    markInteraction();
     setRefreshing(true);
     logoSpin.setValue(0);
     const loop = Animated.loop(
@@ -680,6 +750,7 @@ setTimeout(() => Alert.alert('Success', 'Your post has been published'), 200);
 
       // Apply optimistic update immediately
       setPosts(nextPosts);
+      markInteraction(postId);
       await apiService.likePost(postId);
     } catch (error) {
       console.error('Error liking post:', error);
@@ -949,6 +1020,7 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
         <TouchableOpacity
           style={globalStyles.flexRow}
           onPress={() => {
+            try { markInteraction(post._id); } catch (_) {}
             const username = post?.author?.username;
             if (username) {
               navigation.navigate('Profile' as never, { username } as never);
@@ -1427,6 +1499,8 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
         style={styles.content}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
+        onTouchStart={() => markInteraction()}
+        onScrollBeginDrag={() => markInteraction()}
         onScroll={(e) => {
           scrollYRef.current = e.nativeEvent.contentOffset?.y || 0;
           updateAutoplayByVisibility();

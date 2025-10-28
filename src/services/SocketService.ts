@@ -1,21 +1,50 @@
 import io, {Socket} from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { NativeModules } from 'react-native';
+
+// Infer the Metro host in development to point sockets to local backend
+const getDevHost = (): string | null => {
+  try {
+    const scriptURL: string | undefined = (NativeModules as any)?.SourceCode?.scriptURL;
+    if (scriptURL) {
+      const m = scriptURL.match(/https?:\/\/([^:\/]+)/);
+      if (m && m[1]) return m[1];
+    }
+  } catch (_e) {}
+  return null;
+};
 
 class SocketService {
   private static instance: SocketService | null = null;
   private socket: Socket | null = null;
-  private baseUrl = 'https://connecther.network';
+  private baseUrl: string;
+  private devHost: string | null = null;
   private currentUsername: string | null = null;
   private heartbeatTimer: any = null;
   // Cache online users globally for instant presence across screens
   private onlineUsers: Set<string> = new Set();
 
+  constructor() {
+    // Prefer local backend in development when Metro host is known
+    const preferProd = false;
+    this.devHost = getDevHost();
+    if (!preferProd && __DEV__ && this.devHost) {
+      this.baseUrl = `http://${this.devHost}:3000`;
+    } else {
+      this.baseUrl = 'https://connecther.network';
+      // Avoid emulator-specific fallbacks when forcing production
+      this.devHost = null;
+    }
+    console.log('SocketService baseUrl:', this.baseUrl);
+  }
+
   initialize() {
     if (!this.socket) {
+      const isSecure = this.baseUrl.startsWith('https');
       this.socket = io(this.baseUrl, {
         transports: ['websocket', 'polling'],
         path: '/socket.io',
-        secure: true,
+        secure: isSecure,
         forceNew: true,
         autoConnect: true,
         reconnection: true,
