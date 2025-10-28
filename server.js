@@ -2,11 +2,13 @@
 const User = require('./models/User');
 const FriendRequest = require('./models/FriendRequest');
 const Friendship = require('./models/Friendship');
+const Post = require('./models/Post');
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
+const nodemailer = require("nodemailer");
 require("dotenv").config();
 require('events').EventEmitter.defaultMaxListeners = 30; 
 const app = express();
@@ -86,6 +88,37 @@ setInterval(async () => {
     }
   }
 }, 15000);
+
+// Scheduled streamer: periodically emit rotation signals and a random older post to all clients
+// Controlled via env: STREAM_OLDER_POSTS_MS (default 10000), OLDER_POST_CUTOFF_DAYS (default 14)
+const STREAM_OLDER_POSTS_MS = Number(process.env.STREAM_OLDER_POSTS_MS || 10000);
+const OLDER_POST_CUTOFF_DAYS = Number(process.env.OLDER_POST_CUTOFF_DAYS || 14);
+
+setInterval(async () => {
+  try {
+    // Signal clients to re-randomize feed order for unengaged posts
+    io.emit('randomize-feed', { ts: Date.now(), reason: 'idle-rotation' });
+
+    const cutoffDate = new Date(Date.now() - OLDER_POST_CUTOFF_DAYS * 24 * 60 * 60 * 1000);
+    const sample = await Post.aggregate([
+      { $match: { createdAt: { $lt: cutoffDate } } },
+      { $sample: { size: 1 } }
+    ]);
+    if (sample && sample.length > 0) {
+      const post = sample[0];
+      // Backfill missing location from user profile if needed
+      if (!post.location && post.username) {
+        try {
+          const u = await User.findOne({ username: post.username }).lean();
+          if (u?.location) post.location = u.location;
+        } catch (_) {}
+      }
+      io.emit('random-older-post', post);
+    }
+  } catch (err) {
+    console.error('❌ Scheduled random older post stream error:', err);
+  }
+}, STREAM_OLDER_POSTS_MS);
 const communityRoutes = require('./routes/communities');
 app.use("/api/communities", communityRoutes);
 
@@ -231,6 +264,99 @@ mongoose.connect(process.env.MONGO_URI)
 // 🏁 Base route
 app.get("/", (req, res) => {
   res.send("🌐 Welcome to ConnectHer API – backend is running.");
+});
+
+// ===============================
+// ✅ Delete Account: Page + Request Email
+// ===============================
+// Serve the friendly URL without .html
+app.get('/delete-account', (req, res) => {
+  try {
+    res.sendFile(path.join(__dirname, 'public', 'delete-account.html'));
+  } catch (err) {
+    console.error('Failed to serve delete-account page:', err);
+    res.status(500).send('Failed to load page');
+  }
+});
+
+// Handle deletion requests and forward to support via email
+app.post('/api/delete-account', async (req, res) => {
+  try {
+    const { email, username, reason, details, consent } = req.body || {};
+    if (!email || !consent) {
+      return res.status(400).json({ success: false, message: 'Email and consent are required.' });
+    }
+
+    const now = new Date().toISOString();
+    const requesterIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+
+    const to = process.env.EMAIL_TO || 'connecthernetwork01@gmail.com';
+    const from = process.env.EMAIL_FROM || 'no-reply@connecther.network';
+    const subject = `Delete Account Request – ${email}${username ? ` (${username})` : ''}`;
+    const text = [
+      `A user requested account and data deletion:`,
+      `Time: ${now}`,
+      `IP: ${requesterIp}`,
+      `Email: ${email}`,
+      `Username: ${username || 'N/A'}`,
+      `Reason: ${reason || 'N/A'}`,
+      `Details: ${details || 'N/A'}`,
+      `Consent: ${consent ? 'Yes' : 'No'}`,
+    ].join('\n');
+
+    const html = `
+      <p><strong>Account deletion request</strong></p>
+      <ul>
+        <li><strong>Time:</strong> ${now}</li>
+        <li><strong>IP:</strong> ${requesterIp}</li>
+        <li><strong>Email:</strong> ${email}</li>
+        <li><strong>Username:</strong> ${username || 'N/A'}</li>
+        <li><strong>Reason:</strong> ${reason || 'N/A'}</li>
+        <li><strong>Consent:</strong> ${consent ? 'Yes' : 'No'}</li>
+      </ul>
+      <p><strong>Details</strong></p>
+      <pre style="white-space:pre-wrap">${(details || 'N/A').replace(/[<>]/g, '')}</pre>
+    `;
+
+    // Create transporter from environment variables if available
+    let transporter = null;
+    try {
+      if (process.env.SMTP_HOST && process.env.SMTP_PORT) {
+        const secure = (process.env.SMTP_SECURE === 'true') || (String(process.env.SMTP_PORT) === '465');
+        transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: Number(process.env.SMTP_PORT),
+          secure,
+          auth: (process.env.SMTP_USER && process.env.SMTP_PASS) ? {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          } : undefined,
+        });
+      }
+    } catch (txErr) {
+      console.warn('Email transporter configuration error:', txErr);
+    }
+
+    if (transporter) {
+      try {
+        const info = await transporter.sendMail({ from, to, subject, text, html });
+        console.log('✅ Delete request email dispatched:', info.messageId);
+        return res.json({ success: true, message: 'Request sent to support.' });
+      } catch (mailErr) {
+        console.error('❌ Failed to send delete request email:', mailErr);
+        // Fall through to fallback response below
+      }
+    }
+
+    // Fallback when SMTP is not configured: return success and provide mailto link
+    const mailto = `mailto:${to}?subject=${encodeURIComponent('Account Deletion Request')}&body=${encodeURIComponent(
+      `Please delete my account and associated data.\n\nEmail: ${email}\nUsername: ${username || ''}\nReason: ${reason || ''}\nDetails: ${details || ''}`
+    )}`;
+    return res.json({ success: true, message: 'Request received.', emailFallback: mailto });
+  } catch (err) {
+    console.error('❌ Error in /api/delete-account:', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
 });
 
 
