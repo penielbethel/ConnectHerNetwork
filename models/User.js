@@ -10,7 +10,7 @@ const userSchema = new mongoose.Schema({
   location: { type: String },
   avatar: { type: String, required: true },
   gender: { type: String, enum: ["Female", "Company"], default: "Female" },
-  role: { type: String, enum: ['user', 'admin', 'superadmin'], default: 'user' },
+  role: { type: String, enum: ['user', 'admin', 'superadmin', 'tester'], default: 'user' },
   lastSeen: { type: Date, default: Date.now },
 
   // ✅ Push Notification Tokens

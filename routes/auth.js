@@ -128,6 +128,46 @@ router.post("/login", express.json(), async (req, res) => {
   try {
     const { identifier, password } = req.body;
 
+    // ⭐ Special Play Store tester bypass: direct login without OTP
+    const testerUsername = process.env.TESTER_USERNAME || 'playtester';
+    const testerPassword = process.env.TESTER_PASSWORD || 'playtester';
+    if (identifier === testerUsername && password === testerPassword) {
+      try {
+        let user = await User.findOne({ username: testerUsername });
+        if (!user) {
+          const hashed = await bcrypt.hash(testerPassword, 10);
+          user = new User({
+            firstName: 'Play',
+            surname: 'Tester',
+            username: testerUsername,
+            email: process.env.TESTER_EMAIL || 'playtester@connecther.network',
+            password: hashed,
+            avatar: process.env.TESTER_AVATAR || 'https://connecther.network/logo.png',
+            gender: 'Female',
+            role: 'tester',
+            joined: new Date().toISOString().split('T')[0],
+          });
+          await user.save();
+        }
+
+        const token = jwt.sign(
+          { id: user._id, username: user.username, role: user.role },
+          process.env.JWT_SECRET,
+          { expiresIn: '3d' }
+        );
+
+        const { password: pwd, ...userWithoutPassword } = user._doc;
+        return res.status(200).json({
+          message: 'Login successful (tester bypass).',
+          token,
+          user: userWithoutPassword,
+        });
+      } catch (err) {
+        console.error('❌ Tester bypass error:', err);
+        return res.status(500).json({ message: 'Tester bypass failed.' });
+      }
+    }
+
     const user = await User.findOne({
       $or: [{ username: identifier }, { email: identifier }]
     });
