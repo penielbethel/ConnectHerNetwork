@@ -111,6 +111,7 @@ export class ApiService {
 
   private normalizePost(p: any) {
     if (!p || typeof p !== 'object') return p;
+    const baseAuthor = p?.author || p?.user || {};
     const likedBy = Array.isArray(p?.likedBy)
       ? p.likedBy
       : Array.isArray(p?.likes)
@@ -129,15 +130,18 @@ export class ApiService {
     return {
       _id: p._id,
       author: {
-        username: p?.username,
-        name: p?.name || `${p?.firstName || ''} ${p?.surname || ''}`.trim() || p?.username,
-        avatar: this.normalizeAvatar(p?.avatar),
+        username: p?.username ?? baseAuthor?.username ?? '',
+        name:
+          (p?.name ?? baseAuthor?.name ?? '') ||
+          `${p?.firstName ?? baseAuthor?.firstName ?? ''} ${p?.surname ?? baseAuthor?.surname ?? ''}`.trim() ||
+          (p?.username ?? baseAuthor?.username ?? ''),
+        avatar: this.normalizeAvatar(p?.avatar ?? baseAuthor?.avatar),
         // Provide location used for flag rendering across the app
-        location: p?.location ?? p?.author?.location ?? p?.user?.location,
+        location: p?.location ?? baseAuthor?.location ?? '',
       },
       content: p?.caption ?? p?.content ?? '',
       originalPostId: p?.originalPostId,
-      files: this.normalizeMedia(p?.media),
+      files: this.normalizeMedia(p?.media ?? (p as any)?.files),
       // Preserve numeric likes if backend uses a counter; UI is defensive
       likes: typeof p?.likes === 'number' ? p.likes : likedBy,
       likedBy,

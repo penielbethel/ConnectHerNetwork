@@ -590,19 +590,18 @@ router.get('/', async (req, res) => {
     const page = Math.max(1, parseInt(pageRaw || '1', 10));
     const skip = (page - 1) * limit;
 
-    // Fetch recent posts only, avoid scanning full collection
-    const posts = await Post.find({})
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    // Randomize global feed irrespective of createdAt
+    // Note: pagination via skip is not meaningful for random samples; we prioritize random selection.
+    const sampled = await Post.aggregate([
+      { $sample: { size: limit } }
+    ]);
 
     // Bulk backfill locations for legacy posts missing location field
-    const missingUsernames = Array.from(new Set(posts.filter(p => !p.location).map(p => p.username))).filter(Boolean);
+    const missingUsernames = Array.from(new Set(sampled.filter(p => !p.location).map(p => p.username))).filter(Boolean);
     if (missingUsernames.length > 0) {
       const users = await User.find({ username: { $in: missingUsernames } }).lean();
       const locMap = new Map(users.map(u => [u.username, u.location]));
-      posts.forEach(p => {
+      sampled.forEach(p => {
         if (!p.location) {
           const loc = locMap.get(p.username);
           if (loc) p.location = loc;
@@ -610,7 +609,7 @@ router.get('/', async (req, res) => {
       });
     }
 
-    return res.status(200).json(posts);
+    return res.status(200).json(sampled);
   } catch (err) {
     console.error('❌ Error fetching posts:', err);
     res.status(500).json({ message: 'Error fetching posts.' });
@@ -640,25 +639,25 @@ router.get("/:username/feed", async (req, res) => {
 
     const allowedUsers = [...new Set([...directFriends, ...friendsOfFriends, username])];
 
-    // Query efficiently in Mongo instead of fetching all posts and filtering in JS
-    const posts = await Post.find({
-      $or: [
-        { username: { $in: allowedUsers } },
-        { location: user.location },
-        { sponsored: true }
-      ]
-    })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    // Randomize user feed irrespective of post age; include sponsored and same-location
+    const sampled = await Post.aggregate([
+      { $match: {
+          $or: [
+            { username: { $in: allowedUsers } },
+            { location: user.location },
+            { sponsored: true }
+          ]
+        }
+      },
+      { $sample: { size: limit } }
+    ]);
 
     // Bulk backfill location for any posts missing it
-    const missingUsernames = Array.from(new Set(posts.filter(p => !p.location).map(p => p.username))).filter(Boolean);
+    const missingUsernames = Array.from(new Set(sampled.filter(p => !p.location).map(p => p.username))).filter(Boolean);
     if (missingUsernames.length > 0) {
       const users = await User.find({ username: { $in: missingUsernames } }).lean();
       const locMap = new Map(users.map(u => [u.username, u.location]));
-      posts.forEach(p => {
+      sampled.forEach(p => {
         if (!p.location) {
           const loc = locMap.get(p.username);
           if (loc) p.location = loc;
@@ -666,7 +665,7 @@ router.get("/:username/feed", async (req, res) => {
       });
     }
 
-    res.status(200).json(posts);
+    res.status(200).json(sampled);
   } catch (err) {
     console.error("❌ Feed error:", err);
     res.status(500).json({ message: 'Feed error' });

@@ -569,8 +569,48 @@ body {
   });
 
   
- // 🔐 Login form submission (UPDATED WITH OTP)
+// 🔐 Login form submission (UPDATED WITH OTP + tester bypass)
 let tempUserId = ""; // Track userId for OTP phase
+
+// 🔁 Common helper to finalize login (used by OTP success and direct bypass)
+function finishLogin(user, token) {
+  try {
+    // ✅ Save token if present
+    if (token) {
+      localStorage.setItem("token", token);
+    }
+
+    // ✅ Patch missing data
+    if (!user.joined) {
+      user.joined = new Date().toISOString().split("T")[0];
+    }
+    if (!user.name && user.firstName && user.surname) {
+      user.name = `${user.firstName} ${user.surname}`;
+    }
+
+    // ✅ Store user info
+    localStorage.setItem("username", user.username);
+    localStorage.setItem("currentUser", JSON.stringify(user));
+
+    // 🔁 Optional: Keep local cache of all users
+    let allUsers = JSON.parse(localStorage.getItem("allUsers")) || [];
+    allUsers = allUsers.filter(u => u.username !== user.username);
+    allUsers.push(user);
+    localStorage.setItem("allUsers", JSON.stringify(allUsers));
+
+    // 🔁 Role-based redirect
+    if (user.role === "superadmin") {
+      window.location.replace("superAdminPanel.html");
+    } else if (user.role === "admin") {
+      window.location.replace("adminPanel.html");
+    } else {
+      window.location.href = "dashboard.html";
+    }
+  } catch (err) {
+    console.error("Finalize login failed:", err);
+    document.getElementById('loginErrorMsg').textContent = "Login succeeded but finalization failed.";
+  }
+}
 
 document.getElementById('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -596,38 +636,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         form.reset();
 
         const user = data.user;
-
-        // ✅ Save token
-        if (data.token) {
-          localStorage.setItem("token", data.token);
-        }
-
-        // ✅ Patch missing data
-        if (!user.joined) {
-          user.joined = new Date().toISOString().split("T")[0];
-        }
-        if (!user.name && user.firstName && user.surname) {
-          user.name = `${user.firstName} ${user.surname}`;
-        }
-
-        // ✅ Store user info
-        localStorage.setItem("username", user.username);
-        localStorage.setItem("currentUser", JSON.stringify(user));
-
-        // 🔁 Optional: Keep local cache of all users
-        let allUsers = JSON.parse(localStorage.getItem("allUsers")) || [];
-        allUsers = allUsers.filter(u => u.username !== user.username);
-        allUsers.push(user);
-        localStorage.setItem("allUsers", JSON.stringify(allUsers));
-
-        // 🔁 Role-based redirect
-        if (user.role === "superadmin") {
-          window.location.replace("superAdminPanel.html");
-        } else if (user.role === "admin") {
-          window.location.replace("adminPanel.html");
-        } else {
-          window.location.href = "dashboard.html";
-        }
+        finishLogin(user, data.token);
 
       } else {
         document.getElementById('loginErrorMsg').textContent = data.message || "Invalid or expired OTP.";
@@ -649,7 +658,12 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
 
       const data = await res.json();
 
-      if (res.ok) {
+      if (res.ok && data && data.token && data.user) {
+        // ✅ Direct login path (tester bypass or special accounts)
+        alert("✅ Login successful. Redirecting...");
+        finishLogin(data.user, data.token);
+      } else if (res.ok && (data.step === 'otp' || data.userId)) {
+        // 📩 OTP flow for regular users
         alert("📩 OTP sent to your email. Enter it to continue.");
 
         // Save temp userId for OTP phase
@@ -660,9 +674,8 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
 
         // Change button text to "Verify OTP"
         form.querySelector('button[type="submit"]').textContent = "Verify OTP";
-
       } else {
-        document.getElementById('loginErrorMsg').textContent = data.message || "Login failed.";
+        document.getElementById('loginErrorMsg').textContent = (data && data.message) || "Login failed.";
       }
 
     } catch (err) {
