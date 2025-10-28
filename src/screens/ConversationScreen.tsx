@@ -1952,6 +1952,11 @@ const pickReaction = (id: string, emoji: string) => {
           <FAIcon name="microphone" size={52} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.08, transform: [{ rotate: '-12deg' }] }]} />
           <FAIcon name="heart" size={54} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.07, transform: [{ rotate: '10deg' }] }]} />
           <FAIcon name="star" size={48} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '-6deg' }] }]} />
+          {/* Ladies-themed icons */}
+          <FAIcon name="female" size={50} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.07, transform: [{ rotate: '8deg' }] }]} />
+          <FAIcon name="venus" size={46} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '-10deg' }] }]} />
+          <FAIcon name="kiss-wink-heart" size={44} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '12deg' }] }]} />
+          <FAIcon name="grin-hearts" size={42} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '-6deg' }] }]} />
           {/* repeat set for fuller background coverage */}
           <FAIcon name="music" size={40} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '-4deg' }] }]} />
           <FAIcon name="headphones" size={44} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '8deg' }] }]} />
@@ -1959,6 +1964,10 @@ const pickReaction = (id: string, emoji: string) => {
           <FAIcon name="microphone" size={44} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '12deg' }] }]} />
           <FAIcon name="heart" size={40} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.06, transform: [{ rotate: '-6deg' }] }]} />
           <FAIcon name="star" size={38} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.05, transform: [{ rotate: '6deg' }] }]} />
+          <FAIcon name="female" size={36} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.05, transform: [{ rotate: '-8deg' }] }]} />
+          <FAIcon name="venus" size={34} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.05, transform: [{ rotate: '8deg' }] }]} />
+          <FAIcon name="kiss-wink-heart" size={32} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.05, transform: [{ rotate: '-12deg' }] }]} />
+          <FAIcon name="grin-hearts" size={30} color="#ffffff" style={[styles.chatBgIcon, { opacity: 0.05, transform: [{ rotate: '10deg' }] }]} />
         </View>
       </View>
       
@@ -2478,6 +2487,8 @@ const styles = StyleSheet.create({
   },
   messageContainer: {
     marginVertical: 2,
+    position: 'relative',
+    overflow: 'visible',
   },
   ownMessage: {
     alignItems: 'flex-end',
@@ -2674,6 +2685,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#202C33',
     borderTopWidth: 1,
     borderTopColor: '#26353B',
+    zIndex: 2000,
+    elevation: 20,
   },
   // Pending media panel styles
   pendingPanel: {

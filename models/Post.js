@@ -21,13 +21,21 @@ const CommentSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+// ✅ Timed caption segments per media item
+const CaptionSegmentSchema = new mongoose.Schema({
+  start: { type: Number, default: 0 }, // seconds
+  end: { type: Number, default: 0 },   // seconds
+  text: { type: String, default: "" }
+}, { _id: false });
+
 // ✅ Structured media array with public_id (for Cloudinary delete support)
 const MediaSchema = new mongoose.Schema({
   name: { type: String },
   type: { type: String },
   url: { type: String },
   public_id: { type: String }, // Required for deleting/replacing on Cloudinary
-  caption: { type: String, default: "" }
+  caption: { type: String, default: "" },
+  captions: { type: [CaptionSegmentSchema], default: [] } // Optional timed captions for video/audio
 }, { _id: false }); // Avoid nested _id for each media item
 
 const PostSchema = new mongoose.Schema({

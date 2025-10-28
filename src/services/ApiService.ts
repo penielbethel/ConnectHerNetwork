@@ -57,7 +57,7 @@ export class ApiService {
     }
   }
 
-  private normalizeMedia(media: any): { url: string; type?: string; thumbnailUrl?: string }[] {
+  private normalizeMedia(media: any): { url: string; type?: string; thumbnailUrl?: string; captions?: { start: number; end: number; text: string }[] }[] {
     const list = Array.isArray(media) ? media : [];
     return list
       .map((file: any) => {
@@ -72,9 +72,14 @@ export class ApiService {
         const type = file?.type || file?.resource_type || undefined;
         const isVideo = String(type || '').toLowerCase().includes('video') || /\/video\//.test(url);
         const thumbnailUrl = isVideo ? (this.getCloudinaryVideoThumbnail(url) || undefined) : undefined;
-        return { url, type, thumbnailUrl };
+        const captions = Array.isArray(file?.captions)
+          ? file.captions
+              .map((s: any) => ({ start: Number(s?.start || 0), end: Number(s?.end || 0), text: String(s?.text || '').trim() }))
+              .filter((s: any) => s.text.length > 0 && s.end >= s.start)
+          : undefined;
+        return { url, type, thumbnailUrl, captions };
       })
-      .filter(Boolean) as { url: string; type?: string; thumbnailUrl?: string }[];
+      .filter(Boolean) as { url: string; type?: string; thumbnailUrl?: string; captions?: { start: number; end: number; text: string }[] }[];
   }
 
   private normalizeComment(c: any) {
@@ -1670,6 +1675,37 @@ export class ApiService {
     } catch (error) {
       console.error('createPost error:', error);
       return { success: false } as any;
+    }
+  }
+
+  // Store captions for a specific media item on a post
+  async saveMediaCaptions(postId: string, index: number, captions: { start: number; end: number; text: string }[]) {
+    try {
+      const res = await this.makeRequest(`/posts/${postId}/media/${index}/captions`, {
+        method: 'PUT',
+        body: JSON.stringify({ captions }),
+      });
+      return res;
+    } catch (err) {
+      console.error('saveMediaCaptions error:', err);
+      throw err;
+    }
+  }
+
+  // Trigger backend transcription for a post; optionally target a specific media index and provide approximate duration for heuristic mode
+  async transcribePost(postId: string, options?: { index?: number; duration?: number }) {
+    try {
+      const body: any = {};
+      if (options && typeof options.index === 'number') body.index = options.index;
+      if (options && typeof options.duration === 'number') body.duration = options.duration;
+      const res = await this.makeRequest(`/posts/${postId}/transcribe`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      return res;
+    } catch (err) {
+      console.error('transcribePost error:', err);
+      throw err;
     }
   }
 

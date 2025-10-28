@@ -251,6 +251,118 @@ router.post('/:id/comment', async (req, res) => {
   res.status(201).json({ success: true, comments: post.comments });
 });
 
+// ✅ Save timed captions for a specific media item (index) on a post
+router.put('/:id/media/:index/captions', async (req, res) => {
+  try {
+    const postId = req.params.id;
+    const index = Number(req.params.index);
+    const { captions } = req.body;
+    if (!Array.isArray(captions)) {
+      return res.status(400).json({ success: false, message: 'captions must be an array' });
+    }
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
+    if (!post.media || index < 0 || index >= post.media.length) {
+      return res.status(400).json({ success: false, message: 'Invalid media index' });
+    }
+    const normalized = captions
+      .map((c) => ({
+        start: Number(c?.start || 0),
+        end: Number(c?.end || 0),
+        text: String(c?.text || '').trim(),
+      }))
+      .filter((c) => c.text.length > 0 && c.end >= c.start);
+    post.media[index].captions = normalized;
+    await post.save();
+    return res.status(200).json({ success: true, captions: post.media[index].captions });
+  } catch (err) {
+    console.error('❌ Error saving captions:', err);
+    return res.status(500).json({ success: false, message: 'Error saving captions' });
+  }
+});
+
+// ✅ Transcribe a post's media (auto or on-demand) and store timed captions
+// Body accepts: { index?: number, duration?: number }
+// If TRANSCRIBE_API_URL is set, will attempt to call the external service with the media URL
+router.post('/:id/transcribe', async (req, res) => {
+  try {
+    const postId = req.params.id;
+    const { index: indexRaw, duration: durationRaw } = req.body || {};
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
+
+    const inferIndex = () => {
+      if (!Array.isArray(post.media)) return -1;
+      if (typeof indexRaw === 'number' && indexRaw >= 0 && indexRaw < post.media.length) return indexRaw;
+      const i = post.media.findIndex((m) => {
+        const t = String(m?.type || '').toLowerCase();
+        const u = String(m?.url || '');
+        return t.includes('video') || /\/video\//.test(u) || /\.(mp4|mov|webm|m4v)$/i.test(u);
+      });
+      return i;
+    };
+
+    const index = inferIndex();
+    if (index < 0) return res.status(400).json({ success: false, message: 'No video media found' });
+    const media = post.media[index];
+    const sourceUrl = String(media.url || '').trim();
+    if (!sourceUrl) return res.status(400).json({ success: false, message: 'Media URL missing' });
+
+    let segments = [];
+    const providerUrl = process.env.TRANSCRIBE_API_URL;
+    const providerKey = process.env.TRANSCRIBE_API_KEY;
+
+    if (providerUrl && typeof fetch === 'function') {
+      try {
+        const resp = await fetch(providerUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(providerKey ? { Authorization: `Bearer ${providerKey}` } : {}),
+          },
+          body: JSON.stringify({ url: sourceUrl })
+        });
+        const data = await resp.json();
+        // Attempt to normalize common transcript formats
+        const rawSegs = Array.isArray(data?.segments) ? data.segments : Array.isArray(data) ? data : [];
+        segments = rawSegs
+          .map((s) => ({ start: Number(s?.start || s?.start_time || 0), end: Number(s?.end || s?.end_time || 0), text: String(s?.text || s?.caption || '').trim() }))
+          .filter((s) => s.text.length > 0 && s.end >= s.start);
+      } catch (err) {
+        console.error('Transcription provider error:', err);
+        return res.status(502).json({ success: false, message: 'Transcription failed' });
+      }
+    } else {
+      // Fallback heuristic: split the post caption into timed segments when provider is not configured
+      const baseText = String(post.caption || '').trim();
+      const duration = Number(durationRaw || 30);
+      if (!baseText) {
+        return res.status(400).json({ success: false, message: 'No caption text available for heuristic transcription' });
+      }
+      const words = baseText.split(/\s+/).filter(Boolean);
+      const wordsPerSegment = Math.max(4, Math.ceil(words.length / Math.max(6, Math.ceil(duration / 5))));
+      const segLen = Math.max(2, Math.min(6, Math.ceil(duration / Math.ceil(words.length / wordsPerSegment))));
+      let cursor = 0;
+      let t = 0;
+      while (cursor < words.length) {
+        const chunk = words.slice(cursor, cursor + wordsPerSegment);
+        const start = t;
+        const end = t + segLen;
+        segments.push({ start, end, text: chunk.join(' ') });
+        cursor += wordsPerSegment;
+        t += segLen;
+      }
+    }
+
+    post.media[index].captions = segments;
+    await post.save();
+    return res.status(200).json({ success: true, captions: post.media[index].captions, index });
+  } catch (err) {
+    console.error('❌ Error transcribing post:', err);
+    return res.status(500).json({ success: false, message: 'Internal transcription error' });
+  }
+});
+
 
 router.post('/:id/like', async (req, res) => {
   try {

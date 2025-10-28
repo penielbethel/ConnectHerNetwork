@@ -115,7 +115,49 @@ const playSuccessSound = async () => {
   const [imagePreviewVisible, setImagePreviewVisible] = React.useState(false);
   const [mediaPreviewVisible, setMediaPreviewVisible] = React.useState(false);
   const [previewPost, setPreviewPost] = React.useState<Post | null>(null);
-  const [previewIndex, setPreviewIndex] = React.useState(0);
+  const [previewIndex, setPreviewIndex] = React.useState<number>(0);
+  const previewListRef = React.useRef<FlatList<any>>(null);
+  const [previewCaptionEnabled, setPreviewCaptionEnabled] = React.useState<boolean>(true);
+
+  // Autoplay visibility tracking
+  const contentScrollRef = React.useRef<ScrollView>(null);
+  const postLayoutsRef = React.useRef<Record<string, { y: number; height: number }>>({});
+  const scrollYRef = React.useRef(0);
+  const [autoplayPostId, setAutoplayPostId] = React.useState<string | null>(null);
+  const [manualPausedByPost, setManualPausedByPost] = React.useState<Record<string, boolean>>({});
+  const [isScreenFocused, setIsScreenFocused] = React.useState<boolean>(true);
+  const updateAutoplayByVisibility = React.useCallback(() => {
+    const viewportTop = 0;
+    const viewportBottom = screenHeight;
+    let bestId: string | null = null;
+    let bestOverlap = 0;
+    const entries = Object.entries(postLayoutsRef.current);
+    for (const [id, layout] of entries) {
+      const top = layout.y - scrollYRef.current;
+      const bottom = top + layout.height;
+      const overlap = Math.max(0, Math.min(viewportBottom, bottom) - Math.max(viewportTop, top));
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        bestId = id;
+      }
+    }
+    setAutoplayPostId(bestId);
+  }, [screenHeight]);
+  // Pause media when leaving Dashboard
+  useFocusEffect(
+    React.useCallback(() => {
+      setIsScreenFocused(true);
+      return () => {
+        setIsScreenFocused(false);
+        setAutoplayPostId(null);
+      };
+    }, [])
+  );
+  const [previewVideoDuration, setPreviewVideoDuration] = React.useState<number>(0);
+  const [previewCaptionWordsShown, setPreviewCaptionWordsShown] = React.useState<number>(0);
+  const [previewShowCommentInput, setPreviewShowCommentInput] = React.useState<boolean>(false);
+  const [previewCurrentTime, setPreviewCurrentTime] = React.useState<number>(0);
+  const [previewAudioPaused, setPreviewAudioPaused] = React.useState<boolean>(false);
   const [originalPostsById, setOriginalPostsById] = React.useState<Record<string, Post>>({});
   const [isPosting, setIsPosting] = React.useState(false);
   const [isResharing, setIsResharing] = React.useState(false);
@@ -225,6 +267,7 @@ const playSuccessSound = async () => {
   };
 
   const openMediaPreview = (post: Post, startIndex: number) => {
+    try { console.log('[Dashboard] openMediaPreview', { postId: (post as any)?._id || String((post as any)?.originalPostId || ''), startIndex }); } catch (_) {}
     setPreviewPost(post);
     setPreviewIndex(startIndex);
     setMediaPreviewVisible(true);
@@ -249,7 +292,7 @@ const playSuccessSound = async () => {
   };
 
   // Ensure preview starts on the tapped media without white screen
-  const previewListRef = useRef<FlatList<any>>(null);
+  
   useEffect(() => {
     if (mediaPreviewVisible) {
       // Scroll after modal mounts to avoid initialScrollIndex rendering issues
@@ -439,6 +482,23 @@ const playSuccessSound = async () => {
         setNewPostFiles([]);
         setShowComposer(false);
         await loadPosts(); // Refresh posts
+        // Attempt automatic transcription for uploaded video
+        try {
+          const createdPost = response.post;
+          const vidIndex = Array.isArray(newPostFiles)
+            ? newPostFiles.findIndex((f) => {
+                const t = String(f?.type || '').toLowerCase();
+                const u = String(f?.url || '');
+                return t.includes('video') || /\/video\//.test(u) || /\.(mp4|mov|webm|m4v)$/i.test(u);
+              })
+            : -1;
+          if (createdPost?._id && vidIndex >= 0) {
+            await apiService.transcribePost(String(createdPost._id), { index: vidIndex });
+            await loadPosts();
+          }
+        } catch (e) {
+          console.warn('Transcription trigger failed:', e?.message || e);
+        }
         playSuccessSound();
 setTimeout(() => Alert.alert('Success', 'Your post has been published'), 200);
       } else {
@@ -867,8 +927,24 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
     return `${Math.floor(diff / 86400)}d ago`;
   };
 
-  const renderPost = (post: Post) => (
-    <View key={post._id} style={styles.postCard}>
+  const renderPost = (post: Post) => {
+    const firstPlayableIndex = Array.isArray(post.files)
+      ? post.files.findIndex(f => {
+          const t = String(f?.type || '').toLowerCase();
+          return t.includes('video') || t.includes('audio');
+        })
+      : -1;
+    const isAutoplayPost = autoplayPostId === post._id;
+    return (
+    <View
+      key={post._id}
+      style={styles.postCard}
+      onLayout={(e) => {
+        const { y, height } = e.nativeEvent.layout;
+        postLayoutsRef.current[post._id] = { y, height };
+        updateAutoplayByVisibility();
+      }}
+    >
       <View style={styles.postHeader}>
         <TouchableOpacity
           style={globalStyles.flexRow}
@@ -989,6 +1065,7 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
           {post.files.map((file, index) => {
             const typeStr = (file?.type || '').toLowerCase();
             const isVideo = typeStr.includes('video');
+            const isAudio = typeStr.includes('audio');
             const itemWidth = mediaWidth;
             const fw = Number((file as any)?.thumbnailWidth) || Number((file as any)?.width) || undefined;
             const fh = Number((file as any)?.thumbnailHeight) || Number((file as any)?.height) || undefined;
@@ -1007,22 +1084,52 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
             const computedHeight = Math.round(itemWidth / aspect);
             const maxHeight = Math.round(screenHeight * 0.8);
             const itemHeight = Math.min(Math.max(140, computedHeight), maxHeight);
+            const isPlaying = isScreenFocused && isAutoplayPost && index === firstPlayableIndex && !manualPausedByPost[post._id || String(post?.originalPostId || '')];
+            if (isAudio) {
+              return (
+                <TouchableOpacity
+                  key={index}
+                  activeOpacity={0.85}
+                  onPress={() => { if (post?.originalPostId) { navigation.navigate('PostDetail' as never, { postId: String(post.originalPostId) } as never); } else { openMediaPreview(post, index); } }}
+                >
+                  <View style={{ width: itemWidth, height: 120, borderRadius: 12, overflow: 'hidden', backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }}>
+                    <Icon name="audiotrack" size={28} color={colors.textMuted} />
+                    <Text style={{ color: colors.text, fontSize: 13, marginLeft: 10 }} numberOfLines={1}>{(file as any)?.name || 'Audio'}</Text>
+                    <Video
+                      source={{ uri: String(file?.url || '') }}
+                      audioOnly
+                      paused={!isPlaying}
+                      ignoreSilentSwitch={'ignore'}
+                      style={{ width: 0, height: 0 }}
+                    />
+                    <TouchableOpacity
+                      onPress={() => setManualPausedByPost(prev => ({ ...prev, [post._id || String(post?.originalPostId || '')]: !(prev[post._id || String(post?.originalPostId || '')]) }))}
+                      style={{ position: 'absolute', right: 10, top: 10, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Icon name={isPlaying ? 'pause' : 'play-arrow'} size={20} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              );
+            }
             if (isVideo) {
               const poster = (file as any)?.thumbnailUrl || (apiService as any)['getCloudinaryVideoThumbnail']?.(String(file?.url || '')) || '';
               return (
-                <TouchableOpacity key={index} activeOpacity={0.85} onPress={() => { if (post?.originalPostId) { navigation.navigate('PostDetail' as never, { postId: String(post.originalPostId) } as never); } else { openMediaPreview(post, index); } }}>
+                <TouchableOpacity key={index} activeOpacity={0.85} onPress={() => openMediaPreview(post, index)}>
                   <View style={{ width: itemWidth, height: itemHeight, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' }}>
                     <Video
                       source={{ uri: String(file?.url || '') }}
                       style={{ width: '100%', height: '100%' }}
                       poster={poster || undefined}
                       resizeMode="cover"
-                      paused={true}
+                      paused={!isPlaying}
                       controls={false}
                     />
-                    <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
-                      <Icon name="play-circle-filled" size={48} color="#fff" />
-                    </View>
+                    {!isPlaying && (
+                      <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
+                        <Icon name="play-circle-filled" size={48} color="#fff" />
+                      </View>
+                    )}
                   </View>
                 </TouchableOpacity>
               );
@@ -1158,6 +1265,7 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
       </View>
     </View>
   );
+  };
 
   const renderComposer = () => (
     <View style={styles.composerCard}>
@@ -1206,7 +1314,12 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
             const isImage = typeStr.includes('image');
             const isVideo = typeStr.includes('video');
             return (
-              <View key={index} style={[styles.mediaImage, { justifyContent: 'center', alignItems: 'center' }]}> 
+              <TouchableOpacity
+                key={index}
+                activeOpacity={0.85}
+                onPress={() => openMediaPreview({ _id: 'composer', files: newPostFiles as any, caption: newPostContent } as any, index)}
+                style={[styles.mediaImage, { justifyContent: 'center', alignItems: 'center' }]}
+              > 
                 {isImage ? (
                   <Image source={{ uri: file.url }} style={styles.mediaImage} />
                 ) : isVideo ? (
@@ -1226,7 +1339,7 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
                 <TouchableOpacity onPress={() => removeSelectedFile(index)} style={{ position: 'absolute', top: 6, right: 6 }}>
                   <Icon name="close" size={20} color={colors.text} />
                 </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             );
           })}
         </ScrollView>
@@ -1310,8 +1423,14 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
         </Modal>
       )}
       <ScrollView
+        ref={contentScrollRef}
         style={styles.content}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          scrollYRef.current = e.nativeEvent.contentOffset?.y || 0;
+          updateAutoplayByVisibility();
+        }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1638,14 +1757,42 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
             pagingEnabled
             keyExtractor={(item, idx) => (item?.url ? `${item.url}:${idx}` : String(idx))}
             getItemLayout={(_, index) => ({ length: screenWidth, offset: screenWidth * index, index })}
-            renderItem={({ item }) => {
+            onMomentumScrollEnd={(e) => {
+              const idx = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+              setPreviewIndex(idx);
+              setPreviewCaptionWordsShown(0);
+              setPreviewVideoDuration(0);
+              setPreviewShowCommentInput(false);
+              setPreviewAudioPaused(false);
+            }}
+            renderItem={({ item, index }) => {
               const typeStr = (item?.type || '').toLowerCase();
               const isImage = typeStr.includes('image');
               const isVideo = typeStr.includes('video');
+              const isAudio = typeStr.includes('audio');
               if (isImage) {
                 return (
                   <View style={[styles.previewItem, { width: screenWidth, height: screenHeight }]}> 
                     <Image source={{ uri: item.url }} style={styles.previewImage} resizeMode="contain" />
+                  </View>
+                );
+              }
+              if (isAudio) {
+                return (
+                  <View style={[styles.previewItem, { width: screenWidth, height: screenHeight }]}> 
+                    <Video
+                      source={{ uri: String(item?.url || '') }}
+                      audioOnly
+                      paused={!isScreenFocused || previewIndex !== index || previewAudioPaused}
+                      ignoreSilentSwitch={'ignore'}
+                      style={{ width: 0, height: 0 }}
+                    />
+                    <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
+                      <Icon name={previewAudioPaused ? 'play-circle-filled' : 'pause-circle-filled'} size={72} color="#fff" />
+                      <TouchableOpacity onPress={() => setPreviewAudioPaused(prev => !prev)} style={{ marginTop: 12, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 24 }}>
+                        <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>{previewAudioPaused ? 'Play' : 'Pause'}</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 );
               }
@@ -1659,7 +1806,30 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
                       poster={poster || undefined}
                       controls={true}
                       resizeMode="contain"
-                      paused={false}
+                      paused={!isScreenFocused || previewIndex !== index}
+                      onLoad={(e: any) => {
+                        const d = Number(e?.duration || 0);
+                        if (!isNaN(d)) setPreviewVideoDuration(d);
+                        setPreviewCaptionWordsShown(0);
+                        setPreviewCurrentTime(0);
+                      }}
+                      onProgress={(e: any) => {
+                        try {
+                          const t = Number(e?.currentTime || 0);
+                          setPreviewCurrentTime(t);
+                          if (!previewCaptionEnabled) return;
+                          // Fallback progressive mode if no timed captions exist
+                          const file = (previewPost?.files || [])[index] as any;
+                          const hasSegments = Array.isArray(file?.captions) && file.captions.length > 0;
+                          if (hasSegments) return; // timed captions handled in overlay render
+                          const text = String(previewPost?.caption || previewPost?.content || '').trim();
+                          const words = text.length > 0 ? text.split(/\s+/) : [];
+                          if (words.length === 0 || previewVideoDuration <= 0) return;
+                          const wps = words.length / previewVideoDuration;
+                          const target = Math.floor(Math.max(0, Math.min(words.length, t * wps)));
+                          if (target !== previewCaptionWordsShown) setPreviewCaptionWordsShown(target);
+                        } catch (_) {}
+                      }}
                     />
                   </View>
                 );
@@ -1677,7 +1847,38 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
             <TouchableOpacity onPress={closeMediaPreview} style={styles.previewCloseButton}>
               <Icon name="close" size={28} color="#fff" />
             </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setPreviewCaptionEnabled(prev => !prev)}
+              style={[styles.previewCloseButton, styles.previewCcButton]}> 
+              <Icon name="closed-caption" size={24} color={previewCaptionEnabled ? '#fff' : '#bbb'} />
+              <Text style={styles.previewCcLabel}>CC</Text>
+            </TouchableOpacity>
           </View>
+
+          {/* Caption overlay: prefer timed segments if available, fallback to progressive reveal */}
+          {previewCaptionEnabled && !!previewPost && (
+            (() => {
+              const file = (previewPost?.files || [])[previewIndex] as any;
+              const segments = Array.isArray(file?.captions) ? file.captions : [];
+              let overlayText = '';
+              if (segments.length > 0) {
+                const t = previewCurrentTime || 0;
+                const active = segments.find((s: any) => t >= Number(s.start || 0) && t <= Number(s.end || 0));
+                overlayText = active?.text || '';
+              }
+              if (!overlayText) {
+                const fullText = String(previewPost?.caption || previewPost?.content || '').trim();
+                const words = fullText.length > 0 ? fullText.split(/\s+/) : [];
+                const shown = words.slice(0, previewCaptionWordsShown).join(' ');
+                overlayText = shown || fullText;
+              }
+              return overlayText ? (
+                <View style={styles.previewCaptionOverlay}>
+                  <Text style={styles.previewCaptionText} numberOfLines={3}>{overlayText}</Text>
+                </View>
+              ) : null;
+            })()
+          )}
 
           {!!previewPost && (
             <View style={styles.previewStats}>
@@ -1695,27 +1896,53 @@ setTimeout(() => Alert.alert('Reposted', 'Post reposted to your timeline'), 200)
                   : Array.isArray((previewPost as any).savedBy)
                   ? ((previewPost as any).savedBy as any[]).length
                   : 0;
+                const isLiked = likedBy.includes(currentUser?.username || '');
+                const isSaved = savedPostIds.has(previewPost._id);
                 return (
                   <>
-                    <View style={styles.previewStatItem}>
-                      <Icon name="favorite" size={20} color="#fff" />
+                    <TouchableOpacity style={styles.previewStatItem} onPress={() => handleLikePost(previewPost._id)}>
+                      <Icon name={isLiked ? 'favorite' : 'favorite-border'} size={20} color={isLiked ? colors.primary : '#fff'} />
                       <Text style={styles.previewStatText}>{likesCount}</Text>
-                    </View>
-                    <View style={styles.previewStatItem}>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.previewStatItem} onPress={() => {
+                      setPreviewShowCommentInput(prev => !prev);
+                    }}>
                       <Icon name="chat-bubble" size={20} color="#fff" />
                       <Text style={styles.previewStatText}>{commentsCount}</Text>
-                    </View>
-                    <View style={styles.previewStatItem}>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.previewStatItem} onPress={() => handleSharePost(previewPost)}>
                       <Icon name="share" size={20} color="#fff" />
                       <Text style={styles.previewStatText}>{sharesCount}</Text>
-                    </View>
-                    <View style={styles.previewStatItem}>
-                      <Icon name="bookmark" size={20} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.previewStatItem} onPress={() => toggleSavePost(previewPost._id)}>
+                      <Icon name={isSaved ? 'bookmark' : 'bookmark-border'} size={20} color={isSaved ? colors.primary : '#fff'} />
                       <Text style={styles.previewStatText}>{savesCount}</Text>
-                    </View>
+                    </TouchableOpacity>
                   </>
                 );
               })()}
+            </View>
+          )}
+
+          {/* Inline comment input in preview */}
+          {previewShowCommentInput && !!previewPost && (
+            <View style={styles.previewCommentBar}>
+              <TextInput
+                style={styles.previewCommentInput}
+                placeholder="Write a comment…"
+                placeholderTextColor="#ddd"
+                value={commentTextByPost[previewPost._id] || ''}
+                onChangeText={(t) => onChangeCommentText(previewPost._id, t)}
+              />
+              <TouchableOpacity
+                style={styles.previewCommentSubmit}
+                onPress={() => submitComment(previewPost._id)}
+                disabled={!!submittingCommentByPost[previewPost._id]}
+              >
+                <Text style={styles.previewCommentSubmitText}>
+                  {submittingCommentByPost[previewPost._id] ? 'Posting…' : 'Send'}
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -2317,6 +2544,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
     borderRadius: 24,
   },
+  previewCcButton: {
+    marginLeft: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  previewCcLabel: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   previewStats: {
     position: 'absolute',
     left: 0,
@@ -2334,6 +2572,52 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   previewStatText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  previewCaptionOverlay: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 96,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  previewCaptionText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  previewCommentBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  previewCommentInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#555',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: '#fff',
+  },
+  previewCommentSubmit: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  previewCommentSubmitText: {
     color: '#fff',
     fontWeight: '600',
   },
