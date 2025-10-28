@@ -2,6 +2,7 @@ import { Platform, DeviceEventEmitter } from 'react-native';
 import messaging from '@react-native-firebase/messaging';
 import PushNotification, { Importance } from 'react-native-push-notification';
 import { isSuppressed } from '../utils/callGuard';
+import PushNotificationService from './pushNotifications';
 
 // Align with existing app channel naming if present
 const CALLS_CHANNEL_ID = 'connecther_calls';
@@ -25,23 +26,17 @@ function createCallsChannel() {
   );
 }
 
-function showIncomingCallNotification(payload: any) {
-  const caller = payload?.caller || payload?.from || 'Unknown';
-  const type: 'audio' | 'video' = (payload?.callType === 'video') ? 'video' : 'audio';
-  PushNotification.localNotification({
-    channelId: CALLS_CHANNEL_ID,
+function showIncomingCallNotification(remoteMessage: any) {
+  const data = remoteMessage?.data || remoteMessage || {};
+  const caller = data?.caller || data?.from || 'Unknown';
+  const type: 'audio' | 'video' = (data?.callType === 'video') ? 'video' : 'audio';
+  const messageId = remoteMessage?.messageId || data?.id || data?.msgId;
+  const push = require('./pushNotifications').default.getInstance();
+  push.showLocalNotification({
     title: `Incoming ${type} call`,
-    message: `${caller} is calling...`,
-    playSound: true,
-    soundName: 'connectring.mp3',
-    vibrate: true,
-    priority: 'max',
-    visibility: 'public',
-    allowWhileIdle: true,
-    fullScreenIntent: true,
-    invokeApp: true,
-    userInfo: { type: 'incoming_call', caller, callType: type },
-    actions: ['Accept', 'Decline'],
+    body: `${caller} is calling...`,
+    data: { type: 'incoming_call', caller, callType: type, id: messageId },
+    channelId: CALLS_CHANNEL_ID,
   });
 }
 
@@ -67,7 +62,7 @@ export async function initCallNotifications() {
         if (isSuppressed(caller)) {
           return; // ignore suppressed incoming
         }
-        showIncomingCallNotification(data);
+        showIncomingCallNotification(remoteMessage);
         DeviceEventEmitter.emit('incoming_call', data);
       }
     });
@@ -83,7 +78,7 @@ export async function initCallNotifications() {
         if (isSuppressed(caller)) {
           return; // ignore suppressed incoming
         }
-        showIncomingCallNotification(data);
+        showIncomingCallNotification(remoteMessage);
       }
     });
   } catch {}

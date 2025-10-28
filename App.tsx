@@ -244,6 +244,16 @@ const AppDuplicate: React.FC = () => {
     if (!isAuthenticated) return;
     const handler = (payload: { from: string; to: string; type: 'audio' | 'video' }) => {
       try {
+        // Skip if this caller is temporarily suppressed (e.g., call just ended)
+        const { isSuppressed } = require('./src/utils/callGuard');
+        if (typeof isSuppressed === 'function' && isSuppressed(payload.from)) {
+          return;
+        }
+        // Avoid showing IncomingCall if already in a call or already viewing IncomingCall
+        const currentRoute = navigationRef?.getCurrentRoute?.()?.name;
+        if (currentRoute === 'Call' || currentRoute === 'IncomingCall') {
+          return;
+        }
         navigate('IncomingCall', { caller: payload.from, type: payload.type });
       } catch (e) {
         console.error('[NavFAIL] IncomingCall navigate', e);

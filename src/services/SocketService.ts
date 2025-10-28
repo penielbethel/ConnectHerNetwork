@@ -322,6 +322,12 @@ class SocketService {
     this.emit('private-offer', data);
   }
 
+  // Add explicit private call start to trigger incoming notifications and state
+  startCall(data: { from: string; to: string; callType: 'audio' | 'video'; name?: string; avatar?: string }) {
+    const payload = { from: data.from, to: data.to, type: data.callType, name: data.name, avatar: data.avatar };
+    this.emit('start-call', payload);
+  }
+
   acceptCall(data: {
     from: string;
     to: string;
@@ -381,6 +387,8 @@ const socketServiceProxy = {
   onGroupCallStart: (callback: (data: { communityId: string; communityName: string }) => void) => socketServiceSingleton.onGroupCallStart(callback),
   onIncomingGroupCall: (callback: (data: { from: string; communityId: string; communityName: string; type?: 'audio' | 'video' }) => void) => socketServiceSingleton.onIncomingGroupCall(callback),
   checkGroupCallAlive: (communityId: string) => socketServiceSingleton.checkGroupCallAlive(communityId),
+  // Private call helpers
+  startCall: (data: { from: string; to: string; callType: 'audio' | 'video'; name?: string; avatar?: string }) => socketServiceSingleton.startCall(data),
   initiateCall: (data: { from: string; to: string; type: 'audio' | 'video'; offer: any }) => socketServiceSingleton.initiateCall(data),
   acceptCall: (data: { from: string; to: string }) => socketServiceSingleton.acceptCall(data),
   rejectCall: (data: { from: string; to: string }) => socketServiceSingleton.rejectCall(data),

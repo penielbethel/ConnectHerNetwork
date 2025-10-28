@@ -218,8 +218,16 @@ const ChatScreen = () => {
               updatedAt: new Date().toISOString(),
             } as Chat;
           });
-          setChats(nextBaseChats);
-          setFilteredChats(sortChatsByPresence(nextBaseChats));
+          // Hydrate last-message previews from cache to keep them visible
+          const hydratedNext = await Promise.all(nextBaseChats.map(async (c) => {
+            try {
+              const raw = await AsyncStorage.getItem(`lastPreview:${c._id}`);
+              const preview = raw ? JSON.parse(raw) : null;
+              return preview ? ({ ...c, lastMessage: preview, updatedAt: (preview.timestamp || c.updatedAt) } as Chat) : c;
+            } catch (_) { return c; }
+          }));
+          setChats(hydratedNext);
+          setFilteredChats(sortChatsByPresence(hydratedNext));
 
           // Background presence hydration for offline users
           try {
@@ -517,6 +525,10 @@ const ChatScreen = () => {
       return date.toLocaleDateString();
     };
 
+    // Derived header-level indicators (recording has precedence)
+    const anyRecording = Object.values(recordingByUser).some(Boolean);
+    const anyTyping = !anyRecording && Object.values(typingByUser).some(Boolean);
+
     const getLastMessagePreview = (message: any) => {
       if (!message) return '';
       
@@ -587,16 +599,22 @@ const ChatScreen = () => {
               </Text>
             </View>
 
-            <View style={globalStyles.flexRowBetween}>
+            <View style={styles.lastLine}>
               <Text
                 style={[styles.lastMessage, isUnread && styles.unreadText]}
                 numberOfLines={1}>
-                {recordingByUser[otherParticipant.username]
-                  ? 'recording…'
-                  : typingByUser[otherParticipant.username]
-                  ? 'typing…'
-                  : `${lastMessageSender}${getLastMessagePreview(item.lastMessage)}`}
+                {`${lastMessageSender}${getLastMessagePreview(item.lastMessage)}`}
               </Text>
+              {recordingByUser[otherParticipant.username] && (
+                <View style={[styles.indicatorBadge, { backgroundColor: colors.error }]}>
+                  <Text style={styles.indicatorText}>recording…</Text>
+                </View>
+              )}
+              {!recordingByUser[otherParticipant.username] && typingByUser[otherParticipant.username] && (
+                <View style={[styles.indicatorBadge, { backgroundColor: colors.primary }]}>
+                  <Text style={styles.indicatorText}>typing…</Text>
+                </View>
+              )}
               {isUnread && (
                 <View style={styles.unreadBadge}>
                   <Text style={styles.unreadCount}>
@@ -641,6 +659,16 @@ const ChatScreen = () => {
             </View>
           </View>
           <View style={styles.headerActions}>
+            {anyRecording && (
+              <View style={[styles.headerBadge, { backgroundColor: colors.error }]}> 
+                <Text style={styles.headerBadgeText}>recording…</Text>
+              </View>
+            )}
+            {!anyRecording && anyTyping && (
+              <View style={[styles.headerBadge, { backgroundColor: colors.primary }]}> 
+                <Text style={styles.headerBadgeText}>typing…</Text>
+              </View>
+            )}
             <TouchableOpacity style={styles.headerButton} onPress={() => setShowSearch(!showSearch)}>
               <Icon name="search" size={22} color={colors.text} />
             </TouchableOpacity>
@@ -732,6 +760,21 @@ const ChatScreen = () => {
       ...globalStyles.flexRow,
       alignItems: 'center',
     },
+    headerBadge: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 10,
+      marginRight: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    headerBadgeText: {
+      color: '#fff',
+      fontSize: 12,
+      fontWeight: '600',
+    },
     headerButton: {
       marginLeft: 12,
     },
@@ -802,6 +845,25 @@ const ChatScreen = () => {
       color: colors.textMuted,
       marginTop: 2,
       flex: 1,
+    },
+    lastLine: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    indicatorBadge: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 10,
+      marginLeft: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 10,
+      elevation: 3,
+    },
+    indicatorText: {
+      color: '#fff',
+      fontSize: 12,
+      fontWeight: '600',
     },
     unreadBadge: {
       backgroundColor: colors.primary,

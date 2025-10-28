@@ -1919,10 +1919,19 @@ const pickReaction = (id: string, emoji: string) => {
     if (!recipientTyping && !recipientRecording) return null;
     const label = recipientRecording ? 'recording…' : 'typing…';
     return (
-      <View style={[styles.messageContainer, styles.otherMessage]}>
-        <View style={[styles.messageBubble, styles.otherBubble, { flexDirection: 'row', alignItems: 'center' }]}>
-          <RecordingWaveform active={true} barCount={5} width={40} height={16} color={colors.textMuted} />
-          <Text style={[styles.typingText, { marginLeft: 8 }]}>{label}</Text>
+      <View style={[styles.messageContainer, styles.otherMessage, { zIndex: 1000, elevation: 6 }]}>
+        <View style={[
+          styles.messageBubble,
+          styles.otherBubble,
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: recipientRecording ? colors.error : colors.primary,
+            borderColor: recipientRecording ? colors.error : colors.primary,
+          }
+        ]}>
+          <RecordingWaveform active={true} barCount={5} width={40} height={16} color={'#fff'} />
+          <Text style={[styles.typingText, { marginLeft: 8, color: '#fff' }]}>{label}</Text>
         </View>
       </View>
     );
@@ -1975,6 +1984,16 @@ const pickReaction = (id: string, emoji: string) => {
         </TouchableOpacity>
         
         <View style={globalStyles.flexRow}>
+          {recipientRecording && (
+            <View style={[styles.headerBadge, { backgroundColor: colors.error }]}> 
+              <Text style={styles.headerBadgeText}>recording…</Text>
+            </View>
+          )}
+          {!recipientRecording && recipientTyping && (
+            <View style={[styles.headerBadge, { backgroundColor: colors.primary }]}> 
+              <Text style={styles.headerBadgeText}>typing…</Text>
+            </View>
+          )}
           <TouchableOpacity
             style={{ marginRight: 12 }}
             onPress={async () => {
@@ -2423,6 +2442,21 @@ const styles = StyleSheet.create({
   headerStatus: {
     fontSize: 12,
     color: '#8696A0',
+  },
+  headerBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  headerBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   messagesList: {
     flex: 1,

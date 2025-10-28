@@ -100,8 +100,9 @@ const IncomingCallScreen: React.FC = () => {
       const from = currentUser?.username || '';
       // Tell server we accept
       socketService.acceptCall({ from, to: caller });
-      // Stop ringtone
+      // Stop alerts: ringtone + vibration
       setIsRinging(false);
+      try { Vibration.cancel(); } catch (_) {}
       try {
         audioRef.current?.stopPlayer?.();
         audioRef.current?.removePlayBackListener?.();

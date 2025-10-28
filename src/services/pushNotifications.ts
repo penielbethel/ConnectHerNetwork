@@ -7,6 +7,8 @@ import Sound from 'react-native-sound';
 import socketService from './SocketService';
 import { navigate } from '../navigation/RootNavigation';
 import NotificationPlugin from '../plugins/notification';
+// Add ApiService to resolve full names to usernames for accurate routing
+import apiService from './ApiService';
 
 export interface NotificationData {
   title: string;
@@ -457,11 +459,12 @@ export class PushNotificationService {
 
   private isDuplicateAndMark(key?: string): boolean {
     try {
-      if (!key) return false;
-      if (this.recentNotificationIds.has(key)) return true;
-      this.recentNotificationIds.add(key);
+      const k = String(key || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!k) return false;
+      if (this.recentNotificationIds.has(k)) return true;
+      this.recentNotificationIds.add(k);
       setTimeout(() => {
-        try { this.recentNotificationIds.delete(key); } catch (_) {}
+        try { this.recentNotificationIds.delete(k); } catch (_) {}
       }, 10000);
       return false;
     } catch (_) {
@@ -746,20 +749,84 @@ export class PushNotificationService {
     try {
       const dtype = String(data?.type || '').toLowerCase();
       if (dtype === 'message' || dtype === 'reaction') {
-        const chatId = String(data?.chatId || '');
-        const recipientUsername = String(data?.peerUsername || data?.recipientUsername || '');
-        const recipientName = String(data?.peerName || data?.recipientName || recipientUsername || '');
-        const recipientAvatar = String(data?.peerAvatar || data?.recipientAvatar || '');
-        if (chatId && recipientUsername) {
+        const chatIdRaw = String(data?.chatId || data?.roomId || '');
+        // Extract both sides explicitly from payload
+        const senderUsernameRaw = String(data?.senderUsername || data?.sender || data?.from || '').trim();
+        const senderNameRaw = String(data?.senderName || data?.name || '').trim();
+        const senderAvatarRaw = String(data?.senderAvatar || data?.avatar || '').trim();
+        const recipientUsernameRaw = String(data?.recipientUsername || data?.peerUsername || data?.to || '').trim();
+        const recipientNameRaw = String(data?.recipientName || data?.peerName || '').trim();
+        const recipientAvatarRaw = String(data?.recipientAvatar || data?.peerAvatar || '').trim();
+
+        // Determine current user to pick the OTHER party as target
+        let meUsername = '';
+        try {
+          const stored = await AsyncStorage.getItem('currentUser');
+          const me = stored ? JSON.parse(stored) : null;
+          meUsername = String(me?.username || '').trim();
+        } catch (_) {}
+
+        // Decide the conversation target (the other participant)
+        let targetUsername = '';
+        if (meUsername) {
+          const me = meUsername.toLowerCase();
+          const s = senderUsernameRaw.toLowerCase();
+          const r = recipientUsernameRaw.toLowerCase();
+          if (me && s && me === s && r) {
+            targetUsername = recipientUsernameRaw;
+          } else if (me && r && me === r && s) {
+            targetUsername = senderUsernameRaw;
+          } else {
+            // Fallback: prefer sender by default
+            targetUsername = senderUsernameRaw || recipientUsernameRaw;
+          }
+        } else {
+          // No current user in storage; fallback to sender
+          targetUsername = senderUsernameRaw || recipientUsernameRaw;
+        }
+
+        // Pick display name and avatar for the target
+        let targetName = '';
+        let targetAvatar = '';
+        if (targetUsername && senderUsernameRaw && targetUsername.toLowerCase() === senderUsernameRaw.toLowerCase()) {
+          targetName = senderNameRaw || targetUsername;
+          targetAvatar = senderAvatarRaw || '';
+        } else if (targetUsername && recipientUsernameRaw && targetUsername.toLowerCase() === recipientUsernameRaw.toLowerCase()) {
+          targetName = recipientNameRaw || targetUsername;
+          targetAvatar = recipientAvatarRaw || '';
+        } else {
+          targetName = senderNameRaw || recipientNameRaw || targetUsername;
+          targetAvatar = senderAvatarRaw || recipientAvatarRaw || '';
+        }
+
+        // If target not clearly a username, resolve from full name
+        if (!targetUsername || targetUsername.includes(' ') || (targetName && targetUsername.toLowerCase() === targetName.toLowerCase())) {
+          try {
+            const identifier = targetName || targetUsername;
+            const profile: any = await apiService.getUserByUsername(identifier);
+            if (profile?.username) {
+              targetUsername = String(profile.username);
+              targetName = String(profile.name || targetName || profile.username);
+              targetAvatar = apiService.normalizeAvatar(profile?.avatar || targetAvatar);
+            }
+          } catch (_) {}
+        }
+
+        // Compute chatId if missing
+        const chatId = chatIdRaw || ((meUsername && targetUsername) ? [meUsername, targetUsername].sort().join('_') : '');
+        const recipientAvatar = apiService.normalizeAvatar(targetAvatar);
+
+        if (targetUsername) {
           navigate('Conversation', {
             chatId,
-            recipientUsername,
-            recipientName,
+            recipientUsername: targetUsername,
+            recipientName: targetName,
             recipientAvatar,
           });
         }
         return;
       }
+
       if (dtype === 'group_call') {
         const communityId = String(data?.communityId || '');
         const communityName = String(data?.communityName || '');
