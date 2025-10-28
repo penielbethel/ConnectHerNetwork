@@ -4,8 +4,8 @@ buildscript {
     ext {
         buildToolsVersion = "34.0.0"
         minSdkVersion = 21
-        compileSdkVersion = 34
-        targetSdkVersion = 34
+        compileSdkVersion = 35
+        targetSdkVersion = 35
         // Kotlin version for modules that apply the Kotlin Android plugin
         kotlinVersion = "1.8.22"
         // Make RN version available to autolinked modules requiring ext.reactNativeVersion
