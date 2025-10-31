@@ -1,0 +1,68 @@
+name: iOS Build (Archive)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install Bundler & CocoaPods
+        run: |
+          sudo gem install bundler cocoapods
+
+      - name: Install npm deps
+        run: |
+          npm ci
+
+      - name: Pod install
+        working-directory: ios
+        run: |
+          pod install --repo-update
+
+      - name: Build archive
+        working-directory: ios
+        env:
+          DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
+          CODE_SIGN_IDENTITY: ${{ secrets.CODE_SIGN_IDENTITY }}
+          PROVISIONING_PROFILE_SPECIFIER: ${{ secrets.PROVISIONING_PROFILE_SPECIFIER }}
+        run: |
+          xcodebuild -workspace ConnectHerMobile.xcworkspace \
+            -scheme ConnectHerMobile \
+            -configuration Release \
+            -sdk iphoneos \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            CODE_SIGN_IDENTITY="$CODE_SIGN_IDENTITY" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_SPECIFIER" \
+            MARKETING_VERSION=1.0 \
+            CURRENT_PROJECT_VERSION=3 \
+            -archivePath $PWD/build/ConnectHerMobile.xcarchive \
+            archive | xcpretty
+
+      - name: Export IPA
+        working-directory: ios
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath $PWD/build/ConnectHerMobile.xcarchive \
+            -exportOptionsPlist exportOptions.plist \
+            -exportPath $PWD/build/ipa | xcpretty
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConnectHerMobile-ipa
+          path: ios/build/ipa/*.ipa
+
+      - name: Upload XCArchive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConnectHerMobile-archive
+          path: ios/build/ConnectHerMobile.xcarchive
