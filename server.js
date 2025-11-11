@@ -15,6 +15,23 @@ const app = express();
 // Parse JSON and URL-encoded bodies globally
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// 🚧 Maintenance Mode (affects both web and app)
+// Toggle ON by setting env MAINTENANCE_MODE=true or committing a file named 'maintenance.flag' in repo root.
+const MAINTENANCE_MODE = (process.env.MAINTENANCE_MODE === 'true') || fs.existsSync(path.join(__dirname, 'maintenance.flag'));
+app.use((req, res, next) => {
+  if (MAINTENANCE_MODE) {
+    // Serve suspended page for GET; 503 for non-GET/API calls
+    if (req.method === 'GET') {
+      try {
+        return res.sendFile(path.join(__dirname, 'public', 'suspended.html'));
+      } catch (_) {
+        return res.status(503).send('Service temporarily suspended');
+      }
+    }
+    return res.status(503).json({ message: 'Service temporarily suspended' });
+  }
+  next();
+});
 // 🔔 Firebase Admin for push notifications
 const admin = require('./firebase');
 const https = require('https');
