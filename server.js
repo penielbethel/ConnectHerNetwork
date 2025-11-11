@@ -15,11 +15,36 @@ const app = express();
 // Parse JSON and URL-encoded bodies globally
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
 // 🚧 Maintenance Mode (affects both web and app)
-// Toggle ON by setting env MAINTENANCE_MODE=true or committing a file named 'maintenance.flag' in repo root.
-const MAINTENANCE_MODE = (process.env.MAINTENANCE_MODE === 'true') || fs.existsSync(path.join(__dirname, 'maintenance.flag'));
+// Controlled by:
+// 1) Environment variable: MAINTENANCE_MODE (accepts on/off, true/false, 1/0, yes/no)
+// 2) File: maintenance.flag with content like "MAINTENANCE=on" or "MAINTENANCE=off"
+const flagPath = path.join(__dirname, 'maintenance.flag');
+const toBool = (v) => {
+  const s = String(v || '').trim().toLowerCase();
+  return s === 'true' || s === 'on' || s === '1' || s === 'yes';
+};
+function isMaintenanceEnabled() {
+  if (process.env.MAINTENANCE_MODE !== undefined) {
+    return toBool(process.env.MAINTENANCE_MODE);
+  }
+  if (fs.existsSync(flagPath)) {
+    try {
+      const content = fs.readFileSync(flagPath, 'utf8');
+      const m = String(content || '').toLowerCase().match(/maintenance\s*=\s*(on|off|true|false|1|0|yes|no)/);
+      if (m) return toBool(m[1]);
+      // Default: presence of file without a recognized value means ON
+      return true;
+    } catch (_) {
+      // If the file cannot be read, treat as ON for safety
+      return true;
+    }
+  }
+  return false;
+}
 app.use((req, res, next) => {
-  if (MAINTENANCE_MODE) {
+  if (isMaintenanceEnabled()) {
     // Serve suspended page for GET; 503 for non-GET/API calls
     if (req.method === 'GET') {
       try {
@@ -32,6 +57,7 @@ app.use((req, res, next) => {
   }
   next();
 });
+
 // 🔔 Firebase Admin for push notifications
 const admin = require('./firebase');
 const https = require('https');
