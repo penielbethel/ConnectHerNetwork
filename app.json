@@ -1,0 +1,114 @@
+{
+  "expo": {
+    "name": "ConnectHer Network",
+    "slug": "connecthermobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./resources/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./resources/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.connecthermobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./resources/icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.connecthermobile",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "ACCESS_WIFI_STATE",
+        "CHANGE_WIFI_STATE",
+        "CAMERA",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "READ_MEDIA_AUDIO",
+        "WAKE_LOCK",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "com.google.android.c2dm.permission.RECEIVE",
+        "CALL_PHONE",
+        "READ_PHONE_STATE",
+        "POST_NOTIFICATIONS",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "SYSTEM_ALERT_WINDOW"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "connecther.network",
+              "pathPrefix": "/post.html"
+            },
+            {
+              "scheme": "http",
+              "host": "connecther.network",
+              "pathPrefix": "/post.html"
+            },
+            {
+              "scheme": "connecther",
+              "pathPrefix": "/post.html"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "34.0.0"
+          }
+        }
+      ],
+      "@react-native-firebase/app",
+      [
+        "@react-native-firebase/messaging",
+        {
+          "android": {
+             "notificationChannelId": "default_channel",
+             "notificationColor": "#03DAC5"
+          }
+        }
+      ],
+      "./plugins/withCustomAssets"
+    ],
+    "web": {
+      "favicon": "./resources/icon.png"
+    },
+    "owner": "penielbethel",
+    "extra": {
+      "eas": {
+        "projectId": "83d99113-0268-49cd-b50a-4dd8cd88c6f1"
+      }
+    }
+  }
+}

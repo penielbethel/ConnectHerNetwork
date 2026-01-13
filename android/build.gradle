@@ -3,78 +3,41 @@
 buildscript {
     ext {
         buildToolsVersion = "34.0.0"
-        minSdkVersion = 21
+        minSdkVersion = 24
         compileSdkVersion = 35
         targetSdkVersion = 35
-        // Kotlin version for modules that apply the Kotlin Android plugin
-        kotlinVersion = "1.8.22"
-        // Make RN version available to autolinked modules requiring ext.reactNativeVersion
-        reactNativeVersion = "0.73.2"
-
-        // We use NDK 23 which has both M1 support and is the side-by-side NDK version from AGP.
-        ndkVersion = "23.1.7779620"
+        ndkVersion = "27.1.12297006"
+        supportLibVersion = "1.4.1"
     }
     repositories {
-        // Prefer explicit Google Maven URLs to avoid DNS issues
-        maven { url 'https://dl.google.com/dl/android/maven2/' }
-        maven { url 'https://maven.google.com' }
-        google()
-        mavenCentral()
-        // Add this line to tell Gradle where to find the React Native plugin
-        gradlePluginPortal()
-    }
-    dependencies {
-        classpath("com.android.tools.build:gradle")
-        classpath("com.facebook.react:react-native-gradle-plugin")
-        // Add this line to include the Google Services plugin
-        classpath('com.google.gms:google-services:4.4.1') 
-        // Kotlin Gradle plugin for Kotlin Android modules
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}")
-    }
+    google()
+    mavenCentral()
+  }
+  dependencies {
+        classpath 'com.google.gms:google-services:4.4.1'
+    classpath('com.android.tools.build:gradle')
+    classpath('com.facebook.react:react-native-gradle-plugin')
+    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
+  }
 }
 
-// All projects need to know about the Maven repository to access React Native and other dependencies.
 allprojects {
-    repositories {
-        maven {
-            // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-            url("$rootDir/../node_modules/react-native/android")
-        }
-        maven {
-            // Android JSC is installed from npm
-            url("$rootDir/../node_modules/jsc-android/dist")
-        }
-        // Prefer explicit Google Maven URLs to avoid DNS issues
-        maven { url 'https://dl.google.com/dl/android/maven2/' }
-        maven { url 'https://maven.google.com' }
-        google()
-        mavenCentral()
-        maven { url 'https://www.jitpack.io' }
-    }
-    // Ensure RN libraries resolve react-android with an explicit version when not declared
-    configurations.all {
-        resolutionStrategy {
-            force "com.facebook.react:react-android:${reactNativeVersion}"
-        }
-    }
+  repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://www.jitpack.io' }
+  }
 }
 
-// Apply consistent Kotlin compiler options across all subprojects to avoid using
-// newer JDK APIs (e.g. List.reversed in JDK 21) that aren't available on Android's runtime.
-// This ensures Kotlin targets JDK 17 APIs when compiling modules like gesture-handler.
 subprojects {
     afterEvaluate { project ->
-        tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach { task ->
-            if (task.kotlinOptions != null) {
-                // Keep classfile target aligned with RN's Java 17 baseline
-                task.kotlinOptions.jvmTarget = "17"
-                // Constrain API linkage to JDK 17 to prevent accidental calls to newer JDK methods
-                def opts = task.kotlinOptions.freeCompilerArgs ?: []
-                if (!opts.contains('-Xjdk-release=17')) {
-                    opts += ['-Xjdk-release=17']
-                }
-                task.kotlinOptions.freeCompilerArgs = opts
+        if (project.hasProperty("android")) {
+            project.android {
+                ndkVersion = "27.1.12297006"
             }
         }
     }
 }
+
+apply plugin: "expo-root-project"
+apply plugin: "com.facebook.react.rootproject"

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "701275464049",
+    "project_id": "connecther-mobile",
+    "storage_bucket": "connecther-mobile.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:701275464049:android:d6a2d8ffac85b3973c56d0",
+        "android_client_info": {
+          "package_name": "com.connecthermobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAaDjdAIxdIXL2LOFTfWMvkXpPbQJhIh-o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
