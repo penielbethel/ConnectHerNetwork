@@ -1,3 +1,4 @@
+import 'expo-dev-client';
 import { AppRegistry } from 'react-native';
 import App from './App';
 import { name as appName } from './package.json';
@@ -24,7 +25,7 @@ try {
 // Register early with a lazy loader to avoid "not registered" invariant
 try {
   console.log('[RegisterComponent] name:', appName);
-  AppRegistry.registerComponent(appName, () => {
+  const registerApp = () => {
     try {
       // Minimal probes just before loading App to surface import errors
       try { console.log('[ProbeStart]', './src/services/ApiService'); require('./src/services/ApiService'); console.log('[ProbeOK]', './src/services/ApiService'); } catch (e1) { console.error('[ProbeFAIL]', './src/services/ApiService', e1?.message || e1, e1?.stack); }
@@ -38,7 +39,10 @@ try {
       console.error('[EntryImportError]', e?.message || e, e?.stack);
       return () => null;
     }
-  });
+  };
+
+  AppRegistry.registerComponent(appName, registerApp);
+  AppRegistry.registerComponent('main', registerApp);
   console.log('[RegisterComponent] completed');
 } catch (e) {
   console.error('[RegisterComponentError]', e?.message || e, e?.stack);
