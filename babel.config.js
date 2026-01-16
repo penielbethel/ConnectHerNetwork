@@ -1,8 +1,5 @@
 module.exports = {
-  presets: [
-    '@react-native/babel-preset',
-    ['@babel/preset-typescript', { allExtensions: true, isTSX: false, allowDeclareFields: true }]
-  ],
+  presets: ['babel-preset-expo'],
   plugins: [
     ['@babel/plugin-transform-flow-strip-types', { allowDeclareFields: true }],
     [
