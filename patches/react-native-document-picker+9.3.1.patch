@@ -1,0 +1,22 @@
+diff --git a/node_modules/react-native-document-picker/android/src/main/java/com/reactnativedocumentpicker/RNDocumentPickerModule.java b/node_modules/react-native-document-picker/android/src/main/java/com/reactnativedocumentpicker/RNDocumentPickerModule.java
+index 1111111..2222222 100644
+--- a/node_modules/react-native-document-picker/android/src/main/java/com/reactnativedocumentpicker/RNDocumentPickerModule.java
++++ b/node_modules/react-native-document-picker/android/src/main/java/com/reactnativedocumentpicker/RNDocumentPickerModule.java
+@@
+-import com.facebook.react.bridge.GuardedResultAsyncTask;
++import android.os.AsyncTask;
+@@
+-  private static class ProcessDataTask extends GuardedResultAsyncTask<ReadableArray> {
++  private static class ProcessDataTask extends AsyncTask<Void, Void, ReadableArray> {
+@@
+-    @Override
+-    protected ReadableArray doInBackgroundGuarded() {
++    @Override
++    protected ReadableArray doInBackground(Void... params) {
+@@
+-    @Override
+-    protected void onPostExecuteGuarded(ReadableArray readableArray) {
++    @Override
++    protected void onPostExecute(ReadableArray readableArray) {
+       promise.resolve(readableArray);
+     }
