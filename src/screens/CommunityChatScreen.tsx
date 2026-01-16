@@ -26,7 +26,7 @@ import socketService from '../services/SocketService';
 import { colors, globalStyles } from '../styles/globalStyles';
 import { Linking, Alert } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
-import DocumentPicker from 'react-native-document-picker';
+import DocumentPicker from '../utils/DocPicker';
 import audioRecorderService from '../services/AudioRecorder';
 import { PermissionsManager } from '../utils/permissions';
 import RecordingWaveform from '../components/RecordingWaveform';

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import apiService from '../services/ApiService';
 import { globalStyles, colors } from '../styles/globalStyles';
 import { ThemeContext } from '../context/ThemeContext';
 import adminService from '../services/AdminService';
-import DocumentPicker from 'react-native-document-picker';
+import DocumentPicker from '../utils/DocPicker';
 
 type Sponsor = {
   _id: string;

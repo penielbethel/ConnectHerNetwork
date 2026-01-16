@@ -21,7 +21,7 @@ import Video from 'react-native-video';
 import { Share } from 'react-native';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 
-import DocumentPicker from 'react-native-document-picker';
+import DocumentPicker from '../utils/DocPicker';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -700,7 +700,7 @@ setTimeout(() => Alert.alert('Success', 'Your post has been published'), 200);
   const openDocumentPicker = async () => {
     try {
       const result = await DocumentPicker.pickSingle({ type: [DocumentPicker.types.allFiles] });
-      uploadAsset({ uri: result.uri, type: result.type, name: (result as any).name });
+      uploadAsset({ uri: result.uri, type: result.type, name: (result as any)?.name || 'document' });
     } catch (error) {
       if (!DocumentPicker.isCancel(error as any)) {
         console.error('Document picker error:', error);

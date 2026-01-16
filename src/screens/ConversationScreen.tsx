@@ -28,7 +28,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import FAIcon from 'react-native-vector-icons/FontAwesome5';
 import {launchImageLibrary, launchCamera} from 'react-native-image-picker';
-import DocumentPicker from 'react-native-document-picker';
+import DocumentPicker from '../utils/DocPicker';
 import apiService from '../services/ApiService';
 import socketService from '../services/SocketService';
 import {colors, globalStyles} from '../styles/globalStyles';
