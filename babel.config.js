@@ -4,6 +4,7 @@ module.exports = {
     ['@babel/preset-typescript', { allExtensions: true, isTSX: false, allowDeclareFields: true }]
   ],
   plugins: [
+    ['@babel/plugin-transform-flow-strip-types', { allowDeclareFields: true }],
     [
       'module:react-native-dotenv',
       {
