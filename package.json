@@ -10,8 +10,8 @@
     "test": "jest",
     "lint": "eslint .",
     "build-android": "cd android && ./gradlew assembleRelease",
-    "server": "node server.js",
-    "server-dev": "nodemon server.js",
+    "server": "cd server && node server.js",
+    "server-dev": "cd server && nodemon server.js",
     "postinstall": "patch-package"
   },
   "author": "Ymoinsights",
@@ -83,16 +83,10 @@
     "react-test-renderer": "19.1.0",
     "serve": "^14.2.5",
     "typescript": "~5.9.2",
-    "bcrypt": "^6.0.0",
-    "cloudinary": "^1.41.3",
-    "express": "^5.1.0",
-    "firebase-admin": "^13.4.0",
-    "mongoose": "^8.16.0",
-    "multer": "^2.0.1",
-    "multer-storage-cloudinary": "^4.0.0",
-    "nodemailer": "^7.0.5",
     
-    "socket.io": "^4.8.1"
+    
+    
+    
   },
   "optionalDependencies": {
     "sharp": "^0.34.3",
