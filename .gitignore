@@ -17,7 +17,6 @@ android/app/keystore.properties
 android/local.properties
 *.log
 android/.gradle/
-android/gradle/
 android/gradle-temp/
 android/app/.cxx/
 android/logcat*.txt
