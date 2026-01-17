@@ -12,7 +12,8 @@ function tryFixDocumentPicker() {
       let out = src.replace(/import\s+com\.facebook\.react\.bridge\.GuardedResultAsyncTask;\s*/g, 'import android.os.AsyncTask;\n')
         .replace(/extends\s+GuardedResultAsyncTask<ReadableArray>/g, 'extends AsyncTask<Void, Void, ReadableArray>')
         .replace(/doInBackgroundGuarded\s*\(\)/g, 'doInBackground(Void... params)')
-        .replace(/onPostExecuteGuarded\s*\(ReadableArray readableArray\)/g, 'onPostExecute(ReadableArray readableArray)');
+        .replace(/onPostExecuteGuarded\s*\(ReadableArray readableArray\)/g, 'onPostExecute(ReadableArray readableArray)')
+        .replace(/\s*super\s*\(\s*reactContext\.getExceptionHandler\s*\(\)\s*\)\s*;\s*/g, '\n');
       fs.writeFileSync(target, out, 'utf8');
       log('Patched react-native-document-picker for RN 0.81 AsyncTask');
     } else {
